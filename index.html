@@ -6,6 +6,7 @@
 <title>cubarc – Vom Grundstück zur Machbarkeit</title>
 <meta name="description" content="cubarc prüft Grundstücke für Bauträger: Adresse eingeben, Baukörper nach Landesrecht sehen, Wohnungen und Marge kennen – bis zum fertigen Exposé. 3 Tage kostenlos testen.">
 <meta name="theme-color" content="#0e0f12">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
 <link rel="apple-touch-icon" href="img/apple-touch-icon_180.png">
 <style>
@@ -418,6 +419,10 @@ section[id], .sec { scroll-margin-top: 72px; }
   .kpi.hero2 .v { font-size: 28px; }
   .count div b { font-size: 28px; }
 }
+
+/* Samsung Internet & Co.: Seite bringt ihr eigenes dunkles Design mit – kein erzwungener Dunkelmodus */
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+@media (prefers-color-scheme: light) { :root { color-scheme: dark; } }
 </style>
 </head>
 <body>
