@@ -42,6 +42,8 @@ footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24
   border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
 footer a { text-decoration: none; } footer a:hover { color: var(--ink); }
 footer .sp { flex: 1; }
+@media (max-width: 560px) { footer .wrap { justify-content: center; text-align: center; } footer .sp { flex-basis: 100%; height: 0; } }
+footer .fav { display: inline-flex; margin-right: -12px; } footer .fav img { display: block; width: 22px; height: 22px; border-radius: 6px; opacity: .9; } footer .fav:hover img { opacity: 1; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 24px; border-radius: 999px; font: inherit;
   font-size: 15.5px; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--line-strong); color: var(--ink); background: var(--panel); }
 .btn.cta { background: var(--grad); color: #2a1a0c; border-color: transparent; box-shadow: 0 10px 40px rgba(240,183,119,.25); }
@@ -79,7 +81,7 @@ main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
     <dt>Anschrift</dt><dd>Serlesweg 14/2<br>6165 Telfes im Stubai<br>Österreich</dd>
     <dt>Unternehmensgegenstand</dt><dd>Entwicklung und Vertrieb der Software cubarc</dd>
     <dt>Telefon</dt><dd><a href="tel:+436767009164">+43 676 700 91 64</a></dd>
-    <dt>E-Mail</dt><dd><a href="mailto:office@archivisu.at">office@archivisu.at</a></dd>
+    <dt>E-Mail</dt><dd><a href="mailto:support@cubarc.at">support@cubarc.at</a></dd>
     <dt>UID-Nummer</dt><dd>ATU72773723</dd>
   </dl></div>
   <h2>Offenlegung gemäß § 25 Mediengesetz</h2>
@@ -90,8 +92,8 @@ main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
   <p>Texte, Grafiken und Darstellungen auf dieser Website sind urheberrechtlich geschützt. Eine Verwendung ist nur mit vorheriger Zustimmung zulässig.</p>
 </article></div></main>
 <footer><div class="wrap">
-  <span>© 2026 cubarc</span><span class="sp"></span>
-  <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:office@archivisu.at">Kontakt</a>
+  <a class="fav" href="/" aria-label="cubarc – zur Startseite"><img src="/img/favicon.svg" alt="" width="22" height="22"></a><span>© 2026 cubarc</span><span class="sp"></span>
+  <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:support@cubarc.at">Kontakt</a>
 </div></footer>
 <script>
 const reduce = false;
@@ -174,7 +176,9 @@ function Synapsen(canvas, opt) {
 
 const SMALL = innerWidth < 700;
 const syn = Synapsen(document.getElementById('syn-bg'), { n: SMALL ? 34 : 64, reach: SMALL ? 105 : 150, alpha: 0.32, seed: 11 });
-function synTick(t) { syn.frame(t); requestAnimationFrame(synTick); }
+const FORMS = [[0, 1e9]];
+let fi = 0, fNext = 0;
+function synTick(t) { if (t > fNext) { syn.setForm(FORMS[fi][0]); fNext = t + FORMS[fi][1]; fi = fi + 1 < FORMS.length ? fi + 1 : 1; } syn.frame(t); requestAnimationFrame(synTick); }
 addEventListener('resize', () => syn.size());
 syn.size(); requestAnimationFrame(synTick);
 </script>

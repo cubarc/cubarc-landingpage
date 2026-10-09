@@ -42,6 +42,8 @@ footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24
   border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
 footer a { text-decoration: none; } footer a:hover { color: var(--ink); }
 footer .sp { flex: 1; }
+@media (max-width: 560px) { footer .wrap { justify-content: center; text-align: center; } footer .sp { flex-basis: 100%; height: 0; } }
+footer .fav { display: inline-flex; margin-right: -12px; } footer .fav img { display: block; width: 22px; height: 22px; border-radius: 6px; opacity: .9; } footer .fav:hover img { opacity: 1; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 24px; border-radius: 999px; font: inherit;
   font-size: 15.5px; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--line-strong); color: var(--ink); background: var(--panel); }
 .btn.cta { background: var(--grad); color: #2a1a0c; border-color: transparent; box-shadow: 0 10px 40px rgba(240,183,119,.25); }
@@ -76,7 +78,7 @@ main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
   <p class="sub">Stand: Oktober 2026</p>
 
   <h2>1. Verantwortlicher</h2>
-  <p>Ozan Özcelik, Serlesweg 14/2, 6165 Telfes im Stubai, Österreich<br>E-Mail: <a href="mailto:office@archivisu.at">office@archivisu.at</a> · Telefon: +43 676 700 91 64</p>
+  <p>Ozan Özcelik, Serlesweg 14/2, 6165 Telfes im Stubai, Österreich<br>E-Mail: <a href="mailto:support@cubarc.at">support@cubarc.at</a> · Telefon: +43 676 700 91 64</p>
 
   <h2>2. Das Wichtigste in Kürze</h2>
   <ul>
@@ -90,15 +92,15 @@ main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
   <p>Rechtsgrundlage ist unser berechtigtes Interesse an einer sicheren und funktionsfähigen Website (Art. 6 Abs. 1 lit. f DSGVO). Cloudflare ist unter dem EU-US Data Privacy Framework zertifiziert; die Übermittlung in die USA stützt sich auf den Angemessenheitsbeschluss der EU-Kommission (Art. 45 DSGVO). Mit Cloudflare besteht ein Vertrag zur Auftragsverarbeitung. Weitere Informationen: <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">cloudflare.com/privacypolicy</a>.</p>
 
   <h2>4. Kontakt per E-Mail und Benachrichtigung zum Start</h2>
-  <p>Wenn Sie uns eine E-Mail senden, zum Beispiel über „Zum Start benachrichtigen“, verarbeiten wir Ihre E-Mail-Adresse und die Angaben aus Ihrer Nachricht, um Ihre Anfrage zu beantworten bzw. Sie einmalig über den Start von cubarc zu informieren. Rechtsgrundlage ist Ihre Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), bei Anfragen zu einem Vertrag Art. 6 Abs. 1 lit. b DSGVO. Sie können die Einwilligung jederzeit per E-Mail widerrufen. Wir löschen die Daten, sobald der Zweck erfüllt ist bzw. nach Ihrem Widerruf, soweit keine gesetzlichen Aufbewahrungspflichten bestehen. Eine Weitergabe an Dritte erfolgt nicht; unser E-Mail-Anbieter verarbeitet die Nachrichten ausschließlich in unserem Auftrag.</p>
+  <p>Wenn Sie uns eine E-Mail senden, zum Beispiel über „Zum Start benachrichtigen“, verarbeiten wir Ihre E-Mail-Adresse und die Angaben aus Ihrer Nachricht, um Ihre Anfrage zu beantworten bzw. Sie einmalig über den Start von cubarc zu informieren. Rechtsgrundlage ist Ihre Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), bei Anfragen zu einem Vertrag Art. 6 Abs. 1 lit. b DSGVO. Sie können die Einwilligung jederzeit per E-Mail widerrufen. Wir löschen die Daten, sobald der Zweck erfüllt ist bzw. nach Ihrem Widerruf, soweit keine gesetzlichen Aufbewahrungspflichten bestehen. Eine Weitergabe an Dritte erfolgt nicht. Unsere E-Mails laufen über Microsoft 365 (Microsoft Ireland Operations Limited, Dublin, Irland), das die Nachrichten als Auftragsverarbeiter in unserem Auftrag verarbeitet. Soweit dabei Daten in die USA gelangen, stützt sich das auf die Zertifizierung von Microsoft unter dem EU-US Data Privacy Framework (Art. 45 DSGVO).</p>
 
   <h2>5. Ihre Rechte</h2>
-  <p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15–21 DSGVO) sowie das Recht, eine erteilte Einwilligung jederzeit zu widerrufen. Wenden Sie sich dazu an <a href="mailto:office@archivisu.at">office@archivisu.at</a>.</p>
+  <p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15–21 DSGVO) sowie das Recht, eine erteilte Einwilligung jederzeit zu widerrufen. Wenden Sie sich dazu an <a href="mailto:support@cubarc.at">support@cubarc.at</a>.</p>
   <p>Wenn Sie meinen, dass die Verarbeitung Ihrer Daten gegen das Datenschutzrecht verstößt, können Sie sich bei der Aufsichtsbehörde beschweren. In Österreich ist das die Datenschutzbehörde, Barichgasse 40–42, 1030 Wien, <a href="https://www.dsb.gv.at" rel="noopener">www.dsb.gv.at</a>.</p>
 </article></div></main>
 <footer><div class="wrap">
-  <span>© 2026 cubarc</span><span class="sp"></span>
-  <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:office@archivisu.at">Kontakt</a>
+  <a class="fav" href="/" aria-label="cubarc – zur Startseite"><img src="/img/favicon.svg" alt="" width="22" height="22"></a><span>© 2026 cubarc</span><span class="sp"></span>
+  <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:support@cubarc.at">Kontakt</a>
 </div></footer>
 <script>
 const reduce = false;
@@ -181,7 +183,9 @@ function Synapsen(canvas, opt) {
 
 const SMALL = innerWidth < 700;
 const syn = Synapsen(document.getElementById('syn-bg'), { n: SMALL ? 34 : 64, reach: SMALL ? 105 : 150, alpha: 0.32, seed: 11 });
-function synTick(t) { syn.frame(t); requestAnimationFrame(synTick); }
+const FORMS = [[0, 1e9]];
+let fi = 0, fNext = 0;
+function synTick(t) { if (t > fNext) { syn.setForm(FORMS[fi][0]); fNext = t + FORMS[fi][1]; fi = fi + 1 < FORMS.length ? fi + 1 : 1; } syn.frame(t); requestAnimationFrame(synTick); }
 addEventListener('resize', () => syn.size());
 syn.size(); requestAnimationFrame(synTick);
 </script>
