@@ -1,6 +1,9 @@
-# cubarc – Landingpage
+# cubarc – Website
 
-Statische Seite (index.html + img/), ohne Build-Schritt. Wird über Netlify veröffentlicht.
-Schrift Geist ist eingebettet, die Seite lädt nichts von fremden Servern.
+Statische Seiten ohne Build-Schritt, veröffentlicht über Cloudflare Pages (cubarc.at).
 
-Veröffentlichung: Jeder Push auf main geht über Netlify automatisch online.
+- `/` – „Bald verfügbar“-Seite (öffentlich)
+- `/impressum`, `/datenschutz` – Rechtstexte
+- `/vorschau/` – vollständige Landingpage, für Suchmaschinen gesperrt (noindex, robots.txt)
+
+Schrift Geist liegt unter `assets/`, die Seiten laden nichts von fremden Servern.

@@ -1,9 +1,25 @@
-# Seite bei jedem Aufruf frisch prüfen, damit nach einem Update nie eine alte Fassung erscheint
+# Seiten bei jedem Aufruf frisch prüfen, damit nach einem Update nie eine alte Fassung erscheint
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
 /
   Cache-Control: public, max-age=0, must-revalidate
-/index.html
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+/impressum
+  Cache-Control: public, max-age=0, must-revalidate
+/datenschutz
   Cache-Control: public, max-age=0, must-revalidate
 
-# Bilder: eine Stunde zwischenspeichern
+# Vorschau der Landingpage: nicht in Suchmaschinen
+/vorschau/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Bilder und Schrift: eine Stunde zwischenspeichern
 /img/*
   Cache-Control: public, max-age=3600
+/vorschau/img/*
+  Cache-Control: public, max-age=3600
+/assets/*
+  Cache-Control: public, max-age=86400

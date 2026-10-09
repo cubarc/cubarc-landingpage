@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>cubarc – Vom Grundstück zur Machbarkeit · bald verfügbar</title>
-<meta name="description" content="cubarc prüft Grundstücke für Bauträger: Bebaubarkeit nach dem Baurecht aller neun Bundesländer, Baukörper, Wohnungen, Marge und Exposé – in Minuten. Bald verfügbar.">
+<title>Datenschutz – cubarc</title>
+<meta name="description" content="Datenschutzerklärung von cubarc: keine Cookies, kein Tracking, Auslieferung über Cloudflare.">
 <meta name="robots" content="index, follow">
-<link rel="canonical" href="https://cubarc.at/">
+<link rel="canonical" href="https://cubarc.at/datenschutz">
 <meta name="theme-color" content="#0e0f12">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
@@ -49,42 +49,52 @@ footer .sp { flex: 1; }
 .btn { transition: transform .2s ease, filter .2s ease; }
 
 
-main { flex: 1; display: flex; align-items: center; }
-.hero { padding: clamp(40px, 8vh, 96px) 0 clamp(56px, 10vh, 120px); max-width: 760px; }
-.soon { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong);
-  background: rgba(40,32,24,.75); color: var(--accent); font-size: 13px; font-weight: 600; letter-spacing: .02em; }
-.soon i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(240,191,124,.6); animation: puls 2.2s ease-out infinite; }
-@keyframes puls { 0% { box-shadow: 0 0 0 0 rgba(240,191,124,.55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(240,191,124,0); } }
-h1 { margin: 26px 0 0; font-size: clamp(38px, 6.4vw, 84px); line-height: .98; letter-spacing: -0.05em; font-weight: 300; }
-h1 b { font-weight: 700; white-space: nowrap; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.lead { margin: 26px 0 0; font-size: clamp(16px, 1.5vw, 19px); line-height: 1.6; color: var(--muted); max-width: 600px; }
-.lead strong { color: var(--ink); font-weight: 500; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 34px; }
-.actions small { font-size: 13.5px; color: var(--muted); max-width: 300px; line-height: 1.45; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 40px; }
-.chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--panel); font-size: 13px; color: var(--ink); }
-.chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
-.rise { opacity: 0; transform: translateY(14px); animation: rise .8s cubic-bezier(.2,.7,.2,1) forwards; }
-.rise:nth-child(2) { animation-delay: .08s; } .rise:nth-child(3) { animation-delay: .16s; } .rise:nth-child(4) { animation-delay: .24s; } .rise:nth-child(5) { animation-delay: .32s; }
-@keyframes rise { to { opacity: 1; transform: none; } }
-@media (max-width: 560px) { h1 { font-size: min(44px, 11.4vw); } .btn { width: 100%; } .actions small { max-width: none; } }
+main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
+.doc { max-width: 760px; }
+.doc h1 { margin: 0; font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -0.04em; font-weight: 300; }
+.doc h1 b { font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.doc .sub { margin: 12px 0 0; color: var(--muted); font-size: 15px; }
+.doc h2 { margin: 40px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+.doc p, .doc li { font-size: 15.5px; line-height: 1.7; color: #d6d5d1; }
+.doc p { margin: 10px 0 0; }
+.doc ul { margin: 10px 0 0; padding-left: 20px; }
+.doc a { color: var(--accent); text-decoration: none; } .doc a:hover { text-decoration: underline; }
+.card { margin-top: 28px; padding: clamp(18px, 3vw, 28px); border-radius: 22px; background: var(--panel); border: 1px solid var(--line);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.card dl { margin: 0; display: grid; grid-template-columns: minmax(130px, 210px) 1fr; gap: 10px 20px; font-size: 15.5px; }
+.card dt { color: var(--muted); } .card dd { margin: 0; }
+@media (max-width: 560px) { .card dl { grid-template-columns: 1fr; gap: 2px; } .card dd { margin-bottom: 10px; } }
 
 </style>
 </head>
 <body>
 <canvas id="syn-bg" aria-hidden="true"></canvas>
 <header><div class="wrap"><a href="/" aria-label="cubarc – zur Startseite"><img src="/img/cubarc_logo_dunkel.svg" alt="cubarc" width="92" height="25"></a></div></header>
-<main id="inhalt"><div class="wrap"><div class="hero">
-  <div class="soon rise"><i></i>Bald verfügbar</div>
-  <h1 class="rise">Vom Grundstück<br><b>zur Machbarkeit.</b></h1>
-  <p class="lead rise">cubarc prüft Grundstücke für Bauträger: Bebaubarkeit nach dem Baurecht aller neun Bundesländer, Baukörper, Wohnungen, Marge und Exposé – <strong>in Minuten statt Wochen.</strong></p>
-  <div class="actions rise">
-    <a class="btn cta" href="mailto:office@archivisu.at?subject=cubarc%20%E2%80%93%20bitte%20zum%20Start%20benachrichtigen&body=Bitte%20informieren%20Sie%20mich%2C%20sobald%20cubarc%20verf%C3%BCgbar%20ist.%0A%0AName%3A%0AUnternehmen%3A">Zum Start benachrichtigen</a>
-    <small>Öffnet Ihr E-Mail-Programm. Wir melden uns einmalig, sobald cubarc startet.</small>
-  </div>
-  <div class="chips rise"><span class="chip"><i></i>Österreichweit, alle 9 Bundesländer</span><span class="chip"><i></i>Exposé auf Knopfdruck</span><span class="chip"><i></i>2D-Pläne</span></div>
-</div></div></main>
+<main id="inhalt"><div class="wrap"><article class="doc">
+  <h1><b>Datenschutz</b>erklärung</h1>
+  <p class="sub">Stand: Oktober 2026</p>
+
+  <h2>1. Verantwortlicher</h2>
+  <p>Ozan Özcelik, Serlesweg 14/2, 6165 Telfes im Stubai, Österreich<br>E-Mail: <a href="mailto:office@archivisu.at">office@archivisu.at</a> · Telefon: +43 676 700 91 64</p>
+
+  <h2>2. Das Wichtigste in Kürze</h2>
+  <ul>
+    <li>Diese Website setzt selbst keine Cookies und verwendet keine Analyse-, Tracking- oder Werbedienste.</li>
+    <li>Schriften und Grafiken liegen auf unserem eigenen Webspace. Es werden keine Inhalte von Google oder anderen Drittanbietern nachgeladen.</li>
+    <li>Personenbezogene Daten entstehen nur beim technisch nötigen Abruf der Website und wenn Sie uns eine E-Mail schreiben.</li>
+  </ul>
+
+  <h2>3. Bereitstellung der Website (Cloudflare)</h2>
+  <p>Die Website wird über Cloudflare Pages ausgeliefert. Anbieter ist Cloudflare, Inc., 101 Townsend St., San Francisco, CA 94107, USA. Beim Aufruf verarbeitet Cloudflare technisch notwendige Daten, insbesondere Ihre IP-Adresse, Datum und Uhrzeit, die aufgerufene Seite, Browser und Betriebssystem sowie die zuvor besuchte Seite. Das dient der sicheren und schnellen Auslieferung und dem Schutz vor Angriffen. Zu diesem Zweck kann Cloudflare ein technisch notwendiges Cookie zur Abwehr automatisierter Zugriffe setzen.</p>
+  <p>Rechtsgrundlage ist unser berechtigtes Interesse an einer sicheren und funktionsfähigen Website (Art. 6 Abs. 1 lit. f DSGVO). Cloudflare ist unter dem EU-US Data Privacy Framework zertifiziert; die Übermittlung in die USA stützt sich auf den Angemessenheitsbeschluss der EU-Kommission (Art. 45 DSGVO). Mit Cloudflare besteht ein Vertrag zur Auftragsverarbeitung. Weitere Informationen: <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">cloudflare.com/privacypolicy</a>.</p>
+
+  <h2>4. Kontakt per E-Mail und Benachrichtigung zum Start</h2>
+  <p>Wenn Sie uns eine E-Mail senden, zum Beispiel über „Zum Start benachrichtigen“, verarbeiten wir Ihre E-Mail-Adresse und die Angaben aus Ihrer Nachricht, um Ihre Anfrage zu beantworten bzw. Sie einmalig über den Start von cubarc zu informieren. Rechtsgrundlage ist Ihre Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), bei Anfragen zu einem Vertrag Art. 6 Abs. 1 lit. b DSGVO. Sie können die Einwilligung jederzeit per E-Mail widerrufen. Wir löschen die Daten, sobald der Zweck erfüllt ist bzw. nach Ihrem Widerruf, soweit keine gesetzlichen Aufbewahrungspflichten bestehen. Eine Weitergabe an Dritte erfolgt nicht; unser E-Mail-Anbieter verarbeitet die Nachrichten ausschließlich in unserem Auftrag.</p>
+
+  <h2>5. Ihre Rechte</h2>
+  <p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15–21 DSGVO) sowie das Recht, eine erteilte Einwilligung jederzeit zu widerrufen. Wenden Sie sich dazu an <a href="mailto:office@archivisu.at">office@archivisu.at</a>.</p>
+  <p>Wenn Sie meinen, dass die Verarbeitung Ihrer Daten gegen das Datenschutzrecht verstößt, können Sie sich bei der Aufsichtsbehörde beschweren. In Österreich ist das die Datenschutzbehörde, Barichgasse 40–42, 1030 Wien, <a href="https://www.dsb.gv.at" rel="noopener">www.dsb.gv.at</a>.</p>
+</article></div></main>
 <footer><div class="wrap">
   <span>© 2026 cubarc</span><span class="sp"></span>
   <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:office@archivisu.at">Kontakt</a>
@@ -169,7 +179,7 @@ function Synapsen(canvas, opt) {
 
 
 const SMALL = innerWidth < 700;
-const syn = Synapsen(document.getElementById('syn-bg'), { n: SMALL ? 34 : 64, reach: SMALL ? 105 : 150, alpha: 0.5, seed: 11 });
+const syn = Synapsen(document.getElementById('syn-bg'), { n: SMALL ? 34 : 64, reach: SMALL ? 105 : 150, alpha: 0.32, seed: 11 });
 function synTick(t) { syn.frame(t); requestAnimationFrame(synTick); }
 addEventListener('resize', () => syn.size());
 syn.size(); requestAnimationFrame(synTick);

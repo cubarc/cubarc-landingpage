@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /vorschau/
+
+Sitemap: https://cubarc.at/sitemap.xml
