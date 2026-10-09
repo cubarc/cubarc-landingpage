@@ -20,6 +20,14 @@
   X-Robots-Tag: noindex, nofollow
   Cache-Control: public, max-age=0, must-revalidate
 
+# App unter /app/: nicht in Suchmaschinen, immer die neueste Fassung
+/app/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+/app
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+
 # Bilder und Schrift: eine Stunde zwischenspeichern
 /img/*
   Cache-Control: public, max-age=3600
