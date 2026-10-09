@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="de-AT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zum Start benachrichtigen – cubarc</title>
+<meta name="description" content="Lassen Sie sich benachrichtigen, sobald cubarc startet: die Bebauungsstudie für Bauträger, vom Grundstück zur Machbarkeit.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://cubarc.at/benachrichtigen">
+<meta name="theme-color" content="#0e0f12">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon_180.png">
+<link rel="preload" href="/assets/geist.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family: 'Geist'; src: url('/assets/geist.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+:root {
+  --bg: #0e0f12; --panel: rgba(23,24,29,.72); --panel-solid: #17181d;
+  --ink: #f2f1ee; --muted: #9b9aa3; --line: rgba(255,255,255,.09); --line-strong: rgba(240,190,130,.45);
+  --accent: #f0bf7c; --accent-soft: rgba(240,191,124,.13);
+  --grad: linear-gradient(135deg,#f7d49a 0%,#f0b777 45%,#e98f6c 100%);
+  --good: #7ed9a3; --pad: clamp(16px, 4vw, 40px);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+@media (prefers-color-scheme: light) { :root { color-scheme: dark; } }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body { margin: 0; font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--ink);
+  -webkit-font-smoothing: antialiased; line-height: 1.5; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 var(--pad); }
+#syn-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+body::before { content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(60% 55% at 78% 30%, rgba(240,183,119,.10), transparent 70%), radial-gradient(70% 70% at 50% 50%, transparent 40%, rgba(14,15,18,.7) 100%); }
+header, main, footer { position: relative; z-index: 1; }
+header .wrap { height: 72px; display: flex; align-items: center; }
+header img { height: 23px; width: auto; display: block; }
+footer { margin-top: auto; }
+footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; padding-top: 22px; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
+footer a { text-decoration: none; } footer a:hover { color: var(--ink); }
+footer .sp { flex: 1; }
+@media (max-width: 560px) { footer .wrap { justify-content: center; text-align: center; } footer .sp { flex-basis: 100%; height: 0; } }
+footer .fav { display: inline-flex; margin-right: -12px; } footer .fav img { display: block; width: 22px; height: 22px; border-radius: 6px; opacity: .9; } footer .fav:hover img { opacity: 1; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 24px; border-radius: 999px; font: inherit;
+  font-size: 15.5px; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--line-strong); color: var(--ink); background: var(--panel); }
+.btn.cta { background: var(--grad); color: #2a1a0c; border-color: transparent; box-shadow: 0 10px 40px rgba(240,183,119,.25); }
+.btn.cta:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.btn { transition: transform .2s ease, filter .2s ease; }
+
+
+main { flex: 1; padding: clamp(24px, 5vh, 64px) 0 clamp(48px, 8vh, 96px); }
+.formwrap { max-width: 680px; margin: 0 auto; }
+.soon { display: inline-flex; align-items: center; gap: 10px; height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: rgba(40,32,24,.6); color: var(--accent); font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.soon i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+h1 { margin: 18px 0 0; font-size: clamp(32px, 4.4vw, 48px); line-height: 1.06; letter-spacing: -0.04em; font-weight: 300; text-wrap: balance; }
+h1 b { font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lead { margin: 16px 0 0; font-size: clamp(16px, 1.4vw, 18px); line-height: 1.6; color: #cfcdc8; max-width: 34em; }
+.card { margin-top: 30px; padding: clamp(20px, 3.4vw, 34px); border-radius: 24px; background: var(--panel); border: 1px solid var(--line);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+form { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 18px; }
+.f { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.f.voll { grid-column: 1 / -1; }
+label, .lbl { font-size: 13.5px; font-weight: 600; color: #dcdad5; }
+label small { font-weight: 400; color: var(--muted); }
+input[type=text], input[type=email], select, textarea { font: inherit; font-size: 16px; color: var(--ink); background: rgba(10,11,14,.6);
+  border: 1px solid rgba(255,255,255,.13); border-radius: 14px; padding: 0 14px; height: 50px; width: 100%; transition: border-color .2s, box-shadow .2s; }
+textarea { height: auto; min-height: 104px; padding: 12px 14px; resize: vertical; line-height: 1.5; }
+select { appearance: none; -webkit-appearance: none; padding-right: 40px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, #f0bf7c 50%), linear-gradient(135deg, #f0bf7c 50%, transparent 50%);
+  background-position: calc(100% - 22px) 22px, calc(100% - 16px) 22px; background-size: 6px 6px; background-repeat: no-repeat; }
+select:invalid { color: var(--muted); }
+option { background: #17181d; color: var(--ink); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: rgba(240,191,124,.7); box-shadow: 0 0 0 4px rgba(240,191,124,.14); }
+.f.err input, .f.err select { border-color: #e98f6c; }
+.zust { grid-column: 1 / -1; display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; font-size: 14px; line-height: 1.55; color: #cfcdc8; font-weight: 400; cursor: pointer; }
+.zust input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: #f0b777; cursor: pointer; }
+.zust a { color: var(--accent); }
+.zust.err { color: #f2b59a; }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.senden { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 4px; }
+.senden .btn { min-width: 240px; }
+.senden .btn[disabled] { opacity: .65; cursor: progress; transform: none; }
+.senden p { margin: 0; font-size: 13px; color: var(--muted); }
+#meldung { grid-column: 1 / -1; margin: 0; padding: 12px 16px; border-radius: 14px; font-size: 14.5px; background: rgba(233,143,108,.12); border: 1px solid rgba(233,143,108,.4); color: #f6d2c2; }
+#meldung.info { background: rgba(240,191,124,.10); border-color: rgba(240,191,124,.35); color: #f3dcbb; }
+.danke { display: none; text-align: center; padding: clamp(18px, 4vw, 36px) 0; }
+.danke .haken { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--grad); box-shadow: 0 10px 40px rgba(240,183,119,.3); }
+.danke h2 { margin: 20px 0 0; font-size: clamp(24px, 3vw, 30px); font-weight: 600; letter-spacing: -0.02em; }
+.danke p { margin: 10px auto 0; max-width: 30em; color: #cfcdc8; font-size: 16px; line-height: 1.6; }
+.danke .btn { margin-top: 26px; }
+.ok form { display: none; } .ok .danke, #danke:target .danke { display: block; } #danke:target form { display: none; }
+.danke .haken svg path { stroke-dasharray: 30; stroke-dashoffset: 30; animation: zug .6s .15s ease forwards; }
+@keyframes zug { to { stroke-dashoffset: 0; } }
+.vorteile { margin: 26px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--muted); }
+.vorteile li { display: flex; align-items: center; gap: 8px; } .vorteile li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 600px) { form { grid-template-columns: 1fr; } .senden .btn { width: 100%; min-width: 0; } }
+
+</style>
+</head>
+<body>
+<!--email_off-->
+<canvas id="syn-bg" aria-hidden="true"></canvas>
+<header><div class="wrap"><a href="/" aria-label="cubarc – zur Startseite"><img src="/img/cubarc_logo_dunkel.svg" alt="cubarc" width="92" height="25"></a></div></header>
+<main id="inhalt"><div class="wrap"><div class="formwrap" id="danke">
+  <div class="soon"><i></i>Bald verfügbar</div>
+  <h1>Zum Start <b>benachrichtigen</b></h1>
+  <p class="lead">Schön, dass Sie cubarc kennenlernen möchten. Hinterlassen Sie uns Ihre Kontaktdaten. Sobald cubarc startet, melden wir uns persönlich bei Ihnen.</p>
+  <ul class="vorteile"><li>Einmalige Nachricht zum Start</li><li>Kein Newsletter</li><li>Jederzeit widerrufbar</li></ul>
+  <div class="card">
+    <form id="anmeldung" action="/api/anmeldung" method="post" novalidate>
+      <div class="f"><label for="name">Name</label><input id="name" name="name" type="text" autocomplete="name" required maxlength="120"></div>
+      <div class="f"><label for="email">E-Mail</label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254" inputmode="email"></div>
+      <div class="f voll"><label for="firma">Unternehmen <small>(optional)</small></label><input id="firma" name="firma" type="text" autocomplete="organization" maxlength="160"></div>
+      <div class="f"><label for="land">Bundesland <small>(optional)</small></label><select id="land" name="land"><option value="">Bitte wählen</option><option>Burgenland</option><option>Kärnten</option><option>Niederösterreich</option><option>Oberösterreich</option><option>Salzburg</option><option>Steiermark</option><option>Tirol</option><option>Vorarlberg</option><option>Wien</option><option>Deutschland</option><option>Schweiz</option><option>Anderes Land</option></select></div>
+      <div class="f"><label for="taetig">Tätig in <small>(optional)</small></label><select id="taetig" name="taetig"><option value="">Bitte wählen</option><option>Bauträgerunternehmen</option><option>Planungs- oder Architekturbüro</option><option>Projektentwicklung</option><option>Immobilienvermittlung</option><option>Grundstückseigentum</option><option>Sonstiges</option></select></div>
+      <div class="f voll"><label for="nachricht">Was interessiert Sie besonders? <small>(optional)</small></label><textarea id="nachricht" name="nachricht" maxlength="2000" rows="3"></textarea></div>
+      <div class="hp" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+      <input type="hidden" name="t" id="t" value="">
+      <label class="zust" id="zust-l"><input id="zustimmung" name="zustimmung" type="checkbox" value="ja" required><span>Ich bin einverstanden, dass cubarc meine Angaben verarbeitet, um mich einmalig über den Start zu informieren. Die Einwilligung kann ich jederzeit per E-Mail an support@cubarc.at widerrufen. Details in der <a href="/datenschutz">Datenschutzerklärung</a>.</span></label>
+      <p id="meldung" role="alert" hidden></p>
+      <div class="senden"><button class="btn cta" type="submit" id="senden">Anmeldung senden</button><p>Ihre Angaben gehen direkt an unser Team.</p></div>
+    </form>
+    <div class="danke" role="status">
+      <div class="haken"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="#2a1a0c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h2 id="danke-titel">Danke, Ihre Anmeldung ist angekommen.</h2>
+      <p>Wir freuen uns über Ihr Interesse. Sobald cubarc startet, hören Sie von uns, einmalig und persönlich.</p>
+      <a class="btn" href="/">Zurück zur Startseite</a>
+    </div>
+  </div>
+</div></div></main>
+<script>
+(() => {
+  const f = document.getElementById('anmeldung'), box = document.getElementById('danke'), m = document.getElementById('meldung'), b = document.getElementById('senden');
+  document.getElementById('t').value = Date.now();
+  if (location.hash === '#fehler') zeige('Die Anmeldung konnte nicht gesendet werden. Bitte versuchen Sie es noch einmal oder schreiben Sie an support@cubarc.at.');
+  let bereit = null;
+  fetch('/api/anmeldung', { cache: 'no-store' }).then(r => r.ok ? r.json() : { bereit: false }).then(j => { bereit = !!j.bereit; }).catch(() => { bereit = false; });
+  function zeige(t, info) { m.textContent = t; m.className = info ? 'info' : ''; m.hidden = false; }
+  function markiere(id, an) { const el = document.getElementById(id); const w = id === 'zustimmung' ? document.getElementById('zust-l') : el.closest('.f'); w.classList.toggle('err', an); }
+  function pruefe(d) {
+    let erst = null;
+    const fehler = [['name', d.name.length < 2, 'Bitte geben Sie Ihren Namen an.'],
+                    ['email', !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email), 'Bitte prüfen Sie Ihre E-Mail-Adresse.'],
+                    ['zustimmung', !d.zustimmung, 'Bitte bestätigen Sie die Einwilligung.']];
+    for (const [id, falsch, text] of fehler) { markiere(id, falsch); if (falsch && !erst) erst = [id, text]; }
+    return erst;
+  }
+  function mailFallback(d) {
+    const z = [['Name', d.name], ['E-Mail', d.email], ['Unternehmen', d.firma], ['Bundesland', d.land], ['Tätig in', d.taetig]].filter(x => x[1]).map(x => x[0] + ': ' + x[1]);
+    const text = 'Hallo cubarc-Team,\n\nbitte benachrichtigen Sie mich, sobald cubarc startet.\n\n' + z.join('\n') + (d.nachricht ? '\n\nWas mich besonders interessiert:\n' + d.nachricht : '') + '\n\nIch bin einverstanden, dass Sie meine Angaben dafür verarbeiten.\n\nFreundliche Grüße\n' + d.name;
+    location.href = 'mailto:support@cubarc.at?subject=' + encodeURIComponent('Startbenachrichtigung: ' + d.name) + '&body=' + encodeURIComponent(text);
+    zeige('Ihr E-Mail-Programm öffnet sich mit Ihren Angaben. Bitte tippen Sie dort nur noch auf „Senden“.', true);
+  }
+  f.addEventListener('submit', async e => {
+    e.preventDefault(); m.hidden = true;
+    const fd = new FormData(f);
+    const d = { name: (fd.get('name') || '').trim(), email: (fd.get('email') || '').trim(), firma: (fd.get('firma') || '').trim(), land: fd.get('land') || '',
+               taetig: fd.get('taetig') || '', nachricht: (fd.get('nachricht') || '').trim(), zustimmung: !!fd.get('zustimmung'), website: fd.get('website') || '', t: fd.get('t') };
+    const err = pruefe(d);
+    if (err) { zeige(err[1]); document.getElementById(err[0]).focus(); return; }
+    if (bereit === false) { mailFallback(d); return; }
+    b.disabled = true; b.textContent = 'Wird gesendet …';
+    try {
+      const r = await fetch('/api/anmeldung', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        document.getElementById('danke-titel').textContent = 'Danke, ' + d.name.split(' ')[0] + '. Ihre Anmeldung ist angekommen.';
+        box.classList.add('ok'); box.scrollIntoView({ behavior: 'smooth', block: 'start' }); return;
+      }
+      if (j.bereit === false) { mailFallback(d); }
+      else { if (j.feld) markiere(j.feld, true); zeige((j.fehler || 'Die Anmeldung konnte nicht gesendet werden.') + (r.status >= 500 ? ' Sie erreichen uns auch direkt unter support@cubarc.at.' : '')); }
+    } catch (x) { zeige('Keine Verbindung. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es noch einmal.'); }
+    b.disabled = false; b.textContent = 'Anmeldung senden';
+  });
+})();
+</script>
+<footer><div class="wrap">
+  <a class="fav" href="/" aria-label="cubarc – zur Startseite"><img src="/img/favicon.svg" alt="" width="22" height="22"></a><span>© 2026 cubarc</span><span class="sp"></span>
+  <a href="/impressum">Impressum</a><a href="/datenschutz">Datenschutz</a><a href="mailto:support@cubarc.at">Kontakt</a>
+</div></footer>
+<script>
+const reduce = false;
+function Synapsen(canvas, opt) {
+  const ctx = canvas.getContext('2d');
+  const o = Object.assign({ n: 64, reach: 130, line: '240,183,119', dot: '247,212,154', alpha: 0.55, pulses: 7 }, opt);
+  let w = 0, h = 0, dpr = 1, form = 0, formGoal = 0, on = true;
+  const rnd = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(o.seed || 7);
+  const N = o.n;
+  // Anordnungen in 0…1-Koordinaten
+  const F = [[], [], [], [], []];
+  const cols = Math.ceil(Math.sqrt(N * 1.6)), rows = Math.ceil(N / cols);
+  for (let i = 0; i < N; i++) {
+    F[0].push([rnd(), rnd()]);                                                     // gestreut
+    F[1].push([0.08 + 0.84 * ((i * 0.618) % 1), (i / N + rnd() * 0.15) % 1]);      // steigend
+    F[2].push([(0.5 + i % cols) / cols + (rnd() - .5) * .03, (0.5 + Math.floor(i / cols)) / rows + (rnd() - .5) * .03]); // Raster
+    const a = i / N * Math.PI * 2, r = 0.28 + (i % 3) * 0.07;
+    F[3].push([0.5 + Math.cos(a) * r * 0.75, 0.5 + Math.sin(a) * r]);              // Ring
+    const b = rnd() * Math.PI * 2, q = 0.06 + rnd() * 0.18;
+    F[4].push([0.5 + Math.cos(b) * q, 0.5 + Math.sin(b) * q]);                     // sammelnd
+  }
+  const ph = Array.from({ length: N }, () => [rnd() * 6.3, rnd() * 6.3, 0.6 + rnd() * 0.8]);
+  const pulses = Array.from({ length: o.pulses }, () => ({ a: 0, b: 1, t: rnd(), v: 0.0025 + rnd() * 0.003 }));
+  const pos = Array.from({ length: N }, () => [0, 0]);
+  function size() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = canvas.getBoundingClientRect();
+    if (Math.abs(r.width - w) < 2 && Math.abs(r.height - h) < 2 && w) return;
+    w = r.width; h = r.height; canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  function frame(time) {
+    if (!on || !w) return;
+    form += (formGoal - form) * 0.035;
+    const fa = Math.floor(form), fb = Math.min(4, fa + 1), t = form - fa;
+    const tt = t * t * (3 - 2 * t);
+    const drift = (reduce ? 0 : 1) * Math.min(w, h) * 0.025;
+    const rise = (reduce ? 0 : time * 0.00002) % 1;
+    for (let i = 0; i < N; i++) {
+      const A = F[fa][i], B = F[fb][i];
+      let x = A[0] + (B[0] - A[0]) * tt, y = A[1] + (B[1] - A[1]) * tt;
+      if (fa === 1 || fb === 1) { const k = fa === 1 ? 1 - tt : tt; y = (y - rise * k + 1) % 1; }
+      const p = ph[i];
+      pos[i][0] = x * w + Math.sin(time * 0.00021 * p[2] + p[0]) * drift;
+      pos[i][1] = y * h + Math.cos(time * 0.00017 * p[2] + p[1]) * drift;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const R = o.reach, R2 = R * R;
+    ctx.lineWidth = 1;
+    const near = [];
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      const dx = pos[i][0] - pos[j][0], dy = pos[i][1] - pos[j][1], d2 = dx * dx + dy * dy;
+      if (d2 > R2) continue;
+      const a = (1 - Math.sqrt(d2) / R) * 0.42 * o.alpha;
+      ctx.strokeStyle = `rgba(${o.line},${a.toFixed(3)})`;
+      ctx.beginPath(); ctx.moveTo(pos[i][0], pos[i][1]); ctx.lineTo(pos[j][0], pos[j][1]); ctx.stroke();
+      if (a > 0.08 * o.alpha) near.push([i, j]);
+    }
+    for (let i = 0; i < N; i++) {
+      const big = i % 9 === 0;
+      ctx.fillStyle = `rgba(${o.dot},${(big ? 0.75 : 0.45) * o.alpha})`;
+      ctx.beginPath(); ctx.arc(pos[i][0], pos[i][1], big ? 2.1 : 1.3, 0, 7); ctx.fill();
+    }
+    // Impulse wandern entlang der Verbindungen
+    if (!reduce && near.length) pulses.forEach((pu, k) => {
+      pu.t += pu.v;
+      if (pu.t >= 1 || pu.b >= N) { const e = near[(k * 7 + Math.floor(time / 900)) % near.length]; pu.a = e[0]; pu.b = e[1]; pu.t = 0; }
+      const A = pos[pu.a], B = pos[pu.b];
+      const x = A[0] + (B[0] - A[0]) * pu.t, y = A[1] + (B[1] - A[1]) * pu.t;
+      const fade = Math.sin(pu.t * Math.PI);
+      ctx.fillStyle = `rgba(${o.dot},${(0.9 * fade * o.alpha).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(${o.line},${(0.18 * fade * o.alpha).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+    });
+  }
+  return { size, frame, setForm: f => { formGoal = f; }, setOn: v => { on = v; }, get canvas() { return canvas; } };
+}
+
+
+const SMALL = innerWidth < 700;
+const syn = Synapsen(document.getElementById('syn-bg'), { n: SMALL ? 34 : 64, reach: SMALL ? 105 : 150, alpha: 0.32, seed: 11 });
+const FORMS = [[0, 1e9]];
+let fi = 0, fNext = 0;
+function synTick(t) { if (t > fNext) { syn.setForm(FORMS[fi][0]); fNext = t + FORMS[fi][1]; fi = fi + 1 < FORMS.length ? fi + 1 : 1; } syn.frame(t); requestAnimationFrame(synTick); }
+addEventListener('resize', () => syn.size());
+syn.size(); requestAnimationFrame(synTick);
+</script>
+<!--email_on-->
+</body>
+</html>

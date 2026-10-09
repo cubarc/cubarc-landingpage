@@ -10,19 +10,15 @@
   Cache-Control: public, max-age=0, must-revalidate
 /datenschutz
   Cache-Control: public, max-age=0, must-revalidate
+/benachrichtigen
+  Cache-Control: public, max-age=0, must-revalidate
+/functions/*
+  X-Robots-Tag: noindex
 
 # Vorschau der Landingpage: nicht in Suchmaschinen
 /vorschau/*
   X-Robots-Tag: noindex, nofollow
   Cache-Control: public, max-age=0, must-revalidate
-
-# App unter /app/: nicht in Suchmaschinen, immer die neueste Fassung
-/app/*
-  X-Robots-Tag: noindex, nofollow
-  Cache-Control: no-store
-/app
-  X-Robots-Tag: noindex, nofollow
-  Cache-Control: no-store
 
 # Bilder und Schrift: eine Stunde zwischenspeichern
 /img/*
