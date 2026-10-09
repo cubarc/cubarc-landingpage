@@ -4195,9 +4195,9 @@ window.KUBATUR_ABO_SERVER = 'probe';
   </div>
       <button class="side-btn" data-menu="menu-baukoerper" title="Baukörper"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17"/><path d="M5.5 20.5V10l5-2.5 5 2.5v10.5"/><path d="M15.5 20.5v-7l3.5-1.5v8.5"/><path d="M8.5 13h4M8.5 16.5h4" opacity=".5"/></svg> <span class="side-btn-label"><span class="side-btn-step">2</span>Baukörper</span></button>
   <div class="menu-panel" id="menu-baukoerper">
-    <div class="mp-sec first">Form</div>
+    <div class="mp-sec first">Typologie</div>
     <div class="group">
-      <label for="haus-typ">Projekttyp (Erschließung)</label>
+      <label for="haus-typ">Typologie (Erschließung)</label>
       <select id="haus-typ" style="width:100%;">
         <option value="auto" selected>Automatisch — aus Größe und Geschoszahl</option>
         <option value="wohnanlage">Wohnanlage — gemeinsames Stiegenhaus je Geschoss</option>
@@ -15093,6 +15093,44 @@ function buildRoomHint(fp, y, color, rng) {
 
 const ZONE_LINE_COLOR = 0x6a6a6e;
 
+// Zonierung im 3D: die Zonen als liegende Farbflächen auf der Geschoßdecke, in
+// denselben Tönen wie im 2D-Plan. Sie liegen bewusst HINTER allem anderen — kein
+// Tiefenschreiben, niedrige renderOrder —, damit Grundrisslinien, Bemaßung und
+// Beschriftungen darüber lesbar bleiben (Vorgabe Ozan: Schraffur immer im Hintergrund).
+function zonFarbe3D(txt) {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s]+([\d.]+))?\s*\)/.exec(txt || '');
+  if (!m) return { c: new THREE.Color(0x8a8a90), a: 0.5 };
+  return { c: new THREE.Color(+m[1] / 255, +m[2] / 255, +m[3] / 255), a: m[4] != null ? +m[4] : 1 };
+}
+function buildZonenFlaechen(zonen, y, dunkel) {
+  if (!zonen || !zonen.length || typeof THREE === 'undefined') return null;
+  const g = new THREE.Group();
+  zonen.forEach(z => {
+    if (!z.fp || z.fp.length < 3) return;
+    let sg = null;
+    try { sg = new THREE.ShapeGeometry(fpShape(z.fp, false)); } catch (e) { return; }
+    // ShapeGeometry liegt in XY; die Punkte wandern direkt in die XZ-Ebene (wie buildVizCap)
+    const pos = sg.attributes.position, idx = sg.index, arr = [];
+    const addV = i => arr.push(pos.getX(i), y, pos.getY(i));
+    if (idx) for (let i = 0; i < idx.count; i++) addV(idx.getX(i)); else for (let i = 0; i < pos.count; i++) addV(i);
+    sg.dispose();
+    if (arr.length < 9) return;
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    bg.computeVertexNormals();
+    const f = zonFarbe3D(zonFarbe(z.nr || 0, z.art === 'erschliessung', dunkel));
+    const mesh = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({
+      color: f.c, transparent: true, opacity: Math.min(0.95, f.a + 0.22),
+      side: THREE.DoubleSide, depthWrite: false
+    }));
+    mesh.renderOrder = 0;
+    g.add(mesh);
+    // feine Zonengrenze, damit benachbarte Töne nicht verschwimmen
+    const l = buildZoneLine(z.fp, y + 0.006, ZONE_LINE_COLOR);
+    if (l) { l.renderOrder = 1; g.add(l); }
+  });
+  return g.children.length ? g : null;
+}
 function buildZoneLine(fp, y, color) {
   if (fp.length < 3) return null;
   const pts = fp.map(p => new THREE.Vector3(p[0], y, p[1]));
@@ -17219,6 +17257,7 @@ const ZON_GANG = 1.25;                      // Gangbreite
 const ZON_STIEGE_B = 5.6, ZON_STIEGE_T = 4.6;   // Stiegenhaus mit Lauf, Podest und Lift
 
 function zonFarbe(i, erschliessung, dunkel) {
+  // Gilt für Wohnungen UND Häuser einer Reihenhausanlage — beides sind Zonen.
   // Die Zonen sind das Bild — sie werden kräftig gefüllt, nicht angedeutet. Die
   // Erschließung bleibt neutral grau, damit sie sich von den Wohnungen absetzt;
   // die Wohnungen bekommen eine Reihe gedeckter Töne, die auch nebeneinander
@@ -17232,6 +17271,26 @@ function zonFarbe(i, erschliessung, dunkel) {
   return T[((i % T.length) + T.length) % T.length];
 }
 
+// Beschriftungspunkt einer Zone: der Punkt mit dem größten Abstand zum Rand.
+// Der Schwerpunkt liegt bei L- und T-förmigen Flächen — und so sieht die
+// Erschließung aus, sobald ein Gang am Stiegenhaus hängt — oft im Einschnitt,
+// und die Schrift ragt dann in die Nachbarzone hinein.
+function zonLabelPunkt(fp) {
+  if (!fp || fp.length < 3) return [0, 0];
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  fp.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+  const drin = q => fpContains(fp, q) && !(fp.holes || []).some(h => fpContains(h, q));
+  const c0 = polygonCentroid(fp);
+  let best = c0, bestD = drin(c0) ? distPointToPolygon(c0, fp) : -1;
+  const N = 12;
+  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
+    const q = [x0 + (x1 - x0) * i / N, y0 + (y1 - y0) * j / N];
+    if (!drin(q)) continue;
+    const d = distPointToPolygon(q, fp);
+    if (d > bestD) { bestD = d; best = q; }
+  }
+  return best;
+}
 // Teilt ein Geschoß in Wohnungen und Erschließung. Liefert
 // [{ art: 'wohnung' | 'erschliessung', fp, area, nr }] in Weltkoordinaten.
 function planZonierung(fp, coreRef, zielFlaeche) {
@@ -17248,7 +17307,7 @@ function planZonierung(fp, coreRef, zielFlaeche) {
   fp.forEach(p => { const [u, v] = toUV(p); U0 = Math.min(U0, u); U1 = Math.max(U1, u); V0 = Math.min(V0, v); V1 = Math.max(V1, v); });
   const L = U1 - U0, D = V1 - V0;
   if (L < 4 || D < 4) return out;
-  // Rechteck in UV → Weltpolygon, am Umriss zugeschnitten
+  // Rechteck in UV -> Weltpolygon, am Umriss zugeschnitten
   const pfad = pl => legalToPath(signedArea(pl) < 0 ? pl.slice().reverse() : pl);
   const fpPfad = [pfad(fp)];
   const schneide = (u0, u1, v0, v1, minus) => {
@@ -17258,50 +17317,151 @@ function planZonierung(fp, coreRef, zielFlaeche) {
     if (minus && minus.length) res = legalBoolean(C.ClipType.ctDifference, res, minus.map(pfad), C.PolyFillType.pftNonZero);
     return legalLargest(res);
   };
-  // ---- Zugangsseite: dort liegt das Stiegenhaus ----------------------------------
-  // vPointsNorth sagt, auf welcher v-Seite die Straße bzw. Norden liegt.
-  const obenZugang = coreRef && coreRef.vPointsNorth;
+  // ---- Typologie: sie entscheidet die ganze Aufteilung ---------------------------
+  const typ = (coreRef && (coreRef.ekTyp || (coreRef.ek && coreRef.ek.typ))) || 'wohnanlage';
+  const pt = (coreRef && coreRef.planType)
+    || (A0 < 110 ? 'klein' : (L / D < 1.6 && D > 13) ? 'punkt' : (D <= 10.5 && L >= 22) ? 'laubengang' : D <= 15.5 ? 'spaenner' : 'mittelgang');
+  const obenZugang = !!(coreRef && coreRef.vPointsNorth);
+  const ziel = Math.max(ZON_MIN, Math.min(ZON_MAX, zielFlaeche || TARGET_UNIT_AREA));
+
+  // Zu kleine Wohnungen an den Nachbarn anschließen und von der Zugangsseite durchnummerieren
+  const aufraeumen = (liste) => {
+    const whg = liste.filter(x => x.art === 'wohnung' || x.art === 'haus');
+    let nochmal = true, schutz = 20;
+    while (nochmal && schutz-- > 0) {
+      nochmal = false;
+      for (let i = 0; i < whg.length; i++) {
+        if (whg[i].entfernt || whg[i].area >= ZON_MIN || whg.filter(x => !x.entfernt).length < 2) continue;
+        let best = -1, bestL = 0.3;
+        whg.forEach((q, j) => {
+          if (j === i || q.entfernt) return;
+          let g2 = 0;
+          for (let k = 0; k < whg[i].fp.length; k++) {
+            const a2 = whg[i].fp[k], b2 = whg[i].fp[(k + 1) % whg[i].fp.length];
+            const l2 = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]); if (l2 < 0.05) continue;
+            const m2 = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
+            if (distPointToPolygon(m2, q.fp) <= 0.15) g2 += l2;
+          }
+          if (g2 > bestL) { bestL = g2; best = j; }
+        });
+        if (best < 0) { whg[i].entfernt = true; nochmal = true; continue; }
+        const u2 = legalLargest(legalBoolean(C.ClipType.ctUnion, [pfad(whg[best].fp)], [pfad(whg[i].fp)], C.PolyFillType.pftNonZero));
+        if (u2.length >= 3) { whg[best].fp = u2; whg[best].area = polygonArea(u2); whg[i].entfernt = true; nochmal = true; }
+        else whg[i].entfernt = true;
+      }
+    }
+    const fertig = liste.filter(x => !x.entfernt);
+    let z = 0;
+    fertig.filter(x => x.art !== 'erschliessung')
+      .sort((a, b) => { const ca = toUV(polygonCentroid(a.fp)), cb = toUV(polygonCentroid(b.fp));
+        const sa = obenZugang ? -ca[1] : ca[1], sb = obenZugang ? -cb[1] : cb[1];
+        return Math.abs(sa - sb) > 2.5 ? sa - sb : ca[0] - cb[0]; })
+      .forEach(x => { x.nr = z++; });
+    return fertig;
+  };
+
+  // ============ REIHENHAUSANLAGE ==================================================
+  // Kein gemeinsames Stiegenhaus und keine Wohnungen: senkrechte Hausstreifen über die
+  // ganze Gebäudetiefe. Jedes Haus hat im Erdgeschoß seinen eigenen Eingang von außen,
+  // die Treppe liegt innerhalb des Hauses. Übliche Hausbreiten 4,30-8,50 m.
+  if (typ === 'reihenhaus') {
+    let n = Math.max(1, (coreRef && coreRef.haeuser) || Math.round(L / (D >= 11 ? 5.8 : 6.6)));
+    while (n > 1 && L / n < 4.3) n--;
+    while (L / n > 8.5) n++;
+    while (n > 1 && (L / n) * D < ZON_MIN * 0.6) n--;
+    for (let i = 0; i < n; i++) {
+      const h = schneide(U0 + L * i / n, U0 + L * (i + 1) / n, V0, V1);
+      if (h.length >= 3 && polygonArea(h) > 6) out.push({ art: 'haus', fp: h, area: polygonArea(h) });
+    }
+    if (!out.length) out.push({ art: 'haus', fp: fp.slice(), area: A0 });
+    let z = 0;
+    out.slice().sort((a, b) => toUV(polygonCentroid(a.fp))[0] - toUV(polygonCentroid(b.fp))[0]).forEach(x => { x.nr = z++; });
+    return out;
+  }
+  // ============ HAUS / MAISONETTE =================================================
+  // Eine Einheit über alle Geschoße: ein Geschoß ist eine Zone, keine Erschließungsfläche.
+  if (typ === 'haus') {
+    out.push({ art: 'wohnung', fp: fp.slice(), area: A0, nr: 0, bez: 'Haus' });
+    return out;
+  }
+
+  // ============ WOHNANLAGE ========================================================
+  // Das Stiegenhaus liegt an der ZUGANGSFASSADE: man kommt im Erdgeschoß durch die
+  // Haustür und steht unmittelbar darin. Wie es weitergeht, hängt an der Typologie.
   const vK1 = obenZugang ? V1 : V0 + ZON_STIEGE_T;        // innere Kante des Stiegenhauses
   const vK0 = obenZugang ? V1 - ZON_STIEGE_T : V0;
-  // ---- Wie viele Stiegenhäuser? ---------------------------------------------------
-  // Fluchtweg höchstens 40 m ab Wohnungstür (OIB-RL 2, 5.1); Living Hinterkaiser
-  // schöpft mit einem Kern auf 38,50 m Länge 36,96 m aus.
-  const nK = Math.max(1, Math.round(L / 42));
-  const kernU = Array.from({ length: nK }, (_, k) => U0 + L * (k + 0.5) / nK);
+  // Anzahl Stiegenhäuser aus dem 3D-Modell übernehmen, damit Plan und Modell übereinstimmen
+  const nKern = Math.max(1, (coreRef && (coreRef.nCores || (coreRef.cores && coreRef.cores.length))) || Math.round(L / 42));
+  const kernB = pt === 'laubengang'
+    ? Math.min(ZON_STIEGE_B, Math.max(2.6, L * 0.3))
+    : Math.min(ZON_STIEGE_B, L / nKern - 2);
+  // Laubengang: Stiegen an den Stirnseiten (Fluchtweg bis zum Treppenraum), sonst gleichmäßig verteilt
+  const kernU = pt === 'laubengang'
+    ? (nKern >= 2 ? [U0 + kernB / 2 + 0.3, U1 - kernB / 2 - 0.3] : [U0 + kernB / 2 + 0.3])
+    : Array.from({ length: nKern }, (_, k) => U0 + L * (k + 0.5) / nKern);
   const kerne = [];
-  kernU.forEach(cu => {
-    const b = Math.min(ZON_STIEGE_B, L / nK - 2);
-    if (b < 2.4) return;
-    const k = schneide(cu - b / 2, cu + b / 2, vK0, vK1);
-    if (k.length >= 3 && polygonArea(k) > 4) kerne.push({ fp: k, u0: cu - b / 2, u1: cu + b / 2 });
+  if (kernB >= 2.4) kernU.forEach(cu => {
+    const k = schneide(cu - kernB / 2, cu + kernB / 2, vK0, vK1);
+    if (k.length >= 3 && polygonArea(k) > 4) kerne.push({ fp: k, u0: cu - kernB / 2, u1: cu + kernB / 2, cu });
   });
   if (!kerne.length) {        // zu klein für ein eigenes Stiegenhaus: alles eine Einheit
     out.push({ art: 'wohnung', fp: fp.slice(), area: A0, nr: 0 });
     return out;
   }
-  // ---- Braucht es einen Gang? -----------------------------------------------------
-  // Eine Wohnung reicht höchstens rund 9 m tief hinter die Erschließung (Hinterkaiser
-  // misst 6,43 m Wohnzone). Ist der Baukörper tiefer, kommt hinter dem Stiegenhaus
-  // ein Gang, der die rückwärtigen Wohnungen anbindet.
-  const restT = D - ZON_STIEGE_T;
-  const gangNoetig = restT > 10.5;
+  const kernSperren = kerne.map(k => [k.u0, k.u1]).sort((p, q) => p[0] - q[0]);
   const erschl = kerne.map(k => k.fp);
-  let gangV0 = 0, gangV1 = 0;
-  if (gangNoetig) {
-    gangV0 = obenZugang ? vK0 - ZON_GANG : vK1;
-    gangV1 = gangV0 + ZON_GANG;
-    // Der Gang läuft zwischen den Wohnungsreihen durch, von Stirnseite zu Stirnseite,
-    // aber nur so weit, wie er gebraucht wird: an den Enden steht eine Eckwohnung.
-    const endW = Math.max(0, Math.min(L * 0.18, 9));
-    // 4 cm Überlappung ins Stiegenhaus: eine reine Kantenberührung ergäbe bei der
-    // Vereinigung zwei getrennte Polygone, und die Erschließung würde doppelt beschriftet
-    const gLo = Math.min(gangV0, gangV1) - (obenZugang ? 0 : 0.04);
-    const gHi = Math.max(gangV0, gangV1) + (obenZugang ? 0.04 : 0);
-    const g = schneide(U0 + endW, U1 - endW, gLo, gHi);
+  const baender = [];
+  // 4 cm Überlappung: eine reine Kantenberührung ergäbe bei der Vereinigung zwei
+  // getrennte Polygone, und die Erschließung würde doppelt beschriftet
+  const UEB = 0.04;
+
+  if (pt === 'laubengang') {
+    // Laubengang an der Zugangsfassade über die ganze Länge, 1,50 m breit (Rettungsweg).
+    // Alle Aufenthaltsräume liegen zur Gegenseite - die Wohnungen füllen die Resttiefe.
+    const gB = 1.5;
+    const gLo = obenZugang ? V1 - gB : V0;
+    const gHi = obenZugang ? V1 : V0 + gB;
+    const g = schneide(U0, U1, gLo - UEB, gHi + UEB);
     if (g.length >= 3 && polygonArea(g) > 2) erschl.push(g);
+    const wLo = obenZugang ? V0 : V0 + gB;
+    const wHi = obenZugang ? V1 - gB : V1;
+    baender.push({ v0: wLo, v1: wHi, sperren: kernSperren });
+  } else if (pt === 'mittelgang') {
+    // Innenliegender Gang hinter dem Stiegenhaus, einseitig orientierte Wohnungen
+    // links und rechts. Der Gang endet vor den Stirnseiten - dort stehen Eckwohnungen.
+    const gLo = obenZugang ? vK0 - ZON_GANG : vK1;
+    const gHi = gLo + ZON_GANG;
+    const endW = Math.max(0, Math.min(L * 0.18, 9));
+    const g = schneide(U0 + endW, U1 - endW, Math.min(gLo, gHi) - (obenZugang ? 0 : UEB), Math.max(gLo, gHi) + (obenZugang ? UEB : 0));
+    if (g.length >= 3 && polygonArea(g) > 2) erschl.push(g);
+    baender.push({ v0: Math.min(vK0, gLo), v1: Math.max(vK1, gHi), sperren: kernSperren });
+    baender.push(obenZugang ? { v0: V0, v1: Math.min(gLo, gHi), sperren: [] } : { v0: Math.max(gLo, gHi), v1: V1, sperren: [] });
+  } else if (pt === 'punkt') {
+    // Punkthaus: 4-6 Wohnungen um einen Kern. Vom Stiegenhaus führt ein kurzer Gang
+    // IN DIE TIEFE (nicht entlang der Fassade); links und rechts davon liegen die
+    // rückwärtigen Wohnungen, neben dem Stiegenhaus die vorderen.
+    const cu = kerne[0].cu;
+    const gTief = Math.max(0, (D - ZON_STIEGE_T) - 6.2);
+    if (gTief > 1.2) {
+      const gv0 = obenZugang ? vK0 - gTief : vK1;
+      const gv1 = obenZugang ? vK0 + UEB : vK1 - UEB;
+      const g = schneide(cu - ZON_GANG / 2, cu + ZON_GANG / 2, Math.min(gv0, gv1), Math.max(gv0, gv1));
+      if (g.length >= 3 && polygonArea(g) > 1) erschl.push(g);
+      baender.push({ v0: Math.min(vK0, vK1), v1: Math.max(vK0, vK1), sperren: kernSperren });
+      baender.push(obenZugang
+        ? { v0: V0, v1: vK0, sperren: [[cu - ZON_GANG / 2, cu + ZON_GANG / 2]] }
+        : { v0: vK1, v1: V1, sperren: [[cu - ZON_GANG / 2, cu + ZON_GANG / 2]] });
+    } else {
+      baender.push({ v0: V0, v1: V1, sperren: kernSperren });
+    }
+  } else {
+    // Spänner und kleines Haus: vom Podest geht es DIREKT in die Wohnungen, kein Gang.
+    // Die Wohnungen liegen über die ganze Gebäudetiefe neben dem Stiegenhaus.
+    baender.push({ v0: V0, v1: V1, sperren: kernSperren });
   }
-  // Stiegenhaus und Gang sind EINE Erschließungsfläche — man geht ja durch, ohne
-  // sie zu verlassen. Sie wird daher vereinigt und nur einmal beschriftet.
+
+  // Stiegenhaus und Gang sind EINE Erschließungsfläche - man geht ja durch, ohne sie zu
+  // verlassen. Sie wird daher vereinigt und nur einmal beschriftet.
   if (erschl.length > 1) {
     try {
       let u0 = [pfad(erschl[0])];
@@ -17312,36 +17472,21 @@ function planZonierung(fp, coreRef, zielFlaeche) {
       } else erschl.forEach(e => out.push({ art: 'erschliessung', fp: e, area: polygonArea(e) }));
     } catch (e) { erschl.forEach(q => out.push({ art: 'erschliessung', fp: q, area: polygonArea(q) })); }
   } else erschl.forEach(e => out.push({ art: 'erschliessung', fp: e, area: polygonArea(e) }));
-  // ---- Wohnungen: Streifen entlang der Erschließung --------------------------------
-  const ziel = Math.max(ZON_MIN, Math.min(ZON_MAX, zielFlaeche || TARGET_UNIT_AREA));
-  const minus = erschl.map(e => e);
-  // Band 1: zwischen Zugangsfassade und Gang (bzw. neben dem Stiegenhaus)
-  // Band 2: hinter dem Gang bis zur Gegenfassade
-  const baender = [];
-  if (gangNoetig) {
-    const a1 = Math.min(vK0, vK1), b1 = Math.max(vK0, vK1);
-    baender.push([Math.min(a1, gangV0), Math.max(b1, gangV1)]);   // Stiegenhausband samt Gangkante
-    baender.push(obenZugang ? [V0, Math.min(gangV0, gangV1)] : [Math.max(gangV0, gangV1), V1]);
-  } else {
-    baender.push([V0, V1]);
-  }
-  let nr = 0;
-  baender.forEach(([bv0, bv1]) => {
+
+  // ---- Wohnungen: Streifen in den Bändern, Erschließung ausgespart -----------------
+  const minus = erschl.slice();
+  baender.forEach(b => {
+    const bv0 = Math.min(b.v0, b.v1), bv1 = Math.max(b.v0, b.v1);
     if (bv1 - bv0 < 3.5) return;
-    // Breite einer Wohnung aus Zielfläche und Bandtiefe, mindestens 5,2 m
     const tiefe = Math.min(bv1 - bv0, 11);
-    let breite = Math.max(5.2, Math.min(14, ziel / Math.max(4, tiefe)));
-    // in u-Abschnitte teilen, Stiegenhäuser aussparen
-    const sperren = kerne.map(k => [k.u0, k.u1]).sort((p, q) => p[0] - q[0]);
+    const breite = Math.max(5.2, Math.min(14, ziel / Math.max(4, tiefe)));
     let segs = [[U0, U1]];
-    // Im Stiegenhausband sind die Kernstreifen gesperrt; im hinteren Band nicht.
-    const imKernband = bv0 < Math.max(vK0, vK1) + 0.01 && bv1 > Math.min(vK0, vK1) - 0.01;
-    if (imKernband) sperren.forEach(([a, b]) => {
+    (b.sperren || []).forEach(([a, z2]) => {
       const n2 = [];
       segs.forEach(([x0, x1]) => {
-        if (b <= x0 + 0.01 || a >= x1 - 0.01) { n2.push([x0, x1]); return; }
+        if (z2 <= x0 + 0.01 || a >= x1 - 0.01) { n2.push([x0, x1]); return; }
         if (a - x0 > 0.8) n2.push([x0, a]);
-        if (x1 - b > 0.8) n2.push([b, x1]);
+        if (x1 - z2 > 0.8) n2.push([z2, x1]);
       });
       segs = n2;
     });
@@ -17354,45 +17499,13 @@ function planZonierung(fp, coreRef, zielFlaeche) {
       while ((len / n3) * tiefe > ZON_MAX * 1.25 && n3 < 12) n3++;
       for (let i = 0; i < n3; i++) {
         const w = schneide(x0 + len * i / n3, x0 + len * (i + 1) / n3, bv0, bv1, minus);
-        if (w.length >= 3 && polygonArea(w) >= ZON_MIN * 0.5) out.push({ art: 'wohnung', fp: w, area: polygonArea(w), nr: nr++ });
+        if (w.length >= 3 && polygonArea(w) >= ZON_MIN * 0.5) out.push({ art: 'wohnung', fp: w, area: polygonArea(w) });
       }
     });
   });
-  // ---- Reste aufräumen: zu kleine Wohnungen an den Nachbarn --------------------------
-  const whg = out.filter(x => x.art === 'wohnung');
-  let nochmal = true, schutz = 20;
-  while (nochmal && schutz-- > 0) {
-    nochmal = false;
-    for (let i = 0; i < whg.length; i++) {
-      if (whg[i].entfernt || whg[i].area >= ZON_MIN || whg.filter(x => !x.entfernt).length < 2) continue;
-      let best = -1, bestL = 0.3;
-      whg.forEach((q, j) => {
-        if (j === i || q.entfernt) return;
-        let g2 = 0;
-        for (let k = 0; k < whg[i].fp.length; k++) {
-          const a2 = whg[i].fp[k], b2 = whg[i].fp[(k + 1) % whg[i].fp.length];
-          const l2 = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]); if (l2 < 0.05) continue;
-          const m2 = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
-          if (distPointToPolygon(m2, q.fp) <= 0.15) g2 += l2;
-        }
-        if (g2 > bestL) { bestL = g2; best = j; }
-      });
-      if (best < 0) { whg[i].entfernt = true; nochmal = true; continue; }
-      const u2 = legalLargest(legalBoolean(C.ClipType.ctUnion, [pfad(whg[best].fp)], [pfad(whg[i].fp)], C.PolyFillType.pftNonZero));
-      if (u2.length >= 3) { whg[best].fp = u2; whg[best].area = polygonArea(u2); whg[i].entfernt = true; nochmal = true; }
-      else whg[i].entfernt = true;
-    }
-  }
-  const fertig = out.filter(x => !x.entfernt);
-  // Nummern neu vergeben: von der Zugangsseite nach hinten, links nach rechts
-  let z = 0;
-  fertig.filter(x => x.art === 'wohnung')
-    .sort((a, b) => { const ca = toUV(polygonCentroid(a.fp)), cb = toUV(polygonCentroid(b.fp));
-      const sa = obenZugang ? -ca[1] : ca[1], sb = obenZugang ? -cb[1] : cb[1];
-      return Math.abs(sa - sb) > 2.5 ? sa - sb : ca[0] - cb[0]; })
-    .forEach(x => { x.nr = z++; });
-  return fertig;
+  return aufraeumen(out);
 }
+
 function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, rng, gInfo) {
   const group = new THREE.Group();
   const units = [];
@@ -20611,8 +20724,23 @@ function drawPlanVector(ctx, f, M, opt) {
         zonen = planZonierung(pc.fp, pc.core, (typeof aptMix !== 'undefined' && aptMix.mode === 'custom') ? mixMeanArea() : TARGET_UNIT_AREA);
       } catch (e) { zonen = null; }
     }
+    // ---- Zonierung: die Flächen zuerst, als HINTERGRUND --------------------------
+    // Vorgabe Ozan: die Schraffur liegt immer hinten. Alles, was danach kommt —
+    // Kernflächen, Stiegenlinien, Wandaufbau, Fenster, Bemassung, Beschriftung —
+    // zeichnet darüber und bleibt dadurch lesbar. Der Geschosskörper (slab) ist an
+    // dieser Stelle schon gezeichnet, die Füllung wird also nicht überdeckt.
+    if (zonMode && zonen && zonen.length) {
+      const dunkelZ = !!opt.dark;
+      zonen.forEach(z => {
+        if (!z.fp || z.fp.length < 3) return;
+        ctx.save();
+        ctx.fillStyle = zonFarbe(z.nr || 0, z.art === 'erschliessung', dunkelZ);
+        path(z.fp, true); ctx.fill();
+        ctx.restore();
+      });
+    }
     const units = zonMode
-      ? (zonen || []).filter(z => z.art === 'wohnung').map(z => ({ type: 'wohnung', area: z.area, footprint: z.fp, zonNr: z.nr }))
+      ? (zonen || []).filter(z => z.art === 'wohnung' || z.art === 'haus').map(z => ({ type: 'wohnung', area: z.area, footprint: z.fp, zonNr: z.nr }))
       : pc.units.filter(u => u.type === 'wohnung');
     const kerne = zonMode
       ? (zonen || []).filter(z => z.art === 'erschliessung').map(z => ({ type: 'kern', area: z.area, footprint: z.fp, kind: 'zone' }))
@@ -20742,7 +20870,7 @@ function drawPlanVector(ctx, f, M, opt) {
         // Gänge/Innenzonen gehen ineinander über (keine Wand zwischen Gang und Gang)
         const otherU = cpUnion(cpOffset(cpUnion(clearOther), 0.001));
         let conc = cpBool(T.ctDifference, Acore, clearUnits.concat(otherU));
-        let gk = cpBool(T.ctDifference, cpUnion(clearUnits), roomClear);
+        let gk = zonMode ? [] : cpBool(T.ctDifference, cpUnion(clearUnits), roomClear);
         let ins = cpBool(T.ctDifference, A, Acore);
         // ---- Öffnungen: Innentüren, Wohnungseingangstüren, Fenster ----
         const doorCuts = [], entryCuts = [], winCuts = [], wins = [];
@@ -20865,24 +20993,13 @@ function drawPlanVector(ctx, f, M, opt) {
     }
 
     // ---------------- Beschriftung ----------------
-    // ---- Zonierung: jede Zone solid einfärben, über der Wandzeichnung, damit sie trägt ----
-    if (zonMode && zonen && zonen.length) {
-      const dunkel = !!opt.dark;
-      zonen.forEach(z => {
-        if (!z.fp || z.fp.length < 3) return;
-        ctx.save();
-        ctx.fillStyle = zonFarbe(z.nr || 0, z.art === 'erschliessung', dunkel);
-        path(z.fp, true); ctx.fill();
-        ctx.restore();
-      });
-    }
     // ---- Zonierung: nur Bezeichnung und Größe, sonst nichts ----
     if (zonMode && zonen && zonen.length && k > 2) {
       const fs = Math.max(7, Math.min(opt.fsMax || 13, k * 0.40));
       const basis = (pc.zonTop0 || 0);
       zonen.forEach(z => {
         if (!z.fp || z.fp.length < 3 || z.area < 4) return;
-        const c = M.toPx(polygonCentroid(z.fp));
+        const c = M.toPx(zonLabelPunkt(z.fp));
         ctx.textAlign = 'center';
         if (z.art === 'erschliessung') {
           // Das Wort nur setzen, wenn es in die Fläche passt — sonst steht es quer
@@ -20909,13 +21026,27 @@ function drawPlanVector(ctx, f, M, opt) {
         } else {
           // Auf der gefüllten Fläche braucht auch die Zahl vollen Kontrast —
           // in Grau verschwindet sie in der Farbe.
+          // Die Bezeichnung folgt der Typologie: eine Reihenhausanlage hat Häuser,
+          // kein Top; ein Haus/eine Maisonette ebenso.
+          const wort = (z.art === 'haus' || z.bez === 'Haus') ? 'Haus' : 'Top';
+          const txt = wort + ' ' + String(basis + (z.nr || 0) + 1).padStart(2, '0');
+          // Breite der Zone an der Beschriftungsstelle: passt der Name nicht quer,
+          // wird er hochkant gesetzt. Reihenhausstreifen sind schmal und hoch —
+          // nebeneinander gesetzte Namen überschrieben sich sonst gegenseitig.
+          let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+          z.fp.forEach(q => { const pq = M.toPx(q); bx0 = Math.min(bx0, pq[0]); bx1 = Math.max(bx1, pq[0]); by0 = Math.min(by0, pq[1]); by1 = Math.max(by1, pq[1]); });
+          ctx.save();
           ctx.fillStyle = ink;
           ctx.font = `700 ${fs * 1.15}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-          ctx.fillText('Top ' + String(basis + (z.nr || 0) + 1).padStart(2, '0'), c[0], c[1] - fs * 0.25);
+          const noetig = ctx.measureText(txt).width + 6;
+          const hoch = (bx1 - bx0) < noetig && (by1 - by0) > noetig;
+          if (hoch) { ctx.translate(c[0], c[1]); ctx.rotate(-Math.PI / 2); ctx.translate(-c[0], -c[1]); }
+          ctx.fillText(txt, c[0], c[1] - fs * 0.25);
           ctx.font = `500 ${fs * 0.95}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
           ctx.globalAlpha = 0.78;
           ctx.fillText(`${Math.round(z.area)} m²`, c[0], c[1] + fs * 1.05);
           ctx.globalAlpha = 1;
+          ctx.restore();
         }
       });
       ctx.textAlign = 'left';
@@ -23055,7 +23186,21 @@ function rebuild() {
           // Grundriss liegt auf der Oberseite des Geschosses (Schnitt von oben); sichtbar ist nur das
           // oberste bzw. das gewählte Geschoss — die darunter sind von deckenden Geschossen verdeckt
           const planTop = f === floors - 1 || (highlightActive && selPieceIdx === pieceIdx && f === selFloorIdx);
-          const layout = buildApartmentLayout(fp, showApartments ? ebeneY(f + 1) + 0.03 : ebeneY(f) + 0.04, false, showApartments && showZoning, coreRef, seededRandom(pieceIdx * 10000 + f + 500 + aptMix.seed * 7919), { f, floors });
+          // In der Zonierungs-Ansicht treten die Zonen an die Stelle der Einheitenlinien:
+          // keine Wohnungstrennlinien aus der Einheiten-Aufteilung, sondern die solide
+          // Zonenfläche. Die Einheiten werden weiterhin berechnet, weil Kennzahlen,
+          // Stellplatz-Soll und Spielplatzpflicht daran hängen.
+          const zonAnsicht = viewMode() === 'zonierung';
+          const yPlan = showApartments ? ebeneY(f + 1) + 0.03 : ebeneY(f) + 0.04;
+          const layout = buildApartmentLayout(fp, yPlan, false, showApartments && showZoning && !zonAnsicht, coreRef, seededRandom(pieceIdx * 10000 + f + 500 + aptMix.seed * 7919), { f, floors });
+          // In der Zonierung tritt eine EIGENE Gruppe an die Stelle der Einheiten-Darstellung:
+          // nur die Zonenflächen, keine Wohnungstrennlinien, keine Stiegensymbole, keine
+          // Terrassen- und Balkonlinien. Die Übersicht ist hier das Ziel.
+          let zonGruppe = null;
+          if (zonAnsicht && showApartments) try {
+            const zn = planZonierung(fp, coreRef, (typeof aptMix !== 'undefined' && aptMix.mode === 'custom') ? mixMeanArea() : TARGET_UNIT_AREA);
+            zonGruppe = buildZonenFlaechen(zn, yPlan, document.documentElement.getAttribute('data-theme') !== 'light');
+          } catch (e) { zonGruppe = null; }
           if (f === 0) (window.__floorLayouts = window.__floorLayouts || []).push({ piece: pieceIdx, type: coreRef.planType, units: layout.units.map(u => ({ type: u.type, area: Math.round(u.area), fp: u.footprint })) });
           // Fensterzonen für die Fassade: nur wenn die Visualisierung sie braucht
           if (showViz) try {
@@ -23077,8 +23222,11 @@ function rebuild() {
             });
           } catch (e) { /* ohne Zonen weiter — die Fassade nimmt dann die Standardbrüstung */ }
           if (showApartments) {
-            if (highlightActive && hideFloorsAboveSelected(f)) layout.group.visible = false;
-            apartmentGroup.add(layout.group);
+            const g3 = zonAnsicht ? zonGruppe : layout.group;
+            if (g3) {
+              if (highlightActive && hideFloorsAboveSelected(f)) g3.visible = false;
+              apartmentGroup.add(g3);
+            }
           }
           apartmentAreaLog.push({ piece: pieceIdx + 1, floor: f, units: layout.units });
           {
@@ -23089,7 +23237,8 @@ function rebuild() {
               else balconies = planBalconySlots(fp, f, lowerFp, pieceIdx, vizOpts);
               if (f > 0) terraces = planTerraces(fp, lowerFp);
             } catch (e) { /* Freiflächen nur Darstellung */ }
-            (planFloorsTmp[f] = planFloorsTmp[f] || []).push({ fp, pieceIdx, units: layout.units, y: ebeneY(f), floorH: ebeneY(f + 1) - ebeneY(f), lowerFp, loggiaFp, balconies, terraces, houseDoors: pieceDoors.filter(d => d.f === f).map(d => ({ pt: d.pt, e: d.e, n: d.n })), core: { ux: coreRef.ux, uy: coreRef.uy, liftSize: coreRef.liftSize, liftV: coreRef.liftV, stairWidth: coreRef.stairWidth, stairTread: coreRef.stairTread, stepsPerFlight: coreRef.stepsPerFlight, art: coreRef.art } });
+            (planFloorsTmp[f] = planFloorsTmp[f] || []).push({ fp, pieceIdx, units: layout.units, y: ebeneY(f), floorH: ebeneY(f + 1) - ebeneY(f), lowerFp, loggiaFp, balconies, terraces, houseDoors: pieceDoors.filter(d => d.f === f).map(d => ({ pt: d.pt, e: d.e, n: d.n })), core: { ux: coreRef.ux, uy: coreRef.uy, liftSize: coreRef.liftSize, liftV: coreRef.liftV, stairWidth: coreRef.stairWidth, stairTread: coreRef.stairTread, stepsPerFlight: coreRef.stepsPerFlight, art: coreRef.art,
+              planType: coreRef.planType, ekTyp: (coreRef.ek || {}).typ, vPointsNorth: coreRef.vPointsNorth, haeuser: coreRef.haeuser || 0, nCores: (coreRef.cores || []).length } });
           }
           const wohnUnits = layout.units.filter(u => u.type === 'wohnung');
           wohnUnits.forEach(u => {
@@ -23303,7 +23452,7 @@ function rebuild() {
   // Einheiten: ALLE Wohnungsgrundrisse möbliert auf jedem Geschoss. Gewählte Wohnung 100 %
   // Deckkraft (helle Bodenplatte, Raumbezeichnungen), alle anderen 35 %; ist keine gewählt
   // (kurzer Klick ins Leere), zeigen alle Einheiten 100 %.
-  if (document.getElementById('toggle-apartments').checked && document.getElementById('toggle-roomhints') && document.getElementById('toggle-roomhints').checked) {
+  if (viewMode() !== 'zonierung' && document.getElementById('toggle-apartments').checked && document.getElementById('toggle-roomhints') && document.getElementById('toggle-roomhints').checked) {
     const sel = selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex] ? allApartmentUnits[selectedApartmentIndex] : null;
     allApartmentUnits.forEach(u => {
       if (u === sel || !u.frame) return;
@@ -23315,7 +23464,7 @@ function rebuild() {
       apartmentGroup.add(g);
     });
   }
-  if (document.getElementById('toggle-apartments').checked && selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) {
+  if (viewMode() !== 'zonierung' && document.getElementById('toggle-apartments').checked && selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) {
     const u = allApartmentUnits[selectedApartmentIndex];
     // deckende, helle Bodenplatte der gewählten Wohnung auf dem geschnittenen Geschoss —
     // Linien liegen 2–3 cm darüber, Platte und Geschoss sind per polygonOffset zurückgesetzt
@@ -23926,7 +24075,7 @@ const LAYER_VIEW_PRESETS = {
   einheiten: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false },
   // Zonierung: wie die Einheiten-Ansicht, aber die Raumaufteilung bleibt aus — im Plan
   // zählt nur, wie groß eine Wohnung ist und wo sie liegt
-  zonierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false },
+  zonierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': true, 'toggle-roomhints': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
   schnitt: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
 };
@@ -38654,7 +38803,7 @@ function sprSetzen(code, still) {
   { const p = $('menu-baukoerper');
     const erste = p.querySelector('details.more');
     const host = erste && erste.parentElement;
-    if (host) ['Form', 'Mehrere Baukörper', 'Geschosse', 'Höhenlage & Hang', 'Wohnungsmix', 'Fassade']
+    if (host) ['Typologie', 'Mehrere Baukörper', 'Geschosse', 'Höhenlage & Hang', 'Wohnungsmix', 'Fassade']
       .forEach(t => { const d = kap('menu-baukoerper', t); if (d) host.appendChild(d); });
   }
   { const p = $('menu-bebauung');
@@ -38673,7 +38822,7 @@ function sprSetzen(code, still) {
   // Ein Symbol je Kapitel: es hilft, die Abschnitte beim Blättern wiederzufinden,
   // ohne den Text zu lesen. Strichzeichnung, 16 px, in der Farbe der Überschrift.
   { const I = {
-      'Form': '<path d="M12 3l7.5 4.2v8.6L12 20.5 4.5 16.3V7.7z"/><path d="M4.5 7.7L12 11.9l7.5-4.2M12 11.9v8.6" opacity=".5"/>',
+      'Typologie': '<path d="M12 3l7.5 4.2v8.6L12 20.5 4.5 16.3V7.7z"/><path d="M4.5 7.7L12 11.9l7.5-4.2M12 11.9v8.6" opacity=".5"/>',
       'Mehrere Baukörper': '<rect x="3" y="9" width="7.5" height="11" rx="1"/><rect x="13.5" y="4.5" width="7.5" height="15.5" rx="1"/>',
       'Baukörper bearbeiten': '<rect x="3.5" y="8" width="10" height="12" rx="1"/><path d="M16 12.5l4.5-4.5"/><path d="M14.2 14.3l1.6-1.6 2.5 2.5-1.6 1.6z" opacity=".6"/>',
       'Geschosse': '<path d="M4 7.5h16M4 12h16M4 16.5h16"/><path d="M5.5 4.5h13"/>',
@@ -38742,7 +38891,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.04';
+  const VERSION = 'v3.05';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
