@@ -108,16 +108,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: rgba(24
 <main id="inhalt"><div class="wrap"><div class="formwrap" id="danke">
   <div class="soon"><i></i>Bald verfügbar</div>
   <h1>Zum Start <b>benachrichtigen</b></h1>
-  <p class="lead">Schön, dass Sie cubarc kennenlernen möchten. Hinterlassen Sie uns Ihre Kontaktdaten. Sobald cubarc startet, melden wir uns persönlich bei Ihnen.</p>
+  <p class="lead">Schön, dass Sie cubarc kennenlernen möchten. Hinterlassen Sie uns Ihren Namen und Ihre E-Mail-Adresse. Sobald cubarc startet, melden wir uns persönlich bei Ihnen.</p>
   <ul class="vorteile"><li>Einmalige Nachricht zum Start</li><li>Kein Newsletter</li><li>Jederzeit widerrufbar</li></ul>
   <div class="card">
     <form id="anmeldung" action="/api/anmeldung" method="post" novalidate>
       <div class="f"><label for="name">Name</label><input id="name" name="name" type="text" autocomplete="name" required maxlength="120"></div>
       <div class="f"><label for="email">E-Mail</label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254" inputmode="email"></div>
-      <div class="f voll"><label for="firma">Unternehmen <small>(optional)</small></label><input id="firma" name="firma" type="text" autocomplete="organization" maxlength="160"></div>
-      <div class="f"><label for="land">Bundesland <small>(optional)</small></label><select id="land" name="land"><option value="">Bitte wählen</option><option>Burgenland</option><option>Kärnten</option><option>Niederösterreich</option><option>Oberösterreich</option><option>Salzburg</option><option>Steiermark</option><option>Tirol</option><option>Vorarlberg</option><option>Wien</option><option>Deutschland</option><option>Schweiz</option><option>Anderes Land</option></select></div>
-      <div class="f"><label for="taetig">Tätig in <small>(optional)</small></label><select id="taetig" name="taetig"><option value="">Bitte wählen</option><option>Bauträgerunternehmen</option><option>Planungs- oder Architekturbüro</option><option>Projektentwicklung</option><option>Immobilienvermittlung</option><option>Grundstückseigentum</option><option>Sonstiges</option></select></div>
-      <div class="f voll"><label for="nachricht">Was interessiert Sie besonders? <small>(optional)</small></label><textarea id="nachricht" name="nachricht" maxlength="2000" rows="3"></textarea></div>
       <div class="hp" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
       <input type="hidden" name="t" id="t" value="">
       <label class="zust" id="zust-l"><input id="zustimmung" name="zustimmung" type="checkbox" value="ja" required><span>Ich bin einverstanden, dass cubarc meine Angaben verarbeitet, um mich einmalig über den Start zu informieren. Die Einwilligung kann ich jederzeit per E-Mail an support@cubarc.at widerrufen. Details in der <a href="/datenschutz">Datenschutzerklärung</a>.</span></label>
@@ -150,7 +146,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: rgba(24
     return erst;
   }
   function mailFallback(d) {
-    const z = [['Name', d.name], ['E-Mail', d.email], ['Unternehmen', d.firma], ['Bundesland', d.land], ['Tätig in', d.taetig]].filter(x => x[1]).map(x => x[0] + ': ' + x[1]);
+    const z = [['Name', d.name], ['E-Mail', d.email]].filter(x => x[1]).map(x => x[0] + ': ' + x[1]);
     const text = 'Hallo cubarc-Team,\n\nbitte benachrichtigen Sie mich, sobald cubarc startet.\n\n' + z.join('\n') + (d.nachricht ? '\n\nWas mich besonders interessiert:\n' + d.nachricht : '') + '\n\nIch bin einverstanden, dass Sie meine Angaben dafür verarbeiten.\n\nFreundliche Grüße\n' + d.name;
     location.href = 'mailto:support@cubarc.at?subject=' + encodeURIComponent('Startbenachrichtigung: ' + d.name) + '&body=' + encodeURIComponent(text);
     zeige('Ihr E-Mail-Programm öffnet sich mit Ihren Angaben. Bitte tippen Sie dort nur noch auf „Senden“.', true);
