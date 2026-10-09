@@ -16,11 +16,11 @@
   X-Robots-Tag: noindex, nofollow
   Cache-Control: public, max-age=0, must-revalidate
 
-# App unter /appcubarc/: nicht in Suchmaschinen, immer die neueste Fassung
-/appcubarc/*
+# App unter /app/: nicht in Suchmaschinen, immer die neueste Fassung
+/app/*
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-store
-/appcubarc
+/app
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-store
 
