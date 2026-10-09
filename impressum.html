@@ -68,6 +68,7 @@ main { padding: clamp(32px, 6vh, 72px) 0 clamp(56px, 9vh, 100px); }
 </style>
 </head>
 <body>
+<!--email_off-->
 <canvas id="syn-bg" aria-hidden="true"></canvas>
 <header><div class="wrap"><a href="/" aria-label="cubarc – zur Startseite"><img src="/img/cubarc_logo_dunkel.svg" alt="cubarc" width="92" height="25"></a></div></header>
 <main id="inhalt"><div class="wrap"><article class="doc">
@@ -177,5 +178,6 @@ function synTick(t) { syn.frame(t); requestAnimationFrame(synTick); }
 addEventListener('resize', () => syn.size());
 syn.size(); requestAnimationFrame(synTick);
 </script>
+<!--email_on-->
 </body>
 </html>
