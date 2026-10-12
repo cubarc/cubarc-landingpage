@@ -4302,20 +4302,27 @@ window.KUBATUR_ABO_SERVER = 'probe';
       
     </div>
     <div class="mp-sec">Wohnungen</div>
-    <div class="segmented viz-seg" data-target="mix-mode" style="margin-bottom:8px;"><button type="button" data-v="auto">Automatisch (Marktmix)</button><button type="button" data-v="custom">Eigener Mix</button></div>
-    <input type="hidden" id="mix-mode" value="auto">
+    <div class="segmented viz-seg" data-target="eh-modus" style="margin-bottom:8px;"><button type="button" data-v="gleich">Gleich groß</button><button type="button" data-v="mix">Wohnungsmix</button></div>
+    <input type="hidden" id="eh-modus" value="gleich">
+    <div id="eh-gleich">
+      <div class="segmented viz-seg" data-target="eh-nach" style="margin-bottom:8px;"><button type="button" data-v="anzahl">Nach Stückzahl</button><button type="button" data-v="flaeche">Nach Größe</button></div>
+      <input type="hidden" id="eh-nach" value="anzahl">
+      <div class="group" id="eh-anzahl-row">
+        <label>Wohnungen je Geschoß <span class="val" id="v-eh-anzahl">4</span></label>
+        <input type="range" id="eh-anzahl" min="1" max="24" step="1" value="4">
+      </div>
+      <div class="group" id="eh-flaeche-row" style="display:none;">
+        <label>Zielgröße je Wohnung <span class="val" id="v-eh-flaeche">75 m²</span></label>
+        <input type="range" id="eh-flaeche" min="25" max="200" step="5" value="75">
+      </div>
+      <div class="note">Das Geschoß wird in gleich große Wohnungen geteilt. Ist der Baukörper tief, entstehen zwei Wohnungsreihen.</div>
+    </div>
     <div id="mix-custom" style="display:none;">
       <table class="mix-table"><thead><tr><th>Typ</th><th>Größe m²</th><th>Anzahl</th><th></th></tr></thead><tbody id="mix-rows"></tbody></table>
       <button type="button" class="viz-btn" id="mix-add" style="width:100%; height:30px; font-size:12px;">+ Wohnungstyp</button>
-    </div>
-    <div style="display:flex; gap:6px; margin-top:8px;">
-      <button type="button" class="viz-btn" id="mix-regen" style="flex:1; height:32px; font-size:12px;">↻ Neu generieren</button>
-      <button type="button" class="viz-btn primary" id="mix-save" style="flex:1; height:32px; font-size:12px;">Variante speichern</button>
+      <div class="note">Die Anzahlen wirken als Verhältnis: Das Geschoß wird nach diesem Schlüssel aufgeteilt, so oft es hineinpasst.</div>
     </div>
     <div class="mix-ist" id="mix-ist"></div>
-    <div id="mix-saved"></div>
-    
-    
     <div class="mp-sec">Fassade</div>
     <div id="fassade-ziel"></div>
   </div>
@@ -4516,7 +4523,6 @@ window.KUBATUR_ABO_SERVER = 'probe';
       <button class="view-mode-btn active" data-mode="massenmodell2">Linienmodell</button>
       <button class="view-mode-btn" data-mode="huellkoerper">Maximalhüllkörper</button>
       <button class="view-mode-btn" data-mode="einheiten">Einheiten</button>
-      <button class="view-mode-btn" data-mode="zonierung">Zonierung</button>
       <button class="view-mode-btn" data-mode="schnitt">Schnittmodell</button>
       <button class="view-mode-btn" data-mode="aushub">Aushub</button>
       <button class="view-mode-btn" data-mode="visualisierung">Visualisierung</button>
@@ -13703,7 +13709,7 @@ function viewMode() { const el = document.getElementById('view-mode'); const m =
 // Die Zonierung ist eine eigene Darstellung, verhält sich im Modell aber wie die
 // Einheiten-Ansicht (Geschosse sichtbar, Einheitenliste gefüllt). Wo der Code nur
 // wissen muss "zeigen wir Einheiten?", fragt er diese Funktion.
-function viewModeBasis() { const m = viewMode(); return m === 'zonierung' ? 'einheiten' : m; }
+function viewModeBasis() { return viewMode(); }
 const MODE_GREY = { parcel: 0x8f8f93, road: 0x7f7f83, rail: 0x7a7a7e, bld: 0xa3a3a7, line: 0x69696d, bldLine: 0x5c5c60, vol: 0xa8a8ac, volLine: 0x707074 };
 const MODE_SOFT = { parcel: 0xd4d4d2, road: 0xc8c8c6, rail: 0xc4c4c2, bld: 0xcdcdcb, line: 0xb7b7b5, bldLine: 0xa8a8a6, vol: 0xdbdbd9, volLine: 0xbcbcba };
 const OWN_WHITE = 0xf0f0ee, WID_RED = [0xd9483b, 0xcc4034];
@@ -14978,14 +14984,10 @@ function renderApartmentAreas(units) {
       const wasSelected = selectedApartmentIndex === idx;
       selectedApartmentIndex = wasSelected ? null : idx;
       rebuild();
-      if (!wasSelected) zoomToApartmentUnit(units[idx]);
     });
   });
 }
 
-// frames the camera on one specific unit's own footprint/floor — used right after picking
-// a Top, so the (now floors-above-hidden) unit is what you're actually looking at instead
-// of having to manually zoom in yourself
 function zoomToApartmentUnit(u) {
   if (!u) return;
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -15093,44 +15095,6 @@ function buildRoomHint(fp, y, color, rng) {
 
 const ZONE_LINE_COLOR = 0x6a6a6e;
 
-// Zonierung im 3D: die Zonen als liegende Farbflächen auf der Geschoßdecke, in
-// denselben Tönen wie im 2D-Plan. Sie liegen bewusst HINTER allem anderen — kein
-// Tiefenschreiben, niedrige renderOrder —, damit Grundrisslinien, Bemaßung und
-// Beschriftungen darüber lesbar bleiben (Vorgabe Ozan: Schraffur immer im Hintergrund).
-function zonFarbe3D(txt) {
-  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s]+([\d.]+))?\s*\)/.exec(txt || '');
-  if (!m) return { c: new THREE.Color(0x8a8a90), a: 0.5 };
-  return { c: new THREE.Color(+m[1] / 255, +m[2] / 255, +m[3] / 255), a: m[4] != null ? +m[4] : 1 };
-}
-function buildZonenFlaechen(zonen, y, dunkel) {
-  if (!zonen || !zonen.length || typeof THREE === 'undefined') return null;
-  const g = new THREE.Group();
-  zonen.forEach(z => {
-    if (!z.fp || z.fp.length < 3) return;
-    let sg = null;
-    try { sg = new THREE.ShapeGeometry(fpShape(z.fp, false)); } catch (e) { return; }
-    // ShapeGeometry liegt in XY; die Punkte wandern direkt in die XZ-Ebene (wie buildVizCap)
-    const pos = sg.attributes.position, idx = sg.index, arr = [];
-    const addV = i => arr.push(pos.getX(i), y, pos.getY(i));
-    if (idx) for (let i = 0; i < idx.count; i++) addV(idx.getX(i)); else for (let i = 0; i < pos.count; i++) addV(i);
-    sg.dispose();
-    if (arr.length < 9) return;
-    const bg = new THREE.BufferGeometry();
-    bg.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
-    bg.computeVertexNormals();
-    const f = zonFarbe3D(zonFarbe(z.nr || 0, z.art === 'erschliessung', dunkel));
-    const mesh = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({
-      color: f.c, transparent: true, opacity: Math.min(0.95, f.a + 0.22),
-      side: THREE.DoubleSide, depthWrite: false
-    }));
-    mesh.renderOrder = 0;
-    g.add(mesh);
-    // feine Zonengrenze, damit benachbarte Töne nicht verschwimmen
-    const l = buildZoneLine(z.fp, y + 0.006, ZONE_LINE_COLOR);
-    if (l) { l.renderOrder = 1; g.add(l); }
-  });
-  return g.children.length ? g : null;
-}
 function buildZoneLine(fp, y, color) {
   if (fp.length < 3) return null;
   const pts = fp.map(p => new THREE.Vector3(p[0], y, p[1]));
@@ -17232,57 +17196,53 @@ function ek2CoreV(coreRef) { return Math.max(1.2, (coreRef.stairWidth || 0.9) + 
 // ausgewerteten Einreichpläne hat 27,37 m² — beides liegt unter diesem Wert.)
 const WOHNUNG_MIN = 45;
 // ============================================================================
-// ZONIERUNG — Flächenaufteilung für die Kubaturstudie
+// EINHEITEN — die Geschoßaufteilung (ab v3.07)
 // ----------------------------------------------------------------------------
-// Eine eigene, von der Einheiten-Aufteilung unabhängige Rechnung. Sie zeigt nur,
-// WIE GROSS eine Wohnung ist und WO sie liegt — keine Innenwände, keine Möblierung.
-// Das Ergebnis sind zwei Arten von Fläche: Wohnungen und Erschließung.
+// Vorgabe Ozan, 12.10.2026: In einer Kubaturstudie wird KEINE Erschließung,
+// KEINE Innenwand und KEINE Möblierung dargestellt. Ein Geschoß wird in
+// Wohnungen geteilt — mehr nicht. Alles, was darüber hinausging (Stiegenhäuser,
+// Gänge, Raumprogramme, Möblierungsproben und die eigene Zonierungs-Ansicht),
+// ist entfallen: es hat mehr behauptet, als eine Kubaturstudie wissen kann.
 //
-// Die Erschließung folgt dem Weg eines Menschen, nicht einer Geometrie:
-//   1. Man kommt im Erdgeschoß von außen durch die Haustür.
-//   2. Dahinter steht man unmittelbar im STIEGENHAUS. Es liegt deshalb an der
-//      Zugangsfassade — innerhalb des Baukörpers, aber an der Außenwand, nicht
-//      im Schwerpunkt. (Kirchbichl baut genau so: der Kern liegt seitlich
-//      versetzt und wird im Schnitt CC nicht geschnitten.)
-//   3. Vom Stiegenhaus geht es entweder direkt in die Wohnungen oder über einen
-//      GANG — oder beides. Ein Gang entsteht nur, wenn ohne ihn Wohnungen ohne
-//      Anschluss blieben; seine Breite ist 1,25 m (Living Hinterkaiser erschließt
-//      damit neun Wohnungen je Geschoß, OIB-RL 4 fordert 1,20 m).
+// Zwei Wege, beide unter der Ansicht „Einheiten":
+//   'gleich'  Alle Wohnungen gleich groß. Vorgegeben wird die STÜCKZAHL je
+//             Geschoß oder die ZIELFLÄCHE in m²; ist beides gesetzt, entscheidet
+//             die Stückzahl.
+//   'mix'     Die Größen kommen aus dem Wohnungsmix und werden der Reihe nach
+//             abgeteilt.
 //
-// Wohnungsgrößen kommen aus dem Wohnungsschlüssel; unter ZON_MIN wird nicht
-// geteilt — in einer Kubaturstudie sagt eine Garçonnière nichts aus.
+// Die Rechnung ist bewusst einfach: Die Trennlinien sitzen dort, wo die entlang
+// der Längsachse aufsummierte Geschoßfläche den Zielwert erreicht. Dadurch
+// stimmen die Flächen auch bei schiefen und L-förmigen Umrissen, ohne daß
+// Varianten gerechnet werden müßten.
 // ============================================================================
-const ZON_MIN = 45, ZON_MAX = 135;          // Spanne einer Wohnung in der Zonierung
-const ZON_GANG = 1.25;                      // Gangbreite
-const ZON_STIEGE_B = 5.6, ZON_STIEGE_T = 4.6;   // Stiegenhaus mit Lauf, Podest und Lift
+const EH_MIN = 20;          // kleiner wird keine Einheit ausgewiesen
+const EH_2REIHIG = 13.0;    // ab dieser Gebäudetiefe zwei Wohnungsreihen
+const EH_PROFIL = 160;      // Stützstellen der Flächenkurve je Band
 
-function zonFarbe(i, erschliessung, dunkel) {
-  // Gilt für Wohnungen UND Häuser einer Reihenhausanlage — beides sind Zonen.
-  // Die Zonen sind das Bild — sie werden kräftig gefüllt, nicht angedeutet. Die
-  // Erschließung bleibt neutral grau, damit sie sich von den Wohnungen absetzt;
-  // die Wohnungen bekommen eine Reihe gedeckter Töne, die auch nebeneinander
-  // unterscheidbar bleiben und in hell wie dunkel tragen.
-  if (erschliessung) return dunkel ? 'rgba(126,126,134,0.62)' : 'rgba(108,108,116,0.42)';
+// Farben der Einheiten. Die CI ist Graphit und Orange; die Reihe beginnt beim
+// Akzent und geht in gedeckte Nachbartöne, die auch direkt nebeneinander
+// unterscheidbar bleiben — in hell wie in dunkel.
+function einheitFarbe(i, dunkel) {
   const T = dunkel
-    ? ['rgba(206,118,62,0.62)', 'rgba(188,160,112,0.60)', 'rgba(104,146,168,0.62)', 'rgba(128,160,118,0.60)',
-       'rgba(176,122,146,0.60)', 'rgba(158,150,96,0.60)', 'rgba(112,134,186,0.60)', 'rgba(192,134,100,0.60)']
-    : ['rgba(224,138,78,0.52)', 'rgba(196,166,110,0.52)', 'rgba(118,158,184,0.50)', 'rgba(140,176,126,0.50)',
-       'rgba(196,136,162,0.48)', 'rgba(178,162,100,0.50)', 'rgba(126,150,206,0.46)', 'rgba(210,150,112,0.50)'];
+    ? ['rgba(214,138,74,0.55)', 'rgba(196,168,118,0.52)', 'rgba(120,152,176,0.54)', 'rgba(134,166,126,0.52)',
+       'rgba(182,130,150,0.52)', 'rgba(162,154,104,0.52)', 'rgba(126,142,186,0.52)', 'rgba(198,146,112,0.52)']
+    : ['rgba(226,150,88,0.46)', 'rgba(201,168,118,0.44)', 'rgba(126,162,188,0.42)', 'rgba(142,178,132,0.42)',
+       'rgba(196,142,164,0.42)', 'rgba(176,166,106,0.42)', 'rgba(134,152,200,0.40)', 'rgba(210,158,120,0.42)'];
   return T[((i % T.length) + T.length) % T.length];
 }
 
-// Beschriftungspunkt einer Zone: der Punkt mit dem größten Abstand zum Rand.
-// Der Schwerpunkt liegt bei L- und T-förmigen Flächen — und so sieht die
-// Erschließung aus, sobald ein Gang am Stiegenhaus hängt — oft im Einschnitt,
-// und die Schrift ragt dann in die Nachbarzone hinein.
-function zonLabelPunkt(fp) {
+// Beschriftungspunkt einer Fläche: der Punkt mit dem größten Abstand zum Rand.
+// Der Schwerpunkt liegt bei L-förmigen Flächen oft im Einschnitt, und die Schrift
+// ragte dann in die Nachbarwohnung.
+function ehLabelPunkt(fp) {
   if (!fp || fp.length < 3) return [0, 0];
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   fp.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
   const drin = q => fpContains(fp, q) && !(fp.holes || []).some(h => fpContains(h, q));
   const c0 = polygonCentroid(fp);
   let best = c0, bestD = drin(c0) ? distPointToPolygon(c0, fp) : -1;
-  const N = 12;
+  const N = 10;
   for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
     const q = [x0 + (x1 - x0) * i / N, y0 + (y1 - y0) * j / N];
     if (!drin(q)) continue;
@@ -17291,1699 +17251,210 @@ function zonLabelPunkt(fp) {
   }
   return best;
 }
-// Teilt ein Geschoß in Wohnungen und Erschließung. Liefert
-// [{ art: 'wohnung' | 'erschliessung', fp, area, nr }] in Weltkoordinaten.
-function planZonierung(fp, coreRef, zielFlaeche) {
-  // Wohnanlage: die Zonen SIND die Einheiten — eine Aufteilung, zwei Darstellungen
-  if (coreRef && coreRef.plan) { try { return gaZonen(gaGeschoss(coreRef.plan, fp)); } catch (e) { /* alte Rechnung */ } }
+
+// Einstellung aus der Oberfläche. Ein eigenes Objekt, damit Modell, 2D-Plan und
+// Exposé dieselbe Aufteilung sehen.
+var ehCfg = { modus: 'gleich', anzahl: 4, flaeche: 75, nachAnzahl: true };
+function einheitenCfg() {
+  const c = (typeof ehCfg === 'object' && ehCfg) ? ehCfg : { modus: 'gleich', anzahl: 4, flaeche: 75, nachAnzahl: true };
+  return {
+    modus: c.modus === 'mix' ? 'mix' : 'gleich',
+    anzahl: c.nachAnzahl ? Math.max(1, Math.round(c.anzahl || 1)) : 0,
+    flaeche: Math.max(20, c.flaeche || 75),
+    mix: (typeof aptMix !== 'undefined' && aptMix && Array.isArray(aptMix.rows)) ? aptMix.rows : []
+  };
+}
+
+// Teilt ein Geschoß in Wohnungen. Liefert [{ fp, area, nr }] in Weltkoordinaten.
+function einheitenZonen(fp, coreRef, cfg) {
   const out = [];
   if (!fp || fp.length < 3 || typeof ClipperLib === 'undefined') return out;
   const C = ClipperLib, A0 = polygonArea(fp);
-  if (A0 < ZON_MIN) return out;
-  const ux = coreRef && coreRef.ux != null ? coreRef.ux : longestEdgeDir(fp)[0];
-  const uy = coreRef && coreRef.uy != null ? coreRef.uy : longestEdgeDir(fp)[1];
+  if (!(A0 >= EH_MIN)) return out;
+  const ux = (coreRef && coreRef.ux != null) ? coreRef.ux : longestEdgeDir(fp)[0];
+  const uy = (coreRef && coreRef.uy != null) ? coreRef.uy : longestEdgeDir(fp)[1];
   const vx = -uy, vy = ux, o = polygonCentroid(fp);
   const toUV = p => [(p[0] - o[0]) * ux + (p[1] - o[1]) * uy, (p[0] - o[0]) * vx + (p[1] - o[1]) * vy];
-  const toW = (u, v) => [o[0] + u * ux + v * vx, o[1] + u * uy + v * vy];
+  const toW = (a, b) => [o[0] + a * ux + b * vx, o[1] + a * uy + b * vy];
   let U0 = Infinity, U1 = -Infinity, V0 = Infinity, V1 = -Infinity;
-  fp.forEach(p => { const [u, v] = toUV(p); U0 = Math.min(U0, u); U1 = Math.max(U1, u); V0 = Math.min(V0, v); V1 = Math.max(V1, v); });
+  fp.forEach(p => { const q = toUV(p); U0 = Math.min(U0, q[0]); U1 = Math.max(U1, q[0]); V0 = Math.min(V0, q[1]); V1 = Math.max(V1, q[1]); });
   const L = U1 - U0, D = V1 - V0;
-  if (L < 4 || D < 4) return out;
-  // Rechteck in UV -> Weltpolygon, am Umriss zugeschnitten
+  if (!(L > 1 && D > 1)) return out;
   const pfad = pl => legalToPath(signedArea(pl) < 0 ? pl.slice().reverse() : pl);
-  const fpPfad = [pfad(fp)];
-  const schneide = (u0, u1, v0, v1, minus) => {
-    const r = [toW(u0, v0), toW(u1, v0), toW(u1, v1), toW(u0, v1)];
-    let res = legalBoolean(C.ClipType.ctIntersection, fpPfad, [pfad(r)], C.PolyFillType.pftNonZero);
-    if (fp.holes && fp.holes.length) res = legalBoolean(C.ClipType.ctDifference, res, fp.holes.map(pfad), C.PolyFillType.pftNonZero);
-    if (minus && minus.length) res = legalBoolean(C.ClipType.ctDifference, res, minus.map(pfad), C.PolyFillType.pftNonZero);
-    return legalLargest(res);
+  const fpP = [pfad(fp)], hohl = (fp.holes || []).map(pfad);
+  const stueck = (a0, a1, b0, b1) => {
+    if (!(a1 - a0 > 1e-4 && b1 - b0 > 1e-4)) return [];
+    const r = [toW(a0, b0), toW(a1, b0), toW(a1, b1), toW(a0, b1)];
+    let res = legalBoolean(C.ClipType.ctIntersection, fpP, [pfad(r)], C.PolyFillType.pftNonZero);
+    if (hohl.length && res.length) res = legalBoolean(C.ClipType.ctDifference, res, hohl, C.PolyFillType.pftNonZero);
+    return res;
   };
-  // ---- Typologie: sie entscheidet die ganze Aufteilung ---------------------------
-  const typ = (coreRef && (coreRef.ekTyp || (coreRef.ek && coreRef.ek.typ))) || 'wohnanlage';
-  const pt = (coreRef && coreRef.planType)
-    || (A0 < 110 ? 'klein' : (L / D < 1.6 && D > 13) ? 'punkt' : (D <= 10.5 && L >= 22) ? 'laubengang' : D <= 15.5 ? 'spaenner' : 'mittelgang');
-  const obenZugang = !!(coreRef && coreRef.vPointsNorth);
-  const ziel = Math.max(ZON_MIN, Math.min(ZON_MAX, zielFlaeche || TARGET_UNIT_AREA));
+  const flaeche = (a0, a1, b0, b1) => stueck(a0, a1, b0, b1)
+    .reduce((q, p) => q + Math.abs(C.Clipper.Area(p)) / (LEGAL_SC * LEGAL_SC), 0);
 
-  // Zu kleine Wohnungen an den Nachbarn anschließen und von der Zugangsseite durchnummerieren
-  const aufraeumen = (liste) => {
-    const whg = liste.filter(x => x.art === 'wohnung' || x.art === 'haus');
-    let nochmal = true, schutz = 20;
-    while (nochmal && schutz-- > 0) {
-      nochmal = false;
-      for (let i = 0; i < whg.length; i++) {
-        if (whg[i].entfernt || whg[i].area >= ZON_MIN || whg.filter(x => !x.entfernt).length < 2) continue;
-        let best = -1, bestL = 0.3;
-        whg.forEach((q, j) => {
-          if (j === i || q.entfernt) return;
-          let g2 = 0;
-          for (let k = 0; k < whg[i].fp.length; k++) {
-            const a2 = whg[i].fp[k], b2 = whg[i].fp[(k + 1) % whg[i].fp.length];
-            const l2 = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]); if (l2 < 0.05) continue;
-            const m2 = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
-            if (distPointToPolygon(m2, q.fp) <= 0.15) g2 += l2;
-          }
-          if (g2 > bestL) { bestL = g2; best = j; }
-        });
-        if (best < 0) { whg[i].entfernt = true; nochmal = true; continue; }
-        const u2 = legalLargest(legalBoolean(C.ClipType.ctUnion, [pfad(whg[best].fp)], [pfad(whg[i].fp)], C.PolyFillType.pftNonZero));
-        if (u2.length >= 3) { whg[best].fp = u2; whg[best].area = polygonArea(u2); whg[i].entfernt = true; nochmal = true; }
-        else whg[i].entfernt = true;
-      }
-    }
-    const fertig = liste.filter(x => !x.entfernt);
-    let z = 0;
-    fertig.filter(x => x.art !== 'erschliessung')
-      .sort((a, b) => { const ca = toUV(polygonCentroid(a.fp)), cb = toUV(polygonCentroid(b.fp));
-        const sa = obenZugang ? -ca[1] : ca[1], sb = obenZugang ? -cb[1] : cb[1];
-        return Math.abs(sa - sb) > 2.5 ? sa - sb : ca[0] - cb[0]; })
-      .forEach(x => { x.nr = z++; });
-    return fertig;
-  };
-
-  // ============ REIHENHAUSANLAGE ==================================================
-  // Kein gemeinsames Stiegenhaus und keine Wohnungen: senkrechte Hausstreifen über die
-  // ganze Gebäudetiefe. Jedes Haus hat im Erdgeschoß seinen eigenen Eingang von außen,
-  // die Treppe liegt innerhalb des Hauses. Übliche Hausbreiten 4,30-8,50 m.
-  if (typ === 'reihenhaus') {
-    let n = Math.max(1, (coreRef && coreRef.haeuser) || Math.round(L / (D >= 11 ? 5.8 : 6.6)));
-    while (n > 1 && L / n < 4.3) n--;
-    while (L / n > 8.5) n++;
-    while (n > 1 && (L / n) * D < ZON_MIN * 0.6) n--;
-    for (let i = 0; i < n; i++) {
-      const h = schneide(U0 + L * i / n, U0 + L * (i + 1) / n, V0, V1);
-      if (h.length >= 3 && polygonArea(h) > 6) out.push({ art: 'haus', fp: h, area: polygonArea(h) });
-    }
-    if (!out.length) out.push({ art: 'haus', fp: fp.slice(), area: A0 });
-    let z = 0;
-    out.slice().sort((a, b) => toUV(polygonCentroid(a.fp))[0] - toUV(polygonCentroid(b.fp))[0]).forEach(x => { x.nr = z++; });
-    return out;
-  }
-  // ============ HAUS / MAISONETTE =================================================
-  // Eine Einheit über alle Geschoße: ein Geschoß ist eine Zone, keine Erschließungsfläche.
-  if (typ === 'haus') {
-    out.push({ art: 'wohnung', fp: fp.slice(), area: A0, nr: 0, bez: 'Haus' });
-    return out;
-  }
-
-  // ============ WOHNANLAGE ========================================================
-  // Das Stiegenhaus liegt an der ZUGANGSFASSADE: man kommt im Erdgeschoß durch die
-  // Haustür und steht unmittelbar darin. Wie es weitergeht, hängt an der Typologie.
-  const vK1 = obenZugang ? V1 : V0 + ZON_STIEGE_T;        // innere Kante des Stiegenhauses
-  const vK0 = obenZugang ? V1 - ZON_STIEGE_T : V0;
-  // Anzahl Stiegenhäuser aus dem 3D-Modell übernehmen, damit Plan und Modell übereinstimmen
-  const nKern = Math.max(1, (coreRef && (coreRef.nCores || (coreRef.cores && coreRef.cores.length))) || Math.round(L / 42));
-  const kernB = pt === 'laubengang'
-    ? Math.min(ZON_STIEGE_B, Math.max(2.6, L * 0.3))
-    : Math.min(ZON_STIEGE_B, L / nKern - 2);
-  // Laubengang: Stiegen an den Stirnseiten (Fluchtweg bis zum Treppenraum), sonst gleichmäßig verteilt
-  const kernU = pt === 'laubengang'
-    ? (nKern >= 2 ? [U0 + kernB / 2 + 0.3, U1 - kernB / 2 - 0.3] : [U0 + kernB / 2 + 0.3])
-    : Array.from({ length: nKern }, (_, k) => U0 + L * (k + 0.5) / nKern);
-  const kerne = [];
-  if (kernB >= 2.4) kernU.forEach(cu => {
-    const k = schneide(cu - kernB / 2, cu + kernB / 2, vK0, vK1);
-    if (k.length >= 3 && polygonArea(k) > 4) kerne.push({ fp: k, u0: cu - kernB / 2, u1: cu + kernB / 2, cu });
-  });
-  if (!kerne.length) {        // zu klein für ein eigenes Stiegenhaus: alles eine Einheit
-    out.push({ art: 'wohnung', fp: fp.slice(), area: A0, nr: 0 });
-    return out;
-  }
-  const kernSperren = kerne.map(k => [k.u0, k.u1]).sort((p, q) => p[0] - q[0]);
-  const erschl = kerne.map(k => k.fp);
-  const baender = [];
-  // 4 cm Überlappung: eine reine Kantenberührung ergäbe bei der Vereinigung zwei
-  // getrennte Polygone, und die Erschließung würde doppelt beschriftet
-  const UEB = 0.04;
-
-  if (pt === 'laubengang') {
-    // Laubengang an der Zugangsfassade über die ganze Länge, 1,50 m breit (Rettungsweg).
-    // Alle Aufenthaltsräume liegen zur Gegenseite - die Wohnungen füllen die Resttiefe.
-    const gB = 1.5;
-    const gLo = obenZugang ? V1 - gB : V0;
-    const gHi = obenZugang ? V1 : V0 + gB;
-    const g = schneide(U0, U1, gLo - UEB, gHi + UEB);
-    if (g.length >= 3 && polygonArea(g) > 2) erschl.push(g);
-    const wLo = obenZugang ? V0 : V0 + gB;
-    const wHi = obenZugang ? V1 - gB : V1;
-    baender.push({ v0: wLo, v1: wHi, sperren: kernSperren });
-  } else if (pt === 'mittelgang') {
-    // Innenliegender Gang hinter dem Stiegenhaus, einseitig orientierte Wohnungen
-    // links und rechts. Der Gang endet vor den Stirnseiten - dort stehen Eckwohnungen.
-    const gLo = obenZugang ? vK0 - ZON_GANG : vK1;
-    const gHi = gLo + ZON_GANG;
-    const endW = Math.max(0, Math.min(L * 0.18, 9));
-    const g = schneide(U0 + endW, U1 - endW, Math.min(gLo, gHi) - (obenZugang ? 0 : UEB), Math.max(gLo, gHi) + (obenZugang ? UEB : 0));
-    if (g.length >= 3 && polygonArea(g) > 2) erschl.push(g);
-    baender.push({ v0: Math.min(vK0, gLo), v1: Math.max(vK1, gHi), sperren: kernSperren });
-    baender.push(obenZugang ? { v0: V0, v1: Math.min(gLo, gHi), sperren: [] } : { v0: Math.max(gLo, gHi), v1: V1, sperren: [] });
-  } else if (pt === 'punkt') {
-    // Punkthaus: 4-6 Wohnungen um einen Kern. Vom Stiegenhaus führt ein kurzer Gang
-    // IN DIE TIEFE (nicht entlang der Fassade); links und rechts davon liegen die
-    // rückwärtigen Wohnungen, neben dem Stiegenhaus die vorderen.
-    const cu = kerne[0].cu;
-    const gTief = Math.max(0, (D - ZON_STIEGE_T) - 6.2);
-    if (gTief > 1.2) {
-      const gv0 = obenZugang ? vK0 - gTief : vK1;
-      const gv1 = obenZugang ? vK0 + UEB : vK1 - UEB;
-      const g = schneide(cu - ZON_GANG / 2, cu + ZON_GANG / 2, Math.min(gv0, gv1), Math.max(gv0, gv1));
-      if (g.length >= 3 && polygonArea(g) > 1) erschl.push(g);
-      baender.push({ v0: Math.min(vK0, vK1), v1: Math.max(vK0, vK1), sperren: kernSperren });
-      baender.push(obenZugang
-        ? { v0: V0, v1: vK0, sperren: [[cu - ZON_GANG / 2, cu + ZON_GANG / 2]] }
-        : { v0: vK1, v1: V1, sperren: [[cu - ZON_GANG / 2, cu + ZON_GANG / 2]] });
-    } else {
-      baender.push({ v0: V0, v1: V1, sperren: kernSperren });
+  // ---- Zielflächen ---------------------------------------------------------------
+  let ziele = [];
+  if (cfg.modus === 'mix') {
+    const mix = (cfg.mix || []).filter(m => m && m.area > 15 && m.count > 0);
+    if (!mix.length) ziele = [A0];
+    else {
+      const n = mix.reduce((q, m) => q + m.count, 0);
+      const mittel = mix.reduce((q, m) => q + m.area * m.count, 0) / n;
+      const N = Math.max(1, Math.min(Math.floor(A0 / EH_MIN) || 1, Math.round(A0 / mittel)));
+      const liste = [];
+      mix.forEach(m => { const k = Math.round(N * m.count / n); for (let i = 0; i < k; i++) liste.push(m.area); });
+      while (liste.length < N) liste.push(mittel);
+      liste.length = N;
+      // große und kleine abwechselnd, damit nicht alle großen nebeneinander liegen
+      liste.sort((a, b) => b - a);
+      const misch = [];
+      for (let i = 0, j = liste.length - 1; i <= j; i++, j--) { misch.push(liste[i]); if (i !== j) misch.push(liste[j]); }
+      const s = A0 / misch.reduce((q, a) => q + a, 0);
+      ziele = misch.map(a => a * s);
     }
   } else {
-    // Spänner und kleines Haus: vom Podest geht es DIREKT in die Wohnungen, kein Gang.
-    // Die Wohnungen liegen über die ganze Gebäudetiefe neben dem Stiegenhaus.
-    baender.push({ v0: V0, v1: V1, sperren: kernSperren });
+    let N = cfg.anzahl > 0 ? cfg.anzahl : Math.max(1, Math.round(A0 / cfg.flaeche));
+    N = Math.max(1, Math.min(N, Math.floor(A0 / EH_MIN) || 1));
+    ziele = Array.from({ length: N }, () => A0 / N);
   }
+  const N = ziele.length;
 
-  // Stiegenhaus und Gang sind EINE Erschließungsfläche - man geht ja durch, ohne sie zu
-  // verlassen. Sie wird daher vereinigt und nur einmal beschriftet.
-  if (erschl.length > 1) {
-    try {
-      let u0 = [pfad(erschl[0])];
-      erschl.slice(1).forEach(e => { u0 = legalBoolean(C.ClipType.ctUnion, u0, [pfad(e)], C.PolyFillType.pftNonZero); });
-      const ganz = legalLargest(u0);
-      if (ganz.length >= 3 && polygonArea(ganz) >= erschl.reduce((q, e) => q + polygonArea(e), 0) * 0.92) {
-        out.push({ art: 'erschliessung', fp: ganz, area: polygonArea(ganz) });
-      } else erschl.forEach(e => out.push({ art: 'erschliessung', fp: e, area: polygonArea(e) }));
-    } catch (e) { erschl.forEach(q => out.push({ art: 'erschliessung', fp: q, area: polygonArea(q) })); }
-  } else erschl.forEach(e => out.push({ art: 'erschliessung', fp: e, area: polygonArea(e) }));
+  // ---- eine oder zwei Wohnungsreihen ----------------------------------------------
+  // Ein tiefer Baukörper, der nur längs geteilt wird, ergibt schmale Streifen quer
+  // durch das ganze Haus. Dann wird zuerst in der Tiefe halbiert.
+  const baender = [];
+  if (D > EH_2REIHIG && N >= 2 && L / N < D * 0.75) {
+    let lo = V0, hi = V1;
+    for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (flaeche(U0, U1, V0, m) < A0 / 2) lo = m; else hi = m; }
+    const vm = (lo + hi) / 2;
+    baender.push([V0, vm], [vm, V1]);
+  } else baender.push([V0, V1]);
 
-  // ---- Wohnungen: Streifen in den Bändern, Erschließung ausgespart -----------------
-  const minus = erschl.slice();
-  baender.forEach(b => {
-    const bv0 = Math.min(b.v0, b.v1), bv1 = Math.max(b.v0, b.v1);
-    if (bv1 - bv0 < 3.5) return;
-    const tiefe = Math.min(bv1 - bv0, 11);
-    const breite = Math.max(5.2, Math.min(14, ziel / Math.max(4, tiefe)));
-    let segs = [[U0, U1]];
-    (b.sperren || []).forEach(([a, z2]) => {
-      const n2 = [];
-      segs.forEach(([x0, x1]) => {
-        if (z2 <= x0 + 0.01 || a >= x1 - 0.01) { n2.push([x0, x1]); return; }
-        if (a - x0 > 0.8) n2.push([x0, a]);
-        if (x1 - z2 > 0.8) n2.push([z2, x1]);
-      });
-      segs = n2;
-    });
-    segs.forEach(([x0, x1]) => {
-      const len = x1 - x0;
-      if (len < 3.0) return;
-      let n3 = Math.max(1, Math.round(len / breite));
-      // keine Wohnung unter der Mindestgröße: lieber eine große als zwei zu kleine
-      while (n3 > 1 && (len / n3) * tiefe < ZON_MIN) n3--;
-      while ((len / n3) * tiefe > ZON_MAX * 1.25 && n3 < 12) n3++;
-      for (let i = 0; i < n3; i++) {
-        const w = schneide(x0 + len * i / n3, x0 + len * (i + 1) / n3, bv0, bv1, minus);
-        if (w.length >= 3 && polygonArea(w) >= ZON_MIN * 0.5) out.push({ art: 'wohnung', fp: w, area: polygonArea(w) });
-      }
+  // ---- Zielflächen auf die Bänder verteilen ---------------------------------------
+  const bandA = baender.map(b => flaeche(U0, U1, b[0], b[1]));
+  const sumA = bandA.reduce((a, b) => a + b, 0) || 1;
+  const anz = [];
+  let vergeben = 0;
+  bandA.forEach((a, i) => {
+    const k = i === bandA.length - 1 ? N - vergeben : Math.max(1, Math.min(N - vergeben - (bandA.length - 1 - i), Math.round(N * a / sumA)));
+    anz.push(Math.max(0, k)); vergeben += Math.max(0, k);
+  });
+
+  // ---- Schnitt entlang der Längsachse ---------------------------------------------
+  let idx = 0;
+  baender.forEach((b, bi) => {
+    const n = anz[bi]; if (n <= 0) return;
+    const b0 = b[0], b1 = b[1];
+    // Flächenkurve einmal abtasten, danach ist jeder Schnitt eine Interpolation
+    const xs = [], ys = [];
+    for (let k = 0; k <= EH_PROFIL; k++) {
+      const x = U0 + L * k / EH_PROFIL;
+      xs.push(x); ys.push(k === 0 ? 0 : flaeche(U0, x, b0, b1));
+    }
+    const Ab = ys[ys.length - 1];
+    const teil = ziele.slice(idx, idx + n); idx += n;
+    const sk = Ab / (teil.reduce((q, a) => q + a, 0) || 1);
+    const beiFlaeche = ziel => {
+      if (ziel >= Ab) return U1;
+      let k = 1; while (k < ys.length && ys[k] < ziel) k++;
+      const y0 = ys[k - 1], y1 = ys[k];
+      const t = y1 > y0 ? (ziel - y0) / (y1 - y0) : 0;
+      return xs[k - 1] + (xs[k] - xs[k - 1]) * t;
+    };
+    let a = U0, acc = 0;
+    teil.forEach((z, k) => {
+      acc += z * sk;
+      const a1 = k === n - 1 ? U1 : beiFlaeche(acc);
+      // Ein Schnitt kann bei L-förmigen Geschoßen in mehrere Teile zerfallen. Der
+      // größte ist die Wohnung; ein zweiter Teil ab EH_MIN wird eigene Einheit,
+      // kleinere Reste sind Nebenfläche.
+      const teile = stueck(a, a1, b0, b1)
+        .map(p => { let q = legalFromPath(p); if (signedArea(q) < 0) q.reverse(); return q; })
+        .filter(q => q.length >= 3)
+        .map(q => ({ fp: q, area: polygonArea(q) }))
+        .filter(q => q.area >= Math.min(EH_MIN, z * 0.25))
+        .sort((x, y) => y.area - x.area);
+      teile.forEach(t => out.push({ fp: t.fp, area: t.area, reihe: bi }));
+      a = a1;
     });
   });
-  return aufraeumen(out);
-}
 
-// ============================================================================
-// GESCHOSSAUFTEILUNG — EINE Rechnung für Einheiten UND Zonierung (seit v3.06)
-// ----------------------------------------------------------------------------
-// Bis v3.05 gab es zwei voneinander unabhängige Aufteilungen (Einheiten und
-// Zonierung). Beide schnitten das Geschoß frei in Rechtecke. Daraus entstanden
-// Wohnungen ohne Anschluss an Stiege oder Gang, 200-m²-Streifen quer durch
-// Seitenflügel und Geschoße, deren Wohnungen nicht übereinander lagen.
-//
-// Jetzt wird so entworfen, wie ein Architekt vorgeht — und wie TestFit und
-// Finch es im Kern auch tun (Erschließung zuerst, dann Wohnungen entlang der
-// Fassade, dann Varianten bewerten):
-//   1. Der Baukörper wird in TRAKTE zerlegt: ein L wird zu zwei Riegeln.
-//   2. Je Trakt entscheidet die Tiefe die Erschließung — Laubengang, Spänner
-//      (2/3/4 Wohnungen je Stiege), Mittelgang, Punkthaus.
-//   3. Stiegenhäuser liegen an der Zugangsfassade. Ihre Zahl folgt aus dem
-//      Fluchtweg: höchstens 40 m ab der Wohnungstür (OIB-RL 2, Punkt 5.1).
-//   4. Die Wohnungen werden entlang der Fassade abgeteilt. Breite = Zielfläche
-//      aus dem Wohnungsschlüssel ÷ tatsächliche Tiefe an dieser Stelle.
-//   5. Viele Varianten, harte Regeln (jede Wohnung an Stiege oder Gang, keine
-//      Wohnung unter 45 m², Fluchtweg) und eine Bewertung (Treue zum
-//      Wohnungsschlüssel, Erschließungsanteil, Belichtung) — die beste gewinnt.
-// Gerechnet wird EINMAL je Baukörper am Referenzgeschoß. Jedes Geschoß
-// übernimmt diese Aufteilung und schneidet sie nur auf seinen Umriss zu: die
-// Wohnungstrennwände stehen übereinander, die Stiegen laufen durch.
-// ============================================================================
-const GA_GANG = 1.25;        // Innengang (Living Hinterkaiser 1,25 m; OIB-RL 4: 1,20 m)
-const GA_LAUBE = 1.50;       // Laubengang
-const GA_MIN = 45;           // keine Wohnung darunter (Vorgabe Ozan, 09.10.2026)
-const GA_FLUCHT = 40;        // Fluchtweg ab Wohnungstür (OIB-RL 2, Punkt 5.1)
-
-function gaW(w, a, b) { return [w.O[0] + a * w.e[0] + b * w.n[0], w.O[1] + a * w.e[1] + b * w.n[1]]; }
-function gaRechteck(w, r) {
-  const p = [gaW(w, r[0], r[2]), gaW(w, r[1], r[2]), gaW(w, r[1], r[3]), gaW(w, r[0], r[3])];
-  return signedArea(p) < 0 ? p.reverse() : p;
-}
-function gaPfad(poly) { return legalToPath(signedArea(poly) < 0 ? poly.slice().reverse() : poly); }
-function gaAlle(paths, min) {
-  // nur Außenringe — ein Loch (negativ orientiert) ist keine eigene Fläche
-  return (paths || []).filter(p => ClipperLib.Clipper.Area(p) > (min || 0.05) * LEGAL_SC * LEGAL_SC)
-    .map(p => { let q = legalFromPath(ClipperLib.Clipper.CleanPolygon(p, 0.002 * LEGAL_SC)); if (signedArea(q) < 0) q.reverse(); return q; })
-    .filter(q => q.length >= 3);
-}
-function gaBool(typ, a, b) {
-  const C = ClipperLib;
-  if (!a.length) return [];
-  if (!b.length) return typ === C.ClipType.ctIntersection ? [] : a;
-  return legalBoolean(typ, a, b, C.PolyFillType.pftNonZero);
-}
-function gaRect(r) { return r[1] - r[0] > 1e-6 && r[3] - r[2] > 1e-6; }
-function gaSchnitt(r, s) { return [Math.max(r[0], s[0]), Math.min(r[1], s[1]), Math.max(r[2], s[2]), Math.min(r[3], s[3])]; }
-
-// Flächenraster eines Trakts: summierte Flächentabelle. Damit ist die Fläche
-// "Rechteck ∩ Trakt" in konstanter Zeit abfragbar — so lassen sich hunderte
-// Varianten rechnen, ohne jedes Mal Polygone zu verschneiden. Die bilineare
-// Interpolation der Tabelle ist das exakte Integral der Zellbelegung.
-function gaRaster(polyAB, L, D) {
-  const h = 0.1, nx = Math.max(1, Math.ceil(L / h)), ny = Math.max(1, Math.ceil(D / h)), W = ny + 1;
-  const S = new Float64Array((nx + 1) * W), col = new Float64Array(ny), n = polyAB.length;
-  for (let i = 0; i < nx; i++) {
-    const a = (i + 0.5) * h, xs = [];
-    for (let k = 0; k < n; k++) {
-      const p = polyAB[k], q = polyAB[(k + 1) % n];
-      if ((p[0] > a) !== (q[0] > a)) xs.push(p[1] + (a - p[0]) / (q[0] - p[0]) * (q[1] - p[1]));
-    }
-    xs.sort((x, y) => x - y);
-    col.fill(0);
-    for (let k = 0; k + 1 < xs.length; k += 2) {
-      const b0 = Math.max(0, xs[k]), b1 = Math.min(ny * h, xs[k + 1]);
-      for (let j = Math.max(0, Math.floor(b0 / h)); j <= Math.min(ny - 1, Math.floor(b1 / h)); j++) {
-        const c0 = Math.max(b0, j * h), c1 = Math.min(b1, (j + 1) * h);
-        if (c1 > c0) col[j] += (c1 - c0) * h;
-      }
-    }
-    for (let j = 0; j < ny; j++) S[(i + 1) * W + j + 1] = col[j] + S[i * W + j + 1] + S[(i + 1) * W + j] - S[i * W + j];
-  }
-  const sat = (a, b) => {
-    const x = Math.max(0, Math.min(nx, a / h)), y = Math.max(0, Math.min(ny, b / h));
-    const i = Math.min(nx - 1, Math.floor(x)), j = Math.min(ny - 1, Math.floor(y)), fx = x - i, fy = y - j;
-    return S[i * W + j] * (1 - fx) * (1 - fy) + S[(i + 1) * W + j] * fx * (1 - fy) + S[i * W + j + 1] * (1 - fx) * fy + S[(i + 1) * W + j + 1] * fx * fy;
-  };
-  return (a0, a1, b0, b1) => (a1 <= a0 || b1 <= b0) ? 0 : sat(a1, b1) - sat(a0, b1) - sat(a1, b0) + sat(a0, b0);
-}
-// Bisektion für eine steigende Funktion. Reicht die Fläche bis hi nicht, wird
-// linear weitergerechnet — so bleibt das Ergebnis stetig und die äußere
-// Skalierung findet ihren Wert.
-function gaLoese(f, lo, hi, ziel, steig) {
-  const fh = f(hi);
-  if (fh < ziel) return hi + (ziel - fh) / Math.max(0.5, steig || 10);
-  if (f(lo) >= ziel) return lo;
-  for (let i = 0; i < 34; i++) { const m = (lo + hi) / 2; if (f(m) < ziel) lo = m; else hi = m; }
-  return (lo + hi) / 2;
-}
-
-// Zielgrößen für N Wohnungen aus dem Wohnungsschlüssel (größter Rest), in einer
-// von vier Anordnungen: große an den Enden (Eckwohnungen mit zwei Fassaden),
-// große in der Mitte, groß/klein im Wechsel, oder der Größe nach.
-function gaZiele(N, mix, art) {
-  if (N <= 0) return [];
-  const w = mix.reduce((q, m) => q + m.w, 0) || 1;
-  const roh = mix.map((m, i) => ({ i, a: m.a, n: N * m.w / w }));
-  const cnt = roh.map(r => Math.floor(r.n));
-  let rest = N - cnt.reduce((q, c) => q + c, 0);
-  roh.map((r, k) => [r.n - cnt[k], k]).sort((x, y) => y[0] - x[0]).forEach(([, k]) => { if (rest > 0) { cnt[k]++; rest--; } });
-  const L = [];
-  cnt.forEach((c, k) => { for (let j = 0; j < c; j++) L.push({ T: roh[k].a, idx: roh[k].i }); });
-  L.sort((x, y) => y.T - x.T);
-  const out = new Array(N);
-  const vonAussen = liste => { let l = 0, r = N - 1; liste.forEach((z, j) => { if (j % 2 === 0) out[l++] = z; else out[r--] = z; }); };
-  if (art === 'rand') vonAussen(L);
-  else if (art === 'mitte') vonAussen(L.slice().reverse());
-  else if (art === 'wechsel') { let l = 0, r = L.length - 1; for (let j = 0; j < N; j++) out[j] = (j % 2 === 0) ? L[l++] : L[r--]; }
-  else L.forEach((z, j) => { out[j] = z; });
+  // Nummerierung: Reihe für Reihe, innerhalb der Reihe von links nach rechts
+  out.sort((x, y) => {
+    if (x.reihe !== y.reihe) return x.reihe - y.reihe;
+    return toUV(polygonCentroid(x.fp))[0] - toUV(polygonCentroid(y.fp))[0];
+  });
+  out.forEach((z, k) => { z.nr = k; });
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// 1. Zerlegung in Trakte
-// ---------------------------------------------------------------------------
-// An jeder deutlich einspringenden Ecke kann der Umriss geteilt werden — in
-// Verlängerung einer der beiden Kanten (auf die Gebäudeachsen eingerastet).
-// Alle Kombinationen werden bewertet: rechteckige Trakte mit wohnbarer Tiefe
-// gewinnen, schmale Restzipfel verlieren.
-function gaTrakte(poly) {      // poly in u/v (Referenzachsen), gegen den Uhrzeigersinn
-  let P = poly.map(p => [p[0], p[1]]);
-  if (signedArea(P) < 0) P.reverse();
-  const clean = Q => {
-    let R = Q.slice(), chg = true;
-    while (chg && R.length > 3) {
-      chg = false;
-      for (let i = 0; i < R.length; i++) {
-        const a = R[(i - 1 + R.length) % R.length], b = R[i], c = R[(i + 1) % R.length];
-        const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
-        const cr = ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])) / Math.max(1e-9, l1 * l2);
-        if (l1 < 0.04 || Math.abs(cr) < 0.035) { R.splice(i, 1); chg = true; break; }
-      }
-    }
-    return R;
+// Die Einheiten als liegende Farbflächen auf der Geschoßdecke. Sie liegen hinter
+// allem anderen (kein Tiefenschreiben, niedrige renderOrder), damit Linien,
+// Bemaßung und Beschriftung darüber lesbar bleiben.
+function buildEinheitenFlaechen(units, y, dunkel, selFp) {
+  if (!units || !units.length || typeof THREE === 'undefined') return null;
+  const g = new THREE.Group();
+  const rgba = txt => {
+    const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s]+([\d.]+))?\s*\)/.exec(txt || '');
+    if (!m) return { c: new THREE.Color(0x8a8a90), a: 0.5 };
+    return { c: new THREE.Color(+m[1] / 255, +m[2] / 255, +m[3] / 255), a: m[4] != null ? +m[4] : 1 };
   };
-  P = clean(P);
-  const start = P.map(p => ({ p, cut: false }));
-  const flaeche = Q => polygonArea(Q.map(x => x.p));
-  // einspringende Ecken (Rechtsknick bei CCW), beide Schenkel ≥ 1,5 m, Knick ≥ 25°
-  const einspringend = Q => {
-    const out = [];
-    for (let i = 0; i < Q.length; i++) {
-      const a = Q[(i - 1 + Q.length) % Q.length].p, b = Q[i].p, c = Q[(i + 1) % Q.length].p;
-      const d1 = [b[0] - a[0], b[1] - a[1]], d2 = [c[0] - b[0], c[1] - b[1]];
-      const l1 = Math.hypot(d1[0], d1[1]), l2 = Math.hypot(d2[0], d2[1]);
-      if (l1 < 1.5 || l2 < 1.5) continue;
-      const cr = (d1[0] * d2[1] - d1[1] * d2[0]) / (l1 * l2);
-      if (cr < -Math.sin(25 * Math.PI / 180)) out.push({ i, p: b, d1: [d1[0] / l1, d1[1] / l1], d2: [d2[0] / l2, d2[1] / l2] });
-    }
-    return out;
-  };
-  const rasten = d => {
-    const ang = Math.atan2(d[1], d[0]);
-    for (const t of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      let df = Math.abs(ang - t); df = Math.min(df, 2 * Math.PI - df);
-      if (df < 20 * Math.PI / 180) return [Math.round(Math.cos(t)), Math.round(Math.sin(t))];
-    }
-    return d;
-  };
-  // Teilt Q an der Ecke i in Richtung d bis zur nächsten Kante
-  const teile = (Q, i, d) => {
-    const X = Q[i].p, n = Q.length;
-    let best = null;
-    for (let j = 0; j < n; j++) {
-      if (j === i || (j + 1) % n === i) continue;
-      const A = Q[j].p, B = Q[(j + 1) % n].p, e = [B[0] - A[0], B[1] - A[1]];
-      const den = d[0] * e[1] - d[1] * e[0];
-      if (Math.abs(den) < 1e-9) continue;
-      const w = [A[0] - X[0], A[1] - X[1]];
-      const t = (w[0] * e[1] - w[1] * e[0]) / den, s = (w[0] * d[1] - w[1] * d[0]) / den;
-      if (t > 0.05 && s >= -1e-9 && s <= 1 + 1e-9 && (!best || t < best.t)) best = { t, j, s };
-    }
-    if (!best || best.t < 2) return null;
-    const H = [X[0] + d[0] * best.t, X[1] + d[1] * best.t];
-    const mid = [X[0] + d[0] * best.t / 2, X[1] + d[1] * best.t / 2];
-    if (!pointInPolygon(mid, Q.map(x => x.p))) return null;
-    const j = best.j, p1 = [], p2 = [];
-    for (let k = i; ; k = (k + 1) % n) { p1.push({ p: Q[k].p, cut: Q[k].cut }); if (k === j) break; }
-    p1.push({ p: H, cut: true });
-    p2.push({ p: H, cut: Q[j].cut });
-    for (let k = (j + 1) % n; ; k = (k + 1) % n) { if (k === i) { p2.push({ p: Q[i].p, cut: true }); break; } p2.push({ p: Q[k].p, cut: Q[k].cut }); }
-    const ok = R => R.length >= 3 && polygonArea(R.map(x => x.p)) > 4;
-    return ok(p1) && ok(p2) ? [p1, p2] : null;
-  };
-  const bewerte = teile2 => {
-    let s = 0;
-    teile2.forEach(Q => {
-      const pts = Q.map(x => x.p), a = polygonArea(pts);
-      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-      pts.forEach(p => { u0 = Math.min(u0, p[0]); u1 = Math.max(u1, p[0]); v0 = Math.min(v0, p[1]); v1 = Math.max(v1, p[1]); });
-      const lu = u1 - u0, lv = v1 - v0, Dw = Math.min(lu, lv), fill = a / Math.max(1, lu * lv);
-      s += 8 + (1 - fill) * 60;
-      // ein Trakt braucht Platz für eine Stiege und mindestens eine Wohnung
-      if (a < 90) s += 40; else if (a < 150) s += 6;
-      if (Dw < 7.5) s += (7.5 - Dw) * 6;
-      s += Math.max(0, Dw - 24) * 2;
-    });
-    return s;
-  };
-  // alle Schnittkombinationen (höchstens vier einspringende Ecken)
-  const ecken = einspringend(start).sort((x, y) => 0).slice(0, 4).map(e => e.p);
-  let best = { s: bewerte([start]), teile: [start] };
-  const rek = (stueck, k) => {
-    if (k >= ecken.length) { const s = bewerte(stueck); if (s < best.s - 1e-6) best = { s, teile: stueck }; return; }
-    rek(stueck, k + 1);
-    const X = ecken[k];
-    for (let q = 0; q < stueck.length; q++) {
-      const Q = stueck[q], i = Q.findIndex(x => Math.hypot(x.p[0] - X[0], x.p[1] - X[1]) < 1e-6);
-      if (i < 0) continue;
-      const e = einspringend(Q).find(z => z.i === i);
-      if (!e) continue;
-      [rasten(e.d1), rasten([-e.d2[0], -e.d2[1]])].forEach(d => {
-        const r = teile(Q, i, d);
-        if (r) rek(stueck.slice(0, q).concat(r, stueck.slice(q + 1)), k + 1);
-      });
-    }
-  };
-  rek([start], 0);
-  return best.teile.filter(Q => flaeche(Q) > 4);
-}
-
-// ---------------------------------------------------------------------------
-// 2. Varianten je Trakt
-// ---------------------------------------------------------------------------
-// Ein Trakt hat ein eigenes Koordinatensystem: a entlang des Trakts (0…L),
-// b in die Tiefe, b = 0 an der Zugangsfassade. Die Stiegenhäuser liegen im
-// Band b ∈ [kb0, kb1] an dieser Fassade. Jede Variante liefert Kerne, Gänge und
-// Wohnungsfelder als Rechtecklisten in diesem System.
-//
-// Zwei Arten zu rechnen:
-//   frei  — am Referenzgeschoß: die Stiegen werden mitgesucht.
-//   fest  — an einem abweichenden Geschoß (Staffelgeschoß, Hangschnitt): die
-//           Stiegen stehen schon (X.fixK), nur die Wohnungen werden neu geteilt.
-
-// Liegt die Stiege nicht an der Fassade (weil sie bis ins zurückversetzte
-// oberste Geschoß reichen muss), führt ein Eingangsstich von der Fassade hin.
-function gaStich(kerne, kb0) {
-  if (!(kb0 > 0.3)) return [];
-  return kerne.map(k => { const p = (k[0] + k[1]) / 2; return [p - 0.7, p + 0.7, -0.05, k[2] + 0.02]; });
-}
-
-// SPÄNNER: je Stiege 2, 3 oder 4 Wohnungen. Die beiden seitlichen reichen über
-// die ganze Tiefe; beim Drei- und Vierspänner liegt vor dem Stiegenhaus eine
-// (bzw. zwei) Wohnung(en) zur Gegenfassade.
-function gaSpaenner(Z, n, k, X) {
-  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, fb = Math.max(0, kb1);
-  const fd = Math.max(1, A(0, L, fb, D) / Math.max(1, L));
-  const zellenFuer = (x, p, x2, f1, f2, z, c0, c1) => {
-    const out = [];
-    if (k === 2) { out.push({ r: [[x, p, 0, D]], z: z[0] }, { r: [[p, x2, 0, D]], z: z[1] }); return out; }
-    out.push({ r: [[x, p - f1, 0, D], [p - f1, c0, 0, fb]], z: z[0] });
-    if (k === 3) out.push({ r: [[p - f1, p + f2, fb, D]], z: z[1], front: true });
-    else out.push({ r: [[p - f1, p, fb, D]], z: z[1], front: true }, { r: [[p, p + f2, fb, D]], z: z[2], front: true });
-    out.push({ r: [[p + f2, x2, 0, D], [c1, p + f2, 0, fb]], z: z[k - 1] });
-    return out;
-  };
-  const regeln = (x, p, x2, f1, f2, c0, c1) => {
-    let pen = 0;
-    if (k === 2) {
-      if (c0 - x < 2.0) pen += 15;
-      if (x2 - c1 < 2.0) pen += 15;
-    } else {
-      if (p - f1 - x < 2.6) pen += 20;
-      if (x2 - (p + f2) < 2.6) pen += 20;
-      if (k === 3 && f1 + f2 < 4.5) pen += 15;
-      if (k === 4 && Math.min(f1, f2) < 3.8) pen += 15;
-      if (D - fb > 9.5) pen += (D - fb - 9.5) * 4;
-      if (D - fb < 5.5) pen += 25;
-    }
-    return pen;
-  };
-  // Front links/rechts der Stiegenmitte auf ihre Zielfläche bringen
-  const front = (p, c0, c1, tF1, tF2, lo, hi) => [
-    Math.max(p - c0, Math.min(p - lo - 2.6, gaLoese(f => A(p - f, p, fb, D), 0, Math.max(0.1, p - lo), tF1, D - fb))),
-    Math.max(c1 - p, Math.min(hi - p - 2.6, gaLoese(f => A(p, p + f, fb, D), 0, Math.max(0.1, hi - p), tF2, D - fb)))];
-  const tFront = t => [k === 3 ? t[1] / 2 : k === 4 ? t[1] : 0, k === 3 ? t[1] / 2 : k === 4 ? t[2] : 0];
-
-  if (X.fixK) {
-    // ---- feste Stiegen: nur die Trennwände zwischen den Stiegen sind frei ----
-    const K = X.fixK.slice().sort((a, b) => a[0] - b[0]);
-    if (k === 1) return { typ: 'klein', k: 1, n: K.length, zellen: [{ r: [[0, L, 0, D]], z: Z[0] }], kerne: K.map(q => q.slice()), gaenge: gaStich(K, K[0][2]), pen: 0 };
-    const nK = K.length, P = K.map(q => (q[0] + q[1]) / 2);
-    const z = i => Z.slice(i * k, i * k + k);
-    const F = K.map((q, i) => {
-      if (k === 2) return [0, 0];
-      const t = z(i).map(x => x.T), [a, b] = tFront(t);
-      return front(P[i], q[0], q[1], a, b, i ? P[i - 1] : 0, i < nK - 1 ? P[i + 1] : L);
-    });
-    const rechts = (i, q) => k === 2 ? A(P[i], q, 0, D) - A(P[i], K[i][1], kb0, kb1) : A(P[i] + F[i][1], q, 0, D) + A(K[i][1], P[i] + F[i][1], 0, fb);
-    const links = (i, q) => k === 2 ? A(q, P[i], 0, D) - A(K[i][0], P[i], kb0, kb1) : A(q, P[i] - F[i][0], 0, D) + A(P[i] - F[i][0], K[i][0], 0, fb);
-    const Q = [0];
-    let pen = 0;
-    for (let i = 0; i + 1 < nK; i++) {
-      const tR = z(i)[k - 1].T, tL = z(i + 1)[0].T, anteil = tR / (tR + tL);
-      const lo = k === 2 ? P[i] : P[i] + F[i][1], hi = k === 2 ? P[i + 1] : P[i + 1] - F[i + 1][0];
-      if (hi - lo < 1) pen += 40;
-      Q.push(gaLoese(q => { const r = rechts(i, q), l = links(i + 1, q); return r / Math.max(1e-6, r + l); }, lo, Math.max(lo, hi), anteil, 1));
-    }
-    Q.push(L);
-    const zellen = [];
-    K.forEach((q, i) => {
-      zellen.push(...zellenFuer(Q[i], P[i], Q[i + 1], F[i][0], F[i][1], z(i), q[0], q[1]));
-      pen += regeln(Q[i], P[i], Q[i + 1], F[i][0], F[i][1], q[0], q[1]);
-    });
-    return { typ: 'spaenner', k, n: nK, zellen, kerne: K.map(q => q.slice()), gaenge: gaStich(K, K[0][2]), pen };
-  }
-
-  const bauen = s => {
-    let x = 0, pen = 0;
-    const zellen = [], kerne = [];
-    for (let c = 0; c < n; c++) {
-      const z = Z.slice(c * k, c * k + k), t = z.map(q => q.T * s);
-      if (k === 1) {
-        const p = L / 2;
-        kerne.push([p - cw / 2, p + cw / 2, kb0, kb1]);
-        zellen.push({ r: [[0, L, 0, D]], z: z[0] });
-        x = L; break;
-      }
-      const [tF1, tF2] = tFront(t);
-      let f1 = k >= 3 ? Math.max(cw / 2, tF1 / fd) : 0, f2 = k >= 3 ? Math.max(cw / 2, tF2 / fd) : 0;
-      const flL = p => k === 2 ? A(x, p, 0, D) - A(p - cw / 2, p, kb0, kb1) : A(x, p - f1, 0, D) + A(p - f1, p - cw / 2, 0, fb);
-      let p = gaLoese(flL, x + (k === 2 ? cw / 2 : f1), L, t[0], D);
-      if (k >= 3) for (let it = 0; it < 2; it++) {
-        [f1, f2] = front(p, p - cw / 2, p + cw / 2, tF1, tF2, x, L + 30);
-        p = gaLoese(flL, x + f1, L, t[0], D);
-      }
-      const c0 = p - cw / 2, c1 = p + cw / 2;
-      kerne.push([c0, c1, kb0, kb1]);
-      const flR = x2 => k === 2 ? A(p, x2, 0, D) - A(p, c1, kb0, kb1) : A(p + f2, x2, 0, D) + A(c1, p + f2, 0, fb);
-      const x2 = gaLoese(flR, k === 2 ? p : p + f2, L, t[k - 1], D);
-      zellen.push(...zellenFuer(x, p, x2, f1, f2, z, c0, c1));
-      pen += regeln(x, p, x2, f1, f2, c0, c1);
-      x = x2;
-    }
-    return { x, zellen, kerne, gaenge: [], pen };
-  };
-  let lo = 0.25, hi = 4;
-  for (let i = 0; i < 28; i++) { const m = (lo + hi) / 2; if (bauen(m).x < L) lo = m; else hi = m; }
-  const v = bauen((lo + hi) / 2);
-  const last = v.zellen[v.zellen.length - 1];
-  if (last) last.r[0][1] = L;
-  v.typ = k === 1 ? 'klein' : 'spaenner'; v.k = k; v.n = n;
-  v.gaenge = gaStich(v.kerne, kb0);
-  return v;
-}
-
-// LAUBENGANG: Gang 1,50 m an der Zugangsfassade über die ganze Länge, Stiegen an
-// den Enden (bei sehr langen Zeilen zusätzlich in der Mitte). Die Wohnungen
-// reichen vom Gang bis zur Gegenfassade.
-function gaLaubengang(Z, n, ende, X) {
-  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, g = GA_LAUBE;
-  const fest = !!X.fixK;
-  let kernA = fest ? X.fixK.map(q => q[0]).sort((a, b) => a - b)
-    : n === 1 ? [ende ? L - cw : 0] : n === 2 ? [0, L - cw] : [0, L / 2 - cw / 2, L - cw];
-  const kw = fest ? X.fixK.map(q => q[1] - q[0]) : kernA.map(() => cw);
-  const N = Z.length;
-  const net = (x0, x1) => {
-    let a = A(x0, x1, g, D);
-    kernA.forEach((c0, i) => { a -= A(Math.max(x0, c0), Math.min(x1, c0 + kw[i]), Math.max(g, kb0), kb1); });
-    return a;
-  };
-  const bauen = s => {
-    const xs = [0];
-    for (let i = 0; i < N; i++) { const x0 = xs[i]; xs.push(gaLoese(x1 => net(x0, x1), x0, L, Z[i].T * s, D - g)); }
-    return xs;
-  };
-  let lo = 0.25, hi = 4;
-  for (let i = 0; i < 28; i++) { const m = (lo + hi) / 2; if (bauen(m)[N] < L) lo = m; else hi = m; }
-  const xs = bauen((lo + hi) / 2); xs[N] = L;
-  if (!fest && n === 3) { let bi = 1; for (let i = 1; i < N; i++) if (Math.abs(xs[i] - L / 2) < Math.abs(xs[bi] - L / 2)) bi = i; kernA[1] = xs[bi] - cw / 2; }
-  const kerne = kernA.map((c0, i) => [c0, c0 + kw[i], kb0, kb1]);
-  const zellen = [];
-  let pen = 0;
-  for (let i = 0; i < N; i++) {
-    zellen.push({ r: [[xs[i], xs[i + 1], g, D]], z: Z[i] });
-    // Anschluss an den Gang und Fluchtweg bis zur nächsten Stiege
-    let frei = [[xs[i], xs[i + 1]]];
-    kernA.forEach((c0, j) => { const c1 = c0 + kw[j]; frei = frei.flatMap(([a, b]) => { const o = []; if (c0 - a > 0.01) o.push([a, Math.min(b, c0)]); if (b - c1 > 0.01) o.push([Math.max(a, c1), b]); return o.filter(q => q[1] - q[0] > 0.01); }); });
-    const lang = frei.reduce((q, f) => q + f[1] - f[0], 0);
-    if (lang < 1.0) pen += 40;
-    const tuer = frei.length ? (frei[0][0] + frei[0][1]) / 2 : (xs[i] + xs[i + 1]) / 2;
-    const weg = Math.min(...kernA.map((c0, j) => tuer < c0 ? c0 - tuer : tuer > c0 + kw[j] ? tuer - c0 - kw[j] : 0));
-    if (weg > GA_FLUCHT) pen += 200;
-    if (xs[i + 1] - xs[i] < 4.0) pen += 12;
-  }
-  // eingerückte Stiege: Stich vom Laubengang zum Stiegenhaus
-  const gaenge = [[0, L, 0, g]];
-  kerne.forEach(k2 => { if (k2[2] > g + 0.3) { const p = (k2[0] + k2[1]) / 2; gaenge.push([p - 0.7, p + 0.7, g - 0.02, k2[2] + 0.02]); } });
-  return { typ: 'laubengang', n: kernA.length, zellen, kerne, gaenge, pen };
-}
-
-// MITTELGANG: innenliegender Gang in der Gebäudemitte, beidseitig einseitig
-// orientierte Wohnungen. An den Stirnseiten wahlweise Kopfwohnungen über die
-// ganze Tiefe (drei Fassaden) — oder der Gang läuft bis zur Fassade durch.
-// Die Stiegen liegen an der Zugangsfassade und binden mit einem kurzen
-// Stichgang an den Mittelgang an.
-function gaMittelgang(Zall, n, mitEnden, X) {
-  const { L, D, A, cw, mix } = X, kb0 = X.kb0;
-  const Dm = A(0, L, 0, D) / Math.max(1, L), bm = Dm / 2, gLo = bm - GA_GANG / 2, gHi = bm + GA_GANG / 2;
-  if (gLo < 3.2 || D - gHi < 3.2) return null;
-  const kd = kb0 > 0.3 ? gLo : Math.min(X.kb1, gLo);
-  const kc0 = kb0 > 0.3 ? Math.max(0, Math.min(kb0, gLo - 2.9)) : kb0;
-  let pen = 0;
-  const groesst = Math.max(...mix.map(m => m.a));
-  const K = X.fixK ? X.fixK.slice().sort((a, b) => a[0] - b[0]) : null;
-  let e0 = mitEnden ? gaLoese(e => A(0, e, 0, D), 0, L / 3, groesst, D) : 0;
-  let e1 = mitEnden ? L - gaLoese(e => A(L - e, L, 0, D), 0, L / 3, groesst, D) : L;
-  if (K) { e0 = Math.min(e0, K[0][0] - 3); e1 = Math.max(e1, K[K.length - 1][1] + 3); if (e0 < 3) e0 = 0; if (L - e1 < 3) e1 = L; }
-  if (e1 - e0 < cw + 6) return null;
-  const ps = K ? K.map(q => (q[0] + q[1]) / 2) : Array.from({ length: n }, (_, i) => e0 + (e1 - e0) * (i + 0.5) / n);
-  const kerne = K ? K.map(q => [q[0], q[1], kc0, kd]) : ps.map(p => [p - cw / 2, p + cw / 2, kc0, kd]);
-  const gaenge = [[e0, e1, gLo, gHi]];
-  ps.forEach(p => { if (gLo - kd > 0.2) gaenge.push([p - 0.7, p + 0.7, kd - 0.02, gLo + 0.02]); });
-  gaStich(kerne, kc0).forEach(g2 => gaenge.push(g2));
-  const meanT = mix.reduce((q, m) => q + m.a * m.w, 0) / (mix.reduce((q, m) => q + m.w, 0) || 1);
-  const netZ = (x0, x1) => {
-    let a = A(x0, x1, 0, gLo);
-    kerne.forEach(k => { a -= A(Math.max(x0, k[0]), Math.min(x1, k[1]), Math.max(0, k[2]), k[3]); });
-    gaenge.slice(1).forEach(g2 => { a -= A(Math.max(x0, g2[0]), Math.min(x1, g2[1]), Math.max(0, g2[2]), Math.min(gLo, g2[3])); });
-    return a;
-  };
-  const netG = (x0, x1) => A(x0, x1, gHi, D);
-  // Abschnitte: Zugangsseite zwischen den Stiegenmitten, Gegenseite durchgehend
-  const absch = [];
-  const grenzen = [e0].concat(ps, [e1]);
-  for (let i = 0; i + 1 < grenzen.length; i++) absch.push({ x0: grenzen[i], x1: grenzen[i + 1], net: netZ, band: [0, gLo] });
-  absch.push({ x0: e0, x1: e1, net: netG, band: [gHi, D] });
-  absch.forEach(s => { s.m = Math.max(1, Math.round(s.net(s.x0, s.x1) / meanT)); });
-  const N = absch.reduce((q, s) => q + s.m, 0) + (mitEnden && e0 > 0 ? 1 : 0) + (mitEnden && e1 < L ? 1 : 0);
-  const Z = Zall(N);
-  let zi = 0;
-  const zellen = [];
-  if (mitEnden && e0 > 0) zellen.push({ r: [[0, e0, 0, D]], z: Z[zi++] });
-  const zEnd = mitEnden && e1 < L ? Z[N - 1] : null;
-  absch.forEach(s => {
-    const zz = Z.slice(zi, zi + s.m); zi += s.m;
-    const summe = zz.reduce((q, z) => q + z.T, 0), tot = s.net(s.x0, s.x1);
-    let x = s.x0;
-    zz.forEach((z, j) => {
-      const x1 = j === zz.length - 1 ? s.x1 : gaLoese(q => s.net(x, q), x, s.x1, tot * z.T / summe, s.band[1] - s.band[0]);
-      zellen.push({ r: [[x, x1, s.band[0], s.band[1]]], z });
-      if (x1 - x < 3.6) pen += 12;
-      x = x1;
-    });
+  units.forEach((u, i) => {
+    const poly = u.footprint;
+    if (!poly || poly.length < 3) return;
+    let sg = null;
+    try { sg = new THREE.ShapeGeometry(fpShape(poly, false)); } catch (e) { return; }
+    const pos = sg.attributes.position, idx = sg.index, arr = [];
+    const addV = k => arr.push(pos.getX(k), y, pos.getY(k));
+    if (idx) for (let k = 0; k < idx.count; k++) addV(idx.getX(k)); else for (let k = 0; k < pos.count; k++) addV(k);
+    sg.dispose();
+    if (arr.length < 9) return;
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    bg.computeVertexNormals();
+    const f = rgba(einheitFarbe(u.zonNr != null ? u.zonNr : i, dunkel));
+    // Die Geschoßkörper werden mit renderOrder 2 als Schleier darübergelegt. Die
+    // Farbfläche zeichnet danach (3), sonst verschwindet sie unter dem Geschoß
+    // darüber — sichtbar bleiben soll sie, überdecken soll sie nichts: deshalb
+    // schreibt sie keine Tiefe und bleibt durchscheinend.
+    const mesh = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({
+      color: f.c, transparent: true, opacity: Math.min(0.92, f.a + 0.30),
+      side: THREE.DoubleSide, depthWrite: false
+    }));
+    mesh.renderOrder = 3;
+    g.add(mesh);
+    const l = buildZoneLine(poly, y + 0.006, ZONE_LINE_COLOR);
+    if (l) { l.renderOrder = 4; g.add(l); }
   });
-  if (zEnd) zellen.push({ r: [[e1, L, 0, D]], z: zEnd });
-  // einseitig belichtet: Wohnungstiefe über 9 m wird dunkel
-  [gLo, D - gHi].forEach(t => { if (t > 9) pen += (t - 9) * 5; });
-  // Fluchtweg: Gang von der Wohnungstür bis zur nächsten Stiege
-  zellen.forEach(c => {
-    const r = c.r[0], tuer = Math.max(e0, Math.min(e1, (r[0] + r[1]) / 2));
-    const weg = Math.min(...ps.map(p => Math.abs(tuer - p))) + Math.max(0, gLo - kd);
-    if (weg > GA_FLUCHT) pen += 200;
-  });
-  return { typ: 'mittelgang', n: ps.length, zellen, kerne, gaenge, pen };
+  // gewählte Einheit: geschlossene Umrahmung in Orange, keine Kamerafahrt
+  if (selFp && selFp.length >= 3) {
+    const pts = selFp.map(p => new THREE.Vector3(p[0], y + 0.03, p[1]));
+    pts.push(pts[0].clone());
+    const m = new THREE.LineBasicMaterial({ color: EH_WAHL_FARBE, depthWrite: false, depthTest: false });
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m);
+    ln.renderOrder = 8;
+    g.add(ln);
+  }
+  return g.children.length ? g : null;
 }
+const EH_WAHL_FARBE = 0xe98f6c;   // CI-Orange für die gewählte Einheit
 
-// PUNKTHAUS: eine Stiege an der Zugangsfassade, ein kurzer Gang in die Tiefe,
-// links und rechts davon je zwei oder drei Wohnungen; kleine Punkthäuser mit
-// einer durchgehenden Wohnung auf der Rückseite.
-function gaPunkt(Z, variante, X) {
-  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, g = GA_GANG, fb = Math.max(0, kb1);
-  const K = X.fixK ? X.fixK[0] : null;
-  const p = K ? (K[0] + K[1]) / 2 : L / 2, kern = K ? K.slice() : [p - cw / 2, p + cw / 2, kb0, kb1];
-  const sumT = Z.reduce((q, z) => q + z.T, 0);
-  const kernIn = (x0, x1, b) => A(Math.max(x0, kern[0]), Math.min(x1, kern[1]), Math.max(0, kern[2]), Math.min(b, kern[3]));
-  const gangIn = (x0, x1, b) => b > fb ? A(Math.max(x0, p - g / 2), Math.min(x1, p + g / 2), fb, b) : 0;
-  const tot = A(0, L, 0, D) - kernIn(0, L, D);
-  const zellen = [], gaenge = [];
-  let pen = 0;
-  if (p < 4 || L - p < 4) return null;
-  if (variante === 45 || variante === 46) {
-    // Vierspänner mit seitlichem Gang: der Gang setzt an einer Seite des Stiegenhauses
-    // an; die Wohnung auf der anderen Seite bekommt einen breiten, möblierbaren
-    // Schenkel hinter der Stiege. Jede Spalte wird für sich in vorn/hinten geteilt.
-    const cx = variante === 45 ? kern[1] - g / 2 : kern[0] + g / 2;
-    const gangX = (x0, x1, b) => b > fb ? A(Math.max(x0, cx - g / 2), Math.min(x1, cx + g / 2), fb, b) : 0;
-    const spalte = (x0, x1, zv, zh) => {
-      const fl = b => A(x0, x1, 0, b) - kernIn(x0, x1, b) - gangX(x0, x1, b);
-      return gaLoese(fl, 0, D, fl(D) * zv.T / (zv.T + zh.T), x1 - x0);
-    };
-    const bl = spalte(0, cx, Z[0], Z[2]), br = spalte(cx, L, Z[1], Z[3]);
-    gaenge.push([cx - g / 2, cx + g / 2, fb - 0.02, Math.min(D - 2.5, Math.max(bl, br) + 1.2)]);
-    zellen.push({ r: [[0, cx, 0, bl]], z: Z[0] }, { r: [[cx, L, 0, br]], z: Z[1] });
-    zellen.push({ r: [[0, cx, bl, D]], z: Z[2] }, { r: [[cx, L, br, D]], z: Z[3] });
-    [bl, br].forEach(b => { if (b < 4.5) pen += 20; if (D - b < 4.5) pen += 20; });
-    if (Math.min(cx, L - cx) < 5) pen += 25;
-  } else if (variante === 44) {
-    // Vierspänner mit Vorplatz: das Stiegenhaus reicht als Vorplatz bis zur Querwand,
-    // die vorderen Wohnungen liegen rechteckig daneben, die hinteren dahinter
-    const vorn = (Z[0].T + Z[1].T) / sumT * tot;
-    const bc = gaLoese(b => A(0, L, 0, b) - A(kern[0], kern[1], 0, b), 0, D, vorn, L);
-    if (bc > fb + 0.3) gaenge.push([kern[0], kern[1], fb - 0.02, bc + 0.02]);
-    zellen.push({ r: [[0, kern[0], 0, bc]], z: Z[0] }, { r: [[kern[1], L, 0, bc]], z: Z[1] });
-    zellen.push({ r: [[0, p, bc, D]], z: Z[2] }, { r: [[p, L, bc, D]], z: Z[3] });
-    if (bc < 4.5) pen += 20;
-    if (D - bc < 4.5) pen += 20;
-    if (kern[0] < 3.5 || L - kern[1] < 3.5) pen += 25;
-  } else if (variante === 3 || variante === 4) {
-    // Schnitt bc in der Tiefe: vordere Wohnungen bis bc, hintere ab bc
-    const vorn = (Z[0].T + Z[1].T) / sumT * tot;
-    const bc = gaLoese(b => A(0, L, 0, b) - kernIn(0, L, b) - gangIn(0, L, b), 0, D, vorn, L);
-    if (bc > fb + 0.3) gaenge.push([p - g / 2, p + g / 2, fb - 0.02, Math.min(D - 2.5, bc + (variante === 4 ? 1.2 : 0))]);
-    zellen.push({ r: [[0, p, 0, bc]], z: Z[0] }, { r: [[p, L, 0, bc]], z: Z[1] });
-    // schmaler Schenkel hinter dem Stiegenhaus ist kaum möblierbar
-    if (bc - fb > 2 && (p - g / 2) - kern[0] < 3) pen += 22;
-    if (variante === 4) zellen.push({ r: [[0, p, bc, D]], z: Z[2] }, { r: [[p, L, bc, D]], z: Z[3] });
-    else zellen.push({ r: [[0, L, bc, D]], z: Z[2] });
-    if (bc < 4.5) pen += 20;
-    if (D - bc < 4.5) pen += 20;
-  } else {   // 6: je Seite drei Wohnungen hintereinander in die Tiefe
-    const spalte = (x0, x1, zz) => {
-      const fl = b => A(x0, x1, 0, b) - kernIn(x0, x1, b) - gangIn(x0, x1, b);
-      const ges = fl(D), s3 = zz.reduce((q, z) => q + z.T, 0);
-      return [gaLoese(fl, 0, D, ges * zz[0].T / s3, x1 - x0), gaLoese(fl, 0, D, ges * (zz[0].T + zz[1].T) / s3, x1 - x0)];
-    };
-    const [l1, l2] = spalte(0, p, [Z[0], Z[1], Z[2]]), [r1, r2] = spalte(p, L, [Z[3], Z[4], Z[5]]);
-    const b2 = Math.max(l2, r2);
-    gaenge.push([p - g / 2, p + g / 2, fb - 0.02, Math.min(D - 2.5, b2 + 1.2)]);
-    zellen.push({ r: [[0, p, 0, l1]], z: Z[0] }, { r: [[0, p, l1, l2]], z: Z[1] }, { r: [[0, p, l2, D]], z: Z[2] });
-    zellen.push({ r: [[p, L, 0, r1]], z: Z[3] }, { r: [[p, L, r1, r2]], z: Z[4] }, { r: [[p, L, r2, D]], z: Z[5] });
-    if (p - g / 2 > 10) pen += (p - g / 2 - 10) * 5;     // Mittelwohnung nur über die Stirnseite belichtet
-    [l1, l2 - l1, D - l2, r1, r2 - r1, D - r2].forEach(t => { if (t < 4) pen += 15; });
-  }
-  gaStich([kern], kern[2]).forEach(g2 => gaenge.push(g2));
-  return { typ: 'punkt', n: 1, zellen, kerne: [kern], gaenge, pen, variante };
-}
-
-// Bewertung einer Variante: Treue zum Wohnungsschlüssel, keine Wohnung unter
-// 45 m², Erschließungsanteil, plus die Strafpunkte der Variante selbst.
-function gaBewerte(v, X) {
-  const { A, L, D } = X;
-  const circ = v.kerne.concat(v.gaenge);
-  let circA = 0;
-  v.kerne.forEach(k => { circA += A(k[0], k[1], Math.max(0, k[2]), k[3]); });
-  v.gaenge.forEach(g => { let a = A(g[0], g[1], g[2], g[3]); v.kerne.forEach(k => { const s = gaSchnitt(g, k); if (gaRect(s)) a -= A(s[0], s[1], Math.max(0, s[2]), s[3]); }); circA += Math.max(0, a); });
-  const tot = Math.max(1, A(0, L, 0, D));
-  let s = v.pen || 0, dev = 0;
-  v.zellen.forEach(c => {
-    let a = 0;
-    c.r.forEach(r => {
-      if (!gaRect(r)) return;
-      a += A(r[0], r[1], r[2], r[3]);
-      circ.forEach(k => { const q = gaSchnitt(r, k); if (gaRect(q)) a -= A(q[0], q[1], Math.max(0, q[2]), q[3]); });
-    });
-    c.A = a;
-    const T = c.z ? c.z.T : a;
-    dev += Math.abs(a - T) / T;
-    if (a < GA_MIN) s += 30 + (GA_MIN - a);
-    if (a > X.maxT * 1.5) s += (a - X.maxT * 1.5) * 0.5;
-  });
-  s += 30 * dev / Math.max(1, v.zellen.length);
-  s += 160 * Math.max(0, circA / tot - 0.07);   // Erschließung kostet verkaufbare Fläche
-  v.circA = circA; v.score = s;
-  return s;
-}
-
-// Alle Varianten für einen Trakt erzeugen und nach Bewertung sortieren.
-// nurTyp: am abweichenden Geschoß bleibt die Erschließung des Trakts erhalten.
-function gaVarianten(X, nurTyp) {
-  const { L, D, A, mix, cw } = X;
-  const Dm = A(0, L, 0, D) / Math.max(1, L), fl = A(0, L, 0, D);
-  const meanT = mix.reduce((q, m) => q + m.a * m.w, 0) / (mix.reduce((q, m) => q + m.w, 0) || 1);
-  X.maxT = Math.max(...mix.map(m => m.a));
-  const cd = X.kb1 - X.kb0;
-  // bevorzugter Typ nach der Tiefe — dieselben Schwellen wie bisher, an den
-  // ausgewerteten Einreichplänen geprüft (Kirchbichl, Wörgl, Hinterkaiser)
-  const prim = nurTyp || ((L / Dm < 1.6 && Dm > 13 && fl <= 750) ? 'punkt' : (Dm <= 10.5 && L >= 22) ? 'laubengang' : Dm <= 15.5 ? 'spaenner' : 'mittelgang');
-  const darf = t => true;
-  const arten = ['rand', 'wechsel', 'mitte', 'block'];
-  const V = [];
-  // Typwechsel kostet — am abweichenden Geschoß mehr, damit das Haus einheitlich bleibt
-  const nimm = v => { if (!v) return; gaBewerte(v, X); if (v.typ !== prim && !(prim === 'klein' && v.typ === 'spaenner')) v.score += nurTyp ? 15 : 8; V.push(v); };
-  const nFix = X.fixK ? X.fixK.length : 0;
-  // eine Stiege, eine Wohnung — nur wenn für zwei kein Platz ist
-  if (fl - cw * cd < 2 * GA_MIN + 10 && (!X.fixK || nFix === 1)) nimm(gaSpaenner(gaZiele(1, mix, 'block'), 1, 1, X));
-  // Spänner
-  if (darf('spaenner') && Dm <= 17) {
-    const nListe = X.fixK ? [nFix] : Array.from({ length: Math.max(1, Math.ceil(L / (cw + 2 * 3.8))) }, (_, i) => i + 1);
-    for (let k = 2; k <= 4; k++) {
-      if (k >= 3 && Dm - Math.max(0, X.kb1) < 6.0) continue;
-      nListe.forEach(n => {
-        const N = n * k;
-        if ((fl - n * cw * cd) / N < GA_MIN * 0.9) return;
-        if (!X.fixK && (fl - n * cw * cd) / N > X.maxT * 1.8) return;
-        arten.forEach(art => nimm(gaSpaenner(gaZiele(N, mix, art), n, k, X)));
-      });
-    }
-  }
-  // Laubengang
-  const fest = !!X.fixK;
-  if (darf('laubengang') && Dm <= (fest ? 14 : 11.5) && L >= 16) {
-    const N0 = Math.max(1, Math.round((fl - L * GA_LAUBE) / meanT));
-    [N0 - 1, N0, N0 + 1].filter(N => N >= 2).forEach(N => {
-      (X.fixK ? [nFix] : [1, 2, 3]).forEach(n => {
-        if (!X.fixK && n === 3 && L < 70) return;
-        if (!X.fixK && n === 2 && L < 30) return;
-        (n === 1 && !X.fixK ? [0, 1] : [0]).forEach(ende => arten.forEach(art => nimm(gaLaubengang(gaZiele(N, mix, art), n, ende, X))));
-      });
-    });
-  }
-  // Mittelgang
-  if (darf('mittelgang') && Dm >= (fest ? 12 : 15)) {
-    const n0 = Math.max(1, Math.ceil(L / (2 * 38)));
-    (X.fixK ? [nFix] : [n0, n0 + 1]).forEach(n => [true, false].forEach(ende => arten.forEach(art => nimm(gaMittelgang(N => gaZiele(N, mix, art), n, ende, X)))));
-  }
-  // Punkthaus
-  if (darf('punkt') && L / Dm < 1.8 && Dm >= 11 && (!X.fixK || nFix === 1)) {
-    const N0 = Math.round((fl - cw * cd) / meanT);
-    if (N0 <= 4) arten.forEach(art => nimm(gaPunkt(gaZiele(3, mix, art), 3, X)));
-    if (N0 >= 3 && N0 <= 6) arten.forEach(art => { nimm(gaPunkt(gaZiele(4, mix, art), 4, X)); nimm(gaPunkt(gaZiele(4, mix, art), 44, X)); nimm(gaPunkt(gaZiele(4, mix, art), 45, X)); nimm(gaPunkt(gaZiele(4, mix, art), 46, X)); });
-    if (N0 >= 5) arten.forEach(art => nimm(gaPunkt(gaZiele(6, mix, art), 6, X)));
-  }
-  V.sort((x, y) => x.score - y.score);
-  return { varianten: V, prim };
-}
-
-// ---------------------------------------------------------------------------
-// 3. Plan für einen Baukörper
-// ---------------------------------------------------------------------------
-// refFp: Referenzgeschoß (Welt). ctx: { ux, uy, centroid, kernU, kernV,
-// strasse (Punkt oder null), topFp (oberstes Geschoß), seed }
-function gaPlan(refFp, ctx) {
-  if (!refFp || refFp.length < 3 || typeof ClipperLib === 'undefined') return null;
-  const { ux, uy, centroid } = ctx, vx = -uy, vy = ux;
-  const toUV = p => [(p[0] - centroid[0]) * ux + (p[1] - centroid[1]) * uy, (p[0] - centroid[0]) * vx + (p[1] - centroid[1]) * vy];
-  const toW = q => [centroid[0] + q[0] * ux + q[1] * vx, centroid[1] + q[0] * uy + q[1] * vy];
-  const mix = activeUnitMix().filter(m => m.a > 20 && m.w > 0);
-  if (!mix.length) return null;
-  const teile = gaTrakte(refFp.map(toUV));
-  const C = ClipperLib;
-  const pruefPf = [ctx.untenFp, ctx.topFp].filter(q => q && q.length >= 3).map(q => [gaPfad(q)]);
-  const trakte = [];
-  teile.forEach((Q, ti) => {
-    const pts = Q.map(x => x.p);
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    pts.forEach(p => { u0 = Math.min(u0, p[0]); u1 = Math.max(u1, p[0]); v0 = Math.min(v0, p[1]); v1 = Math.max(v1, p[1]); });
-    const entlangU = (u1 - u0) >= (v1 - v0);
-    const eUV = entlangU ? [1, 0] : [0, 1];
-    // die beiden möglichen Zugangsseiten
-    const opt = [1, -1].map(sg => {
-      const nUV = entlangU ? [0, sg] : [-sg, 0];        // zeigt von der Zugangsfassade ins Haus
-      const a0 = entlangU ? u0 : v0;
-      const bRef = entlangU ? (sg > 0 ? v0 : v1) : (sg > 0 ? u1 : u0);
-      const OUV = entlangU ? [a0, bRef] : [bRef, a0];
-      const loc = q => [(q[0] - OUV[0]) * eUV[0] + (q[1] - OUV[1]) * eUV[1], (q[0] - OUV[0]) * nUV[0] + (q[1] - OUV[1]) * nUV[1]];
-      // Außenfassade auf dieser Seite (keine Schnittkante zu einem Nachbartrakt)
-      let fassade = 0;
-      Q.forEach((x, i) => {
-        if (x.cut) return;
-        const a = loc(x.p), b = loc(Q[(i + 1) % Q.length].p);
-        if (a[1] < 0.5 && b[1] < 0.5) fassade += Math.abs(b[0] - a[0]);
-      });
-      const O = toW(OUV), e = [eUV[0] * ux + eUV[1] * vx, eUV[0] * uy + eUV[1] * vy], n = [nUV[0] * ux + nUV[1] * vx, nUV[0] * uy + nUV[1] * vy];
-      return { O, e, n, fassade, loc };
-    });
-    // Zugang: zur Straße, wenn sie eindeutig auf einer Seite liegt, sonst nach Norden
-    // (Wohnräume zur ruhigen bzw. sonnigen Seite — wie in allen sieben Referenzplänen)
-    const mitte = toW([(u0 + u1) / 2, (v0 + v1) / 2]);
-    const wert = o => {
-      const aus = [-o.n[0], -o.n[1]];
-      let w = 0;
-      if (ctx.strasse) {
-        const d = [ctx.strasse[0] - mitte[0], ctx.strasse[1] - mitte[1]], l = Math.hypot(d[0], d[1]) || 1;
-        const dot = (aus[0] * d[0] + aus[1] * d[1]) / l;
-        if (Math.abs(dot) > 0.35) w += dot * 10;
-      }
-      if (!w) { try { const b = worldDirToBearing(aus[0], aus[1]); w += Math.cos(b * Math.PI / 180) * 3; } catch (e) { /* ohne Nordrichtung */ } }
-      if (o.fassade < ctx.kernU + 1) w -= 100;
-      return w;
-    };
-    const wahl = wert(opt[0]) >= wert(opt[1]) ? opt[0] : opt[1];
-    const polyAB = pts.map(wahl.loc);
-    let L = 0, D = 0;
-    polyAB.forEach(p => { L = Math.max(L, p[0]); D = Math.max(D, p[1]); });
-    const w = { O: wahl.O, e: wahl.e, n: wahl.n, L, D, polyAB, poly: pts.map(toW), idx: ti };
-    w.A = gaRaster(polyAB, L, D);
-    w.flaeche = polygonArea(w.poly);
-    trakte.push(w);
-  });
-  if (!trakte.length) return null;
-  // Größter Trakt = Haupttrakt (bestimmt den Typ für Kennzahlen und Plan)
-  trakte.sort((a, b) => b.flaeche - a.flaeche);
-  const kernU = ctx.kernU;
-  trakte.forEach(w => {
-    const cd = Math.min(ctx.kernV, Math.max(2.9, w.D - 4.5));
-    // Die Stiege muss bis ins oberste Geschoß reichen. Ist es an der Zugangsseite
-    // zurückversetzt (Lichtabstand, Staffelgeschoß), rückt sie um diesen Betrag ins Haus.
-    let kb0 = 0;
-    if (ctx.topFp && ctx.topFp.length >= 3) {
-      const loc = p => [(p[0] - w.O[0]) * w.e[0] + (p[1] - w.O[1]) * w.e[1], (p[0] - w.O[0]) * w.n[0] + (p[1] - w.O[1]) * w.n[1]];
-      const tb = ctx.topFp.map(loc).filter(p => p[0] > -1 && p[0] < w.L + 1 && p[1] > -1 && p[1] < w.D + 1).map(p => p[1]);
-      if (tb.length) kb0 = Math.max(0, Math.min(Math.min(...tb), w.D - cd - 3));
-      if (kb0 < 2.5) kb0 = 0;     // darunter ragt das Stiegenhaus oben einfach etwas vor
-    }
-    const X = { L: w.L, D: w.D, A: w.A, cw: kernU, kb0, kb1: kb0 + cd, mix };
-    let V = gaVarianten(X).varianten;
-    if (!V.length) { const v = gaSpaenner(gaZiele(1, mix, 'block'), 1, 1, X); gaBewerte(v, X); V = [v]; }
-    // Stiegen sollen auch im obersten Geschoß liegen (sonst endet die Stiege unter einer Terrasse)
-    // und ebenso im untersten Geschoß — sie muss vom Eingang bis oben durchlaufen
-    if (pruefPf.length) V.slice(0, 24).forEach(v => {
-      let fehl = 0;
-      v.kerne.forEach(k => {
-        const kp = gaRechteck(w, k), a = polygonArea(kp);
-        pruefPf.forEach(pf => {
-          const t = gaAlle(gaBool(C.ClipType.ctIntersection, [gaPfad(kp)], pf)).reduce((q, x) => q + polygonArea(x), 0);
-          fehl += 1 - Math.min(1, t / Math.max(1, a));
-        });
-      });
-      v.score += 60 * fehl;
-    });
-    V = V.slice(0, 24).sort((x, y) => x.score - y.score);
-    // „Neu generieren“: unter den nahezu gleich guten Varianten wechseln
-    const gute = V.filter(v => v.score <= V[0].score + 4);
-    w.v = gute[(ctx.seed || 0) % gute.length] || V[0];
-    w.cd = cd; w.kb0 = kb0;
-  });
-  const kerne = [];
-  trakte.forEach((w, wi) => w.v.kerne.forEach(k => kerne.push({ fp: gaRechteck(w, k), w: wi, rect: k, ux: w.e[0], uy: w.e[1] })));
-  const kernPf = kerne.map(k => gaPfad(k.fp));
-  trakte.forEach((w, wi) => { w.felder = gaFelder(w, w.v, w.poly, kernPf, wi * 1000); });
-  const haupt = trakte[0];
-  return { trakte, kerne, planType: haupt.v.typ, mix, kernU, seed: ctx.seed || 0, maxT: Math.max(...mix.map(m => m.a)) };
-}
-
-// Rechtecke einer Variante in Weltpolygone wandeln: Gänge und Wohnungsfelder
-// (Rechteckvereinigung ∩ Trakt − Erschließung)
-function gaFelder(w, v, traktPoly, erschlPf, ordBasis) {
-  const C = ClipperLib, tPfad = [gaPfad(traktPoly)];
-  const gaenge = [], zellen = [];
-  // Gänge vereinigen (Stich und Mittelgang überlappen) und die Stiegenhäuser aussparen
-  if (v.gaenge.length) {
-    let u = [];
-    v.gaenge.forEach(g => { if (gaRect(g)) u = u.length ? legalBoolean(C.ClipType.ctUnion, u, [gaPfad(gaRechteck(w, g))], C.PolyFillType.pftNonZero) : [gaPfad(gaRechteck(w, g))]; });
-    gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, u, tPfad), erschlPf), 0.3).forEach(fp => gaenge.push(fp));
-  }
-  const minus = erschlPf.concat(gaenge.map(gaPfad));
-  v.zellen.forEach(c => {
-    // Mehrteilige Felder (L-Form) um 2 mm überlappen lassen: bei schräg liegenden
-    // Baukörpern trifft die Rundung auf Millimeter sonst die T-Stöße nicht genau,
-    // und das Feld zerfiele in zwei Teile
-    const e2 = c.r.length > 1 ? 0.002 : 0;
-    let u = [];
-    c.r.forEach(r => { if (gaRect(r)) { const q = [gaPfad(gaRechteck(w, [r[0] - e2, r[1] + e2, r[2] - e2, r[3] + e2]))]; u = u.length ? legalBoolean(C.ClipType.ctUnion, u, q, C.PolyFillType.pftNonZero) : q; } });
-    const st = gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, u, tPfad), minus), 0.3).sort((x, y) => polygonArea(y) - polygonArea(x));
-    if (!st.length) return;
-    const r0 = c.r[0];
-    zellen.push({ fp: st[0], rest: st.slice(1), z: c.z, ord: ordBasis + (r0[2] > 0.5 ? 500 : 0) + (r0[0] + r0[1]) / 2, ux: w.e[0], uy: w.e[1] });
-  });
-  return { gaenge, zellen };
-}
-
-// ---------------------------------------------------------------------------
-// 4. Übertragung auf ein Geschoß
-// ---------------------------------------------------------------------------
-// Gemeinsame Kantenlänge zweier Polygone (Abtastung im 25-cm-Raster)
-function gaKontakt(a, b, tol) {
-  let l = 0; const t = tol || 0.12;
-  for (let i = 0; i < a.length; i++) {
-    const p = a[i], q = a[(i + 1) % a.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
-    if (L < 0.01) continue;
-    const n = Math.max(1, Math.ceil(L / 0.25));
-    for (let k = 0; k < n; k++) {
-      const s = (k + 0.5) / n, m = [p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s];
-      if (distPointToPolygon(m, b) <= t) l += L / n;
-    }
-  }
-  return l;
-}
-function gaVereinige(a, b) {
-  const C = ClipperLib;
-  let r = gaAlle(legalBoolean(C.ClipType.ctUnion, [gaPfad(a)], [gaPfad(b)], C.PolyFillType.pftNonZero));
-  if (r.length === 1) return r[0];
-  // nur Kantenberührung mit Rundungsfehlern: kurz aufblasen und wieder zurück
-  try {
-    const co = new C.ClipperOffset(2, 0.25);
-    co.AddPaths([gaPfad(a), gaPfad(b)], C.JoinType.jtMiter, C.EndType.etClosedPolygon);
-    const o = new C.Paths(); co.Execute(o, 0.01 * LEGAL_SC);
-    const u = legalBoolean(C.ClipType.ctUnion, o, [], C.PolyFillType.pftNonZero);
-    const co2 = new C.ClipperOffset(2, 0.25); co2.AddPaths(u, C.JoinType.jtMiter, C.EndType.etClosedPolygon);
-    const o2 = new C.Paths(); co2.Execute(o2, -0.01 * LEGAL_SC);
-    r = gaAlle(o2);
-  } catch (e) { /* bleibt getrennt */ }
-  return r.sort((x, y) => polygonArea(y) - polygonArea(x))[0] || a;
-}
-
-// Zwischenspeicher: dieselbe Aufteilung wird für Einheiten, Zonierung, 2D-Plan
-// und Hangprüfung mehrfach je Geschoß abgefragt
-const gaCache = new WeakMap();
-
-// Liefert die Einheiten eines Geschosses im bekannten Format:
-// { type: 'kern', kind: 'stiege'|'gang', footprint, area } und
-// { type: 'wohnung', footprint, area, rooms, frame, circ, mixIdx, gaOrd }
-function gaGeschoss(plan, fp) {
-  if (!plan || !fp || fp.length < 3) return [];
-  let cm = gaCache.get(plan);
-  if (!cm) { cm = new Map(); gaCache.set(plan, cm); }
-  const key = fp.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
-  if (cm.has(key)) return cm.get(key).map(u => Object.assign({}, u));
-  const units = gaGeschossRechnen(plan, fp);
-  if (cm.size > 200) cm.clear();
-  cm.set(key, units);
-  return units.map(u => Object.assign({}, u));
-}
-function gaGeschossRechnen(plan, fp) {
-  const C = ClipperLib, units = [];
-  const fpP = [gaPfad(fp)];
-  const circ = [];
-  const kerneVoll = plan.kerne.map(k => k.fp);
-  const kernPf = kerneVoll.map(gaPfad);
-  plan.kerne.forEach(k => {
-    gaAlle(gaBool(C.ClipType.ctIntersection, fpP, [gaPfad(k.fp)]), 0.5).forEach(q => {
-      circ.push(q);
-      units.push({ type: 'kern', kind: 'stiege', area: polygonArea(q), footprint: q, gaUx: k.ux, gaUy: k.uy });
-    });
-  });
-  // Geschoß auf die Trakte verteilen
-  const tPf = plan.trakte.map(w => gaPfad(w.poly));
-  let W = [], rest = [];
-  const gaengeAlle = [];
-  plan.trakte.forEach((w, wi) => {
-    const teil = gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, fpP, [tPf[wi]]), []), 0.3)
-      .sort((x, y) => polygonArea(y) - polygonArea(x));
-    if (!teil.length) return;
-    teil.slice(1).forEach(q => rest.push(q));
-    const tp = teil[0], ta = polygonArea(tp);
-    const tpP = [gaPfad(tp)];
-    const zuschnitt = f => {
-      const g = [], z = [], r = [];
-      f.gaenge.forEach(q => gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(q)]), 0.3).forEach(x => g.push(x)));
-      f.zellen.forEach(c => {
-        const st = gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(c.fp)]), 0.3).sort((x, y) => polygonArea(y) - polygonArea(x));
-        if (!st.length) return;
-        z.push({ fp: st[0], c });
-        st.slice(1).forEach(q => r.push(q));
-        (c.rest || []).forEach(q => gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(q)]), 0.3).forEach(q2 => r.push(q2)));
-      });
-      return { g, z, r };
-    };
-    // 1. Die Aufteilung des Referenzgeschoßes übernehmen — die Wände stehen dann
-    //    übereinander. Das gilt, solange dabei keine Wohnung ohne Zugang, unter
-    //    45 m² oder übergroß entsteht.
-    let erg = zuschnitt(w.felder);
-    const mangel = e => e.z.filter(x => {
-      const a = polygonArea(x.fp);
-      if (a < 8) return false;
-      if (a < GA_MIN * 0.95 || a > plan.maxT * 1.7) return true;
-      return !(kerneVoll.some(k => gaKontakt(x.fp, k, 0.15) >= 0.9) || e.g.some(g => gaKontakt(x.fp, g, 0.15) >= 0.9));
-    }).length;
-    // 2. Sonst (Staffelgeschoß, Hangschnitt) die Wohnungen mit FESTEN Stiegen neu teilen
-    if (ta / w.flaeche < 0.97 && mangel(erg) > 0) {
-      const loc = p => [(p[0] - w.O[0]) * w.e[0] + (p[1] - w.O[1]) * w.e[1], (p[0] - w.O[0]) * w.n[0] + (p[1] - w.O[1]) * w.n[1]];
-      const ab = tp.map(loc);
-      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-      ab.forEach(p => { a0 = Math.min(a0, p[0]); a1 = Math.max(a1, p[0]); b0 = Math.min(b0, p[1]); b1 = Math.max(b1, p[1]); });
-      const polyAB = ab.map(p => [p[0] - a0, p[1] - b0]);
-      const L = a1 - a0, D = b1 - b0;
-      const ww = { O: [w.O[0] + a0 * w.e[0] + b0 * w.n[0], w.O[1] + a0 * w.e[1] + b0 * w.n[1]], e: w.e, n: w.n };
-      const fixK = w.v.kerne.map(k => [k[0] - a0, k[1] - a0, k[2] - b0, k[3] - b0]).filter(k => k[1] > 0.5 && k[0] < L - 0.5);
-      const X = { L, D, A: gaRaster(polyAB, L, D), cw: plan.kernU, kb0: fixK.length ? fixK[0][2] : (w.kb0 || 0) - b0, kb1: fixK.length ? fixK[0][3] : (w.kb0 || 0) + w.cd - b0, mix: plan.mix, fixK: fixK.length ? fixK : null };
-      let V = [];
-      try { V = gaVarianten(X, w.v.typ === 'klein' ? 'spaenner' : w.v.typ).varianten; } catch (e) { V = []; }
-      if (V.length) {
-        const gute = V.filter(x => x.score <= V[0].score + 4);
-        const v = gute[(plan.seed || 0) % gute.length] || V[0];
-        const e2 = zuschnitt(gaFelder(ww, v, tp, kernPf, wi * 1000));
-        if (mangel(e2) <= mangel(erg)) erg = e2;
-      }
-    }
-    erg.g.forEach(g => {
-      gaAlle(gaBool(C.ClipType.ctIntersection, fpP, [gaPfad(g)]), 0.3).forEach(q => {
-        q.gang = true; circ.push(q); gaengeAlle.push(q);
-        units.push({ type: 'kern', kind: 'gang', area: polygonArea(q), footprint: q });
-      });
-    });
-    erg.z.forEach(x => W.push(x));
-    erg.r.forEach(q => rest.push(q));
-  });
-  // Was kein Feld abdeckt (Geschoß größer als das Referenzgeschoß, Rundung)
-  try {
-    const belegt = W.map(x => gaPfad(x.fp)).concat(circ.map(gaPfad), rest.map(gaPfad));
-    gaAlle(gaBool(C.ClipType.ctDifference, fpP, belegt), 0.3).forEach(q => rest.push(q));
-  } catch (e) { /* ohne Restflächen */ }
-  // Restflächen der Wohnung mit der längsten gemeinsamen Wand zuschlagen;
-  // berührt der Rest keine Wohnung, wird er Teil der Erschließung
-  rest.forEach(q => {
-    if (polygonArea(q) < 0.3) return;
-    let bi = -1, bl = 0.2;
-    W.forEach((x, i) => { const l = gaKontakt(q, x.fp); if (l > bl) { bl = l; bi = i; } });
-    if (bi >= 0) { W[bi].fp = gaVereinige(W[bi].fp, q); return; }
-    if (circ.some(c2 => gaKontakt(q, c2) > 0.2)) { circ.push(q); units.push({ type: 'kern', kind: 'gang', area: polygonArea(q), footprint: q }); }
-  });
-  // Erschließung aus jeder Wohnung herausschneiden. Umschließt eine Wohnung ein
-  // Stiegenhaus ganz (Loch), wird sie quer durch dessen Mitte geteilt — dann liegen
-  // zwei Wohnungen am Podest, wie beim Zweispänner.
-  {
-    const erPf = kerneVoll.map(k => gaPfad(k)).concat(gaengeAlle.map(gaPfad));
-    const neu = [], splitter = [];
-    W.forEach(x => {
-      const roh = gaBool(C.ClipType.ctDifference, [gaPfad(x.fp)], erPf);
-      const loch = roh.some(p => ClipperLib.Clipper.Area(p) < -0.5 * LEGAL_SC * LEGAL_SC);
-      const aussen = gaAlle(roh, 0.3).sort((m, n2) => polygonArea(n2) - polygonArea(m));
-      if (!aussen.length) return;
-      if (!loch) { x.fp = aussen[0]; aussen.slice(1).forEach(q => splitter.push(q)); neu.push(x); return; }
-      const kern = kerneVoll.find(k => gaAlle(gaBool(C.ClipType.ctIntersection, [gaPfad(x.fp)], [gaPfad(k)]), 0.3).length) || kerneVoll[0];
-      const e = [x.c.ux, x.c.uy], nn = [-e[1], e[0]], kc = polygonCentroid(kern), s0 = kc[0] * e[0] + kc[1] * e[1], q0 = kc[0] * nn[0] + kc[1] * nn[1];
-      const P = (t, u) => [e[0] * t + nn[0] * u, e[1] * t + nn[1] * u];
-      [[s0 - 500, s0], [s0, s0 + 500]].forEach(([t0, t1], h) => {
-        const r = [P(t0, q0 - 500), P(t1, q0 - 500), P(t1, q0 + 500), P(t0, q0 + 500)];
-        const st = gaAlle(gaBool(C.ClipType.ctIntersection, gaBool(C.ClipType.ctDifference, [gaPfad(x.fp)], erPf), [gaPfad(signedArea(r) < 0 ? r.reverse() : r)]), 0.3).sort((m, n2) => polygonArea(n2) - polygonArea(m));
-        if (st.length) neu.push({ fp: st[0], c: h ? Object.assign({}, x.c, { ord: x.c.ord + 0.5 }) : x.c });
-      });
-    });
-    W = neu;
-    // abgetrennte Splitter der Nachbarwohnung mit der längsten gemeinsamen Wand
-    splitter.forEach(q => { let bi = -1, bl = 0.2; W.forEach((y, j) => { const l = gaKontakt(q, y.fp); if (l > bl) { bl = l; bi = j; } }); if (bi >= 0) W[bi].fp = gaVereinige(W[bi].fp, q); });
-  }
-  // Erreichbarkeit: jede Wohnung braucht eine Tür zur Stiege oder zum Gang.
-  const erreicht = x => kerneVoll.some(k => gaKontakt(x.fp, k, 0.15) >= 0.9) || gaengeAlle.some(g => gaKontakt(x.fp, g, 0.15) >= 0.9);
-  const zusammen = (i, nurErreichbar) => {
-    let bi = -1, bl = 0.8;
-    W.forEach((y, j) => { if (j === i || (nurErreichbar && !y.ok)) return; const l = gaKontakt(W[i].fp, y.fp); if (l > bl) { bl = l; bi = j; } });
-    if (bi < 0) return false;
-    W[bi].fp = gaVereinige(W[bi].fp, W[i].fp);
-    W.splice(i, 1);
-    return true;
-  };
-  const hatStiege = units.some(u => u.kind === 'stiege');
-  W.forEach(x => { x.ok = !hatStiege || erreicht(x); });
-  for (let schutz = 0; schutz < 30; schutz++) {
-    const i = W.findIndex(x => !x.ok);
-    if (i < 0 || !zusammen(i, true)) break;
-  }
-  // Zu kleine Wohnungen (Zuschnitt im obersten Geschoß) zur Nachbarwohnung
-  const versucht = new Set();
-  for (let schutz = 0; schutz < 40; schutz++) {
-    const i = W.findIndex(x => polygonArea(x.fp) < GA_MIN && !versucht.has(x));
-    if (i < 0 || W.length < 2) break;
-    const x = W[i];
-    if (!zusammen(i, true) && !zusammen(i, false)) versucht.add(x);
-  }
-  // Übergroße Wohnungen (Reste am Staffelgeschoß) quer zur Traktachse halbieren,
-  // wenn beide Hälften mindestens 45 m² haben und an Stiege oder Gang liegen
-  for (let schutz = 0; schutz < 12; schutz++) {
-    const i = W.findIndex(x => polygonArea(x.fp) > plan.maxT * 1.6 && !x.ganz);
-    if (i < 0) break;
-    const x = W[i], A0 = polygonArea(x.fp), e = [x.c.ux, x.c.uy], d = p => p[0] * e[0] + p[1] * e[1];
-    let s0 = Infinity, s1 = -Infinity; x.fp.forEach(p => { s0 = Math.min(s0, d(p)); s1 = Math.max(s1, d(p)); });
-    // Halbebene als großes Rechteck — robust auch für L-förmige Wohnungen
-    const nn = [-e[1], e[0]], c0 = polygonCentroid(x.fp);
-    const halb = (s, seite) => {
-      const q0 = c0[0] * nn[0] + c0[1] * nn[1];
-      const P = (t, u) => [e[0] * t + nn[0] * u, e[1] * t + nn[1] * u];
-      const r = seite < 0 ? [P(s - 500, q0 - 500), P(s, q0 - 500), P(s, q0 + 500), P(s - 500, q0 + 500)] : [P(s, q0 - 500), P(s + 500, q0 - 500), P(s + 500, q0 + 500), P(s, q0 + 500)];
-      return gaAlle(gaBool(ClipperLib.ClipType.ctIntersection, [gaPfad(x.fp)], [gaPfad(r)]), 0.2).sort((m, n2) => polygonArea(n2) - polygonArea(m))[0] || [];
-    };
-    const links = s => halb(s, -1);
-    let lo = s0, hi = s1;
-    for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; const l = links(m); if ((l.length >= 3 ? polygonArea(l) : 0) < A0 / 2) lo = m; else hi = m; }
-    const sm = (lo + hi) / 2, L1 = links(sm), R1 = halb(sm, 1);
-    const gut = q => q.length >= 3 && polygonArea(q) >= GA_MIN && (!hatStiege || erreicht({ fp: q }));
-    if (gut(L1) && gut(R1)) { W.splice(i, 1, { fp: L1, c: x.c, ok: true }, { fp: R1, c: Object.assign({}, x.c, { ord: x.c.ord + 0.5 }), ok: true }); }
-    else x.ganz = true;
-  }
-  const MIX = activeUnitMix();
-  W.forEach(x => {
-    const area = polygonArea(x.fp);
-    let mixIdx = null, wantR = null;
-    if (typeof aptMix !== 'undefined' && aptMix.mode === 'custom' && MIX.length) {
-      let bi = 0; MIX.forEach((m, k) => { if (Math.abs(m.a - area) < Math.abs(MIX[bi].a - area)) bi = k; });
-      mixIdx = bi; wantR = MIX[bi].rooms || null;
-    }
-    const frame = { ux: x.c.ux, uy: x.c.uy, centroid: polygonCentroid(x.fp) };
-    units.push({ type: 'wohnung', area, footprint: x.fp, rooms: unitRoomsFor(x.fp, fp, area, wantR), frame, circ, mixIdx, gaOrd: x.c.ord, erreichbar: x.ok });
-  });
-  return units;
-}
-
-// Zonen aus den Einheiten: Wohnungen bleiben, was sie sind; Stiegenhaus und
-// Gang sind EINE Erschließungsfläche (man geht durch, ohne sie zu verlassen).
-function gaZonen(units) {
-  const C = ClipperLib, out = [];
-  const whg = units.filter(u => u.type === 'wohnung').slice().sort((a, b) => (a.gaOrd || 0) - (b.gaOrd || 0));
-  whg.forEach((u, i) => out.push({ art: 'wohnung', fp: u.footprint, area: u.area, nr: i }));
-  const er = units.filter(u => u.type === 'kern');
-  if (er.length) {
-    let u = [gaPfad(er[0].footprint)];
-    er.slice(1).forEach(e => { u = legalBoolean(C.ClipType.ctUnion, u, [gaPfad(e.footprint)], C.PolyFillType.pftNonZero); });
-    gaAlle(u, 0.5).forEach(fp => out.push({ art: 'erschliessung', fp, area: polygonArea(fp) }));
-  }
-  return out;
-}
-
-// Einheiten eines Geschosses aus dem Plan des Baukörpers (siehe gaPlan)
-function gaLayout(footprint, y, showRoomHints, showZoning, coreRef) {
-  const group = new THREE.Group();
-  const units = gaGeschoss(coreRef.plan, footprint);
-  units.forEach(u => {
-    if (showZoning) { const l = buildZoneLine(u.footprint, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-    if (showZoning && u.type === 'kern' && u.kind === 'stiege') {
-      try { group.add(buildStaircaseHint(u.footprint, y, u.gaUx != null ? u.gaUx : coreRef.ux, u.gaUy != null ? u.gaUy : coreRef.uy, coreRef.liftSize || 0, coreRef.stairWidth, coreRef.stairTread, coreRef.stepsPerFlight, coreRef.liftV, coreRef.art)); } catch (e) { /* nur Darstellung */ }
-    }
-    if (showRoomHints && u.type === 'wohnung') {
-      try { drawUnitRooms(group, planUnitRooms(u.footprint, u.frame, footprint, u.circ, u.rooms), y + 0.03, 0x8a8a8e, { opacity: 0.55 }); } catch (e) { /* nur Darstellung */ }
-    }
-  });
-  return { group, units };
-}
-
+// Einheiten eines Geschosses. Rückgabe im bekannten Format, aber OHNE frame —
+// damit entstehen nirgends mehr Räume, Innenwände oder Möbel.
 function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, rng, gInfo) {
   const group = new THREE.Group();
   const units = [];
-  // Ein Geschoßteil, der zu klein für eine Wohnung ist, wird KEINE. Früher wurde
-  // alles unter 8 m² als eigene Einheit ausgewiesen — so standen Zwerge von 4 und
-  // 5 m² in der Einheitenliste. Die kleinste Wohnung der sieben ausgewerteten
-  // Einreichpläne hat 27,37 m² (Garçonnière Kirchbichl), § 119 BO Wien verlangt
-  // 30 m² Mindestnutzfläche. Solche Reste sind Nebenfläche, keine Einheit.
-  if (polygonArea(footprint) < WOHNUNG_MIN) {
-    if (showZoning) { const l = buildZoneLine(footprint, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-    return { group, units };
+  if (!footprint || footprint.length < 3) return { group, units };
+  let zonen = [];
+  try { zonen = einheitenZonen(footprint, coreRef || {}, einheitenCfg()); } catch (e) { zonen = []; }
+  zonen.forEach(z => units.push({ type: 'wohnung', area: z.area, footprint: z.fp, rooms: unitRooms(z.area), zonNr: z.nr }));
+  if (showZoning && units.length) {
+    const g = buildEinheitenFlaechen(units, y, typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') !== 'light');
+    if (g) group.add(g);
   }
-  const { ux, uy, centroid } = coreRef;
-  const vx = -uy, vy = ux, M = 60;
-  const U0 = coreRef.uMin, U1 = coreRef.uMax, V0 = coreRef.vMin, V1 = coreRef.vMax, vc = coreRef.vc;
-  // ---- Achsraster ----------------------------------------------------------------------
-  // Der Einreichplan Laubenruh arbeitet mit einer Regelachse von rund 3,75 m; das ist im
-  // Wohnbau das übliche Maß (Zimmer = 1 Achse, Wohnküche = 2–3 Achsen). Wir suchen das
-  // Achsmaß aus der Reihe 3,30 … 4,20, das die Baukörperlänge am saubersten in ganze Achsen
-  // teilt, und legen den Nullpunkt auf die Stirnseite U0. Sämtliche Wohnungstrennwände
-  // rasten darauf ein — dadurch fluchten sie geschossübergreifend und die Wohnungen haben
-  // ganze Achsbreiten, statt aus dem schiefen Umriss herausgeschnitten zu werden.
-  const ACHSE = (() => {
-    const L = U1 - U0;
-    if (!(L > 6)) return 3.75;
-    let best = 3.75, bestS = Infinity;
-    [3.75, 3.60, 4.00, 3.90, 3.45, 4.20, 3.30].forEach(a => {
-      const n = Math.round(L / a);
-      if (n < 2) return;
-      const rest = Math.abs(L - n * a);
-      const s = rest + Math.abs(a - 3.75) * 0.35;   // 3,75 m bleibt das bevorzugte Maß
-      if (s < bestS) { bestS = s; best = a; }
-    });
-    return best;
-  })();
-  window.__achsmass = ACHSE; window.__rast0 = U0;
-  // auf die nächste Achse runden, aber nie über die vorgegebenen Grenzen hinaus und nie so,
-  // dass ein Feld schmäler als eine halbe Achse wird
-  const achsRund = (x, lo, hi, schritt) => {
-    const t = schritt || ACHSE;
-    if (!(hi - lo > t * 0.9)) return x;
-    const o = (typeof window.__rast0 === 'number' && isFinite(window.__rast0)) ? window.__rast0 : U0;
-    const g = o + Math.round((x - o) / t) * t;
-    if (g < lo || g > hi) return x;
-    return g;
-  };
-  const type = coreRef.planType || 'spaenner', north = coreRef.vPointsNorth;
-  const W = (u, v) => [centroid[0] + u * ux + v * vx, centroid[1] + u * uy + v * vy];
-  const rect = (u0, u1, v0, v1) => { const r = [W(u0, v0), W(u1, v0), W(u1, v1), W(u0, v1)]; if (signedArea(r) < 0) r.reverse(); return r; };
-  const C = typeof ClipperLib !== 'undefined' ? ClipperLib : null;
-  const cutAll = (r, minus) => {
-    if (!C) return [];
-    let out = legalBoolean(C.ClipType.ctIntersection, [legalToPath(footprint)], [legalToPath(r)], C.PolyFillType.pftNonZero);
-    if (footprint.holes && footprint.holes.length && out.length) out = legalBoolean(C.ClipType.ctDifference, out, footprint.holes.map(h => legalToPath(signedArea(h) < 0 ? h.slice().reverse() : h)), C.PolyFillType.pftNonZero);
-    if (minus && minus.length && out.length) out = legalBoolean(C.ClipType.ctDifference, out, minus.map(legalToPath), C.PolyFillType.pftNonZero);
-    return out;
-  };
-  const cut = (r, minus) => legalLargest(cutAll(r, minus));
-  // Breiten aus dem Wohnungsschlüssel für einen Streifen der Länge len und Tiefe depth
-  // Wohnungstyp aus dem Mix ziehen (gewichtet)
-  const pickType = () => { const MIX = activeUnitMix(); let x = rng(), m = MIX[MIX.length - 1], idx = MIX.length - 1; for (let k = 0; k < MIX.length; k++) { if ((x -= MIX[k].w) <= 0) { m = MIX[k]; idx = k; break; } } return { a: m.a, rooms: m.rooms || unitRooms(m.a), idx: m.rooms ? idx : null }; };
-  const pickWidths = (len, depth, oneSided) => {
-    const out = [], types = []; let rem = len; const minW = 5.2, maxW = oneSided ? 13.5 : 12.5;
-    const pick = pickType;
-    if (len <= maxW) { const t = pick(); out.types = [t]; out.push(len); return out; }
-    let guard = 40;
-    while (rem > 0 && guard-- > 0) {
-      const t = pick(), a = t.a;
-      let w = Math.max(minW, Math.min(maxW, a / Math.max(4, depth)));
-      if (oneSided) w = Math.max(w, Math.min(maxW, 4.3 + (t.rooms - 1) * 3.0));   // alle Zimmer an der Fassade
-      if (rem - w < minW) { if (rem <= maxW) { out.push(rem); types.push(t); } else { out.push(rem / 2, rem / 2); types.push(t, pick()); } break; }
-      out.push(w); types.push(t); rem -= w;
-    }
-    out.types = types;
-    return out;
-  };
-  const ranges = (a, b, depth, oneSided) => {
-    const ws = pickWidths(b - a, depth, oneSided); const r = []; let c = a;
-    ws.forEach((w, i) => { r.push([c, c + w, (ws.types || [])[i]]); c += w; });
-    r[r.length - 1][1] = b;
-    // Trennwände auf die Achse legen; die Stirnseiten a und b bleiben, wo sie sind
-    for (let i = 0; i < r.length - 1; i++) {
-      const g = achsRund(r[i][1], r[i][0] + 2.2, r[i + 1][1] - 2.2);
-      r[i][1] = g; r[i + 1][0] = g;
-    }
-    return r.filter(q => q[1] - q[0] > 1.5);
-  };
-  const addZone = (fp, kind) => {
-    if (!fp || fp.length < 3 || polygonArea(fp) < 1) return;
-    units.push({ type: 'kern', area: polygonArea(fp), footprint: fp, inner: kind === 'inner', kind });
-    if (kind === 'gang') { fp.gang = true; circ.push(fp); }
-    if (showZoning) { const l = buildZoneLine(fp, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-  };
-  const circ = [];   // Erschließungsflächen (Stiegen, Gänge) — daraus ergibt sich der Wohnungseingang
-  // ---- Hofform: der Ring wird an den Gehrungslinien der Ecken in Trakte zerlegt; jeder Trakt
-  // ist ein Spänner mit Stiegenhaus an der Außenfassade und durchgesteckten Wohnungen
-  // (Außen- und Hoffassade) ----
-  if (footprint.holes && footprint.holes.length && C) {
-    const outer = signedArea(footprint) >= 0 ? footprint : footprint.slice().reverse(), n = outer.length;
-    const inN = i => { const a = outer[i], b = outer[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [-(b[1] - a[1]) / L, (b[0] - a[0]) / L]; };
-    const bis = i => { const p = inN((i - 1 + n) % n), q = inN(i), v = [p[0] + q[0], p[1] + q[1]], L = Math.hypot(v[0], v[1]) || 1; return [v[0] / L, v[1] / L]; };
-    const inter = (A, B, minus) => { let out = legalBoolean(C.ClipType.ctIntersection, [legalToPath(A)], [legalToPath(B)], C.PolyFillType.pftNonZero); if (minus && minus.length && out.length) out = legalBoolean(C.ClipType.ctDifference, out, minus.map(legalToPath), C.PolyFillType.pftNonZero); return legalLargest(out); };
-    const hofCores = [], hofCells = [];
-    for (let i = 0; i < n; i++) {
-      const a = outer[i], b = outer[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (L < 1) continue;
-      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nn = inN(i), ma = bis(i), mb = bis((i + 1) % n);
-      const depth = Math.min(...footprint.holes[0].map(p => (p[0] - a[0]) * nn[0] + (p[1] - a[1]) * nn[1]).filter(d => d > 0.5).concat([20]));
-      const big = [a, b, [b[0] + mb[0] * 150, b[1] + mb[1] * 150], [a[0] + ma[0] * 150, a[1] + ma[1] * 150]];
-      // Trakt = das Teilstück des Rings, das an dieser Kante liegt (nicht das größte —
-      // der Keil reicht durch den Hof bis zum gegenüberliegenden Trakt)
-      const probe = [(a[0] + b[0]) / 2 + nn[0] * 0.5, (a[1] + b[1]) / 2 + nn[1] * 0.5];
-      const wingPaths = cutAll(signedArea(big) < 0 ? big.reverse() : big, footprint.holes.map(h => signedArea(h) < 0 ? h.slice().reverse() : h));
-      let wing = null; wingPaths.forEach(pth => { const poly = legalFromPath(pth); if (C.Clipper.Area(pth) > 0 && pointInPolygon(probe, poly)) wing = poly; });
-      if (!wing || wing.length < 3 || polygonArea(wing) < 15) continue;
-      const W = (s0, t0) => [a[0] + u[0] * s0 + nn[0] * t0, a[1] + u[1] * s0 + nn[1] * t0];
-      const quad = (s0, s1, t0, t1) => { const r = [W(s0, t0), W(s1, t0), W(s1, t1), W(s0, t1)]; return signedArea(r) < 0 ? r.reverse() : r; };
-      // Stiegen je Trakt (Modul ≈ 24 m), an der Außenfassade
-      const nC = L >= 11 ? Math.max(1, Math.round(L / 24)) : 0;
-      const cw = coreRef.coreHi - coreRef.coreLo, cd = coreRef.coreDepth || 6.2;
-      const wingCores = [];
-      for (let k = 0; k < nC; k++) { const sc = L * (k + 0.5) / nC; const q0 = quad(sc - cw / 2, sc + cw / 2, 0, Math.min(cd, depth - 3)); const r = inter(q0, wing); if (r.length >= 3) { wingCores.push(r); hofCores.push({ fp: r, ux: u[0], uy: u[1] }); } }
-      const rr = ranges(0, L, depth);
-      rr.forEach(([s0, s1], k) => { const q = quad(k === 0 ? -80 : s0, k === rr.length - 1 ? L + 80 : s1, -1, depth + 2); hofCells.push({ q, wing, minus: wingCores }); });
-    }
-    hofCores.forEach(c => {
-      circ.push(c.fp);
-      units.push({ type: 'kern', area: polygonArea(c.fp), footprint: c.fp, kind: 'stiege' });
-      if (showZoning) { const l = buildZoneLine(c.fp, y, ZONE_LINE_COLOR); if (l) group.add(l); group.add(buildStaircaseHint(c.fp, y, c.ux, c.uy, coreRef.liftSize || 0, coreRef.stairWidth, coreRef.stairTread, coreRef.stepsPerFlight, coreRef.liftV, coreRef.art)); }
-    });
-    const allCores = hofCores.map(c => c.fp);
-    // Felder ausschneiden (alle Teilstücke), Reste < 30 m² (Eckzwickel) der Nachbarwohnung zuschlagen
-    let pcs = [];
-    hofCells.forEach(cell => {
-      let out = legalBoolean(C.ClipType.ctIntersection, [legalToPath(cell.q)], [legalToPath(cell.wing)], C.PolyFillType.pftNonZero);
-      if (allCores.length && out.length) out = legalBoolean(C.ClipType.ctDifference, out, allCores.map(legalToPath), C.PolyFillType.pftNonZero);
-      out.forEach(pth => { if (C.Clipper.Area(pth) > 0.5 * LEGAL_SC * LEGAL_SC) pcs.push({ fp: legalFromPath(pth), wing: cell.wing }); });
-    });
-    let chg = true, gd = 40;
-    while (chg && gd-- > 0) {
-      chg = false;
-      for (let i = 0; i < pcs.length; i++) {
-        if (polygonArea(pcs[i].fp) >= 30 || pcs.length < 2) continue;
-        let best = -1, bestA = -1;
-        pcs.forEach((q, j) => { if (j === i) return; const u2 = legalBoolean(C.ClipType.ctUnion, [legalToPath(pcs[i].fp)], [legalToPath(q.fp)], C.PolyFillType.pftNonZero); if (u2.length === 1 && polygonArea(q.fp) > bestA) { best = j; bestA = polygonArea(q.fp); } });
-        if (best < 0) continue;
-        pcs[best].fp = legalLargest(legalBoolean(C.ClipType.ctUnion, [legalToPath(pcs[i].fp)], [legalToPath(pcs[best].fp)], C.PolyFillType.pftNonZero));
-        pcs.splice(i, 1); chg = true; break;
-      }
-    }
-    pcs.forEach(cell => {
-      const fpU = cell.fp;
-      const area = fpU.length >= 3 ? polygonArea(fpU) : 0;
-      if (area < 18) return;
-      const e = edgesOf(cell.wing).reduce((b2, e2) => e2.len > b2.len ? e2 : b2, { len: 0 });
-      const frame = { ux: e.dirX || ux, uy: e.dirZ || uy, centroid: polygonCentroid(fpU) };
-      const nR = unitRoomsFor(fpU, footprint, area);
-      units.push({ type: 'wohnung', area, footprint: fpU, rooms: nR, frame, circ });
-      if (showZoning) { const l = buildZoneLine(fpU, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-      if (showRoomHints) drawUnitRooms(group, planUnitRooms(fpU, frame, footprint, circ, nR), y + 0.03, 0x8a8a8e, { opacity: 0.55 });
-    });
-    return { group, units };
-  }
-  // ---- Reihenhaus: senkrechte Hausstreifen über die volle Tiefe --------------------------
-  // Ein Reihenhaus ist kein Geschoßwohnbau: es gibt kein gemeinsames Stiegenhaus und keinen
-  // Gang. Der Baukörper wird in Häuser geteilt, jedes Häuser reicht von Fassade zu Fassade
-  // und wiederholt sich in jedem Geschoß — die Trennwände fluchten dadurch über alle
-  // Geschoße. Die Treppe liegt INNERHALB des Hauses (Wohnungstreppe), der Eingang kommt von
-  // außen.
-  // Maße (Recherche): übliche Hausbreiten 4,30–8,50 m — schmale städtische Häuser 4,30–5,00 m,
-  // ländliche 6,00–8,50 m; Grundfläche eines Mittelhauses rund 60 m² je Geschoß.
-  // Trennwand: zweischalig, Luftschalldämmung DnT,w ≥ 60 dB zwischen Reihenhäusern
-  // (OIB-RL 5), dazu brandabschnittsbildend nach OIB-RL 2 Punkt 4.1 / Tabelle 1b.
-  if (type === 'reihenhaus') {
-    const L = U1 - U0, D = V1 - V0;
-    let n = coreRef.haeuser > 0 ? coreRef.haeuser : 1;
-    if (!(coreRef.haeuser > 0)) {
-      const ziel = D >= 11 ? 5.8 : 6.6;
-      n = Math.max(1, Math.round(L / ziel));
-      while (n > 1 && L / n < 4.3) n--;
-      while (L / n > 8.5) n++;
-    }
-    const treppe = [];
-    // Geschoß im Haus: im Erdgeschoß wohnt man, im Obergeschoß schläft man — das
-    // Raumprogramm verteilt sich über die Etagen (siehe rhRaeume)
-    const gF = Math.max(1, (gInfo && gInfo.floors) || 1);
-    const gI = (gInfo && typeof gInfo.f === 'number') ? gInfo.f : 0;
-    const rhEt = rhEtageVon(gI, gF);
-    for (let i = 0; i < n; i++) {
-      const a = U0 + L * i / n, b = U0 + L * (i + 1) / n;
-      const fpH = cut(rect(i === 0 ? U0 - M : a, i === n - 1 ? U1 + M : b, V0 - M, V1 + M));
-      // auch beim Reihenhaus: ein angeschnittener Reststreifen ist kein Haus
-      if (fpH.length < 3 || polygonArea(fpH) < WOHNUNG_MIN * 0.6) continue;
-      const area = polygonArea(fpH);
-      const frame = { ux, uy, centroid };
-      units.push({ type: 'wohnung', area, footprint: fpH, rooms: unitRoomsFor(fpH, footprint, area), frame, circ, hausIdx: i, reihenhaus: true });
-      if (showZoning) { const l = buildZoneLine(fpH, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-      // ---- tatsächliche Hausgrenzen in U/V (der Umriss schneidet die Randhäuser an) ----
-      let hu0 = Infinity, hu1 = -Infinity, hv0 = Infinity, hv1 = -Infinity;
-      fpH.forEach(p => {
-        const du = (p[0] - centroid[0]) * ux + (p[1] - centroid[1]) * uy;
-        const dv = (p[0] - centroid[0]) * vx + (p[1] - centroid[1]) * vy;
-        hu0 = Math.min(hu0, du); hu1 = Math.max(hu1, du); hv0 = Math.min(hv0, dv); hv1 = Math.max(hv1, dv);
-      });
-      const HB = hu1 - hu0, HT = hv1 - hv0;
-      // ---- Raumprogramm des HAUSES, nicht des Geschosses ----
-      // Ebbs 118,2 m² → 4 Zimmer · Mieming 110,6 → 4 · Sooß 117,1 → 4 · Ennsdorf 114,8 → 4
-      const hausFl = area * gF;
-      // Ein Reihenhaus hat bei gleicher Fläche mehr Zimmer als eine Geschoßwohnung:
-      // es verliert keine Fläche an ein gemeinsames Stiegenhaus. Nachgerechnet an den
-      // vier Zeilen: Mieming 110,6 m² → Wohnen + Büro + 3 Zimmer, Sooß 117,1 →
-      // Wohnküche + Zimmer EG + 3 Zimmer OG, Ebbs 118,2 → Wohnen + 3 Schlafräume.
-      const nZiHaus = Math.max(2, Math.min(6, unitRooms(hausFl) + (HB >= 6.4 ? 1 : 0)));
-      // breite Häuser bekommen im Erdgeschoß ein Zimmer bzw. Büro: Mieming BÜRO 8,22 m²
-      // bei 9,10 m lichter Breite, Sooß Zimmer 10,12 m² bei 6,54 m
-      const egZi = HB >= 6.4 && nZiHaus >= 4 && rhEt === 'eg';
-      const nOben = Math.max(1, nZiHaus - 1 - (HB >= 6.4 && nZiHaus >= 4 ? 1 : 0));
-      const zimmerHier = rhEt === 'eg' ? 0 : (gF >= 3 ? (rhEt === 'og' ? Math.max(1, nOben - 1) : Math.max(1, nOben - Math.max(1, nOben - 1))) : nOben);
-      // Hauptschlafzimmer wächst mit dem Haus (Mieming 13,62 · Sooß 18,00 · Ebbs 21,11 m²),
-      // die Nebenzimmer bleiben bei rund 11,8 m² — wie in allen vier Plänen
-      const zHaupt = Math.max(13, Math.min(20, 13 + (hausFl - 110) * 0.1));
-      const zFl = []; for (let q = 0; q < zimmerHier; q++) zFl.push(q === 0 ? zHaupt : 11.8);
-      const liste = rhRaeume({
-        etage: rhEt, breite: HB, tiefe: HT, zimmer: zimmerHier, zimmerFlaechen: zFl,
-        egZimmer: egZi, egZimmerName: HB >= 8.0 ? 'Büro' : 'Zimmer',
-        bad: Math.max(6.0, Math.min(8.0, 4.0 + hausFl * 0.025)),
-        bad2: rhEt === 'og' && (gF >= 3 || hausFl >= 115),
-        keller: false,
-        lauf: Math.max(3.4, (coreRef.stepsPerFlight || 15) * (coreRef.stairTread || 0.27)),
-        laufBreite: (coreRef.stairWidth || 0.95) + 0.1
-      });
-      // ---- Rechtecke in Weltkoordinaten: b wird ab der GARTENseite gemessen ----
-      const vAt = bb => north ? hv0 + bb : hv1 - bb;
-      const rAB = r => { const p = vAt(r.b0), q = vAt(r.b1); return rect(hu0 + r.a0, hu0 + r.a1, Math.min(p, q), Math.max(p, q)); };
-      // Stiege zuerst: sie liegt in jedem Geschoß an derselben Stelle
-      const stDef = liste.find(r => r.kind === 'stair');
-      if (stDef) { const tFp = cut(rAB(stDef)); if (tFp.length >= 3 && polygonArea(tFp) > 1.5) treppe.push(tFp); }
-      if (showRoomHints) {
-        const res = [], belegt = [];
-        // Der Vorraum entsteht in mehreren Stücken (neben der Stiege, vor der Stiege) —
-        // im Plan ist er EIN Raum, also werden gleichnamige Teile wieder vereinigt
-        const vorr = [];
-        liste.forEach(r => {
-          if (r.rest || r.kind === 'stair') return;
-          const rr = rAB(r), fp = cut(rr);
-          if (fp.length >= 3 && polygonArea(fp) >= 1.0) {
-            if (r.name === 'Vorraum') vorr.push(fp); else res.push({ name: r.name, kind: r.kind, fp, area: polygonArea(fp) });
-          }
-          belegt.push(rr);
-        });
-        if (vorr.length && C) {
-          try {
-            let u6 = [legalToPath(signedArea(vorr[0]) < 0 ? vorr[0].slice().reverse() : vorr[0])];
-            vorr.slice(1).forEach(q => { u6 = legalBoolean(C.ClipType.ctUnion, u6, [legalToPath(signedArea(q) < 0 ? q.slice().reverse() : q)], C.PolyFillType.pftNonZero); });
-            const cl6 = legalLargest(u6);
-            if (cl6.length >= 3) res.push({ name: 'Vorraum', kind: 'hall', fp: cl6, area: polygonArea(cl6) });
-            else vorr.forEach(q => res.push({ name: 'Vorraum', kind: 'hall', fp: q, area: polygonArea(q) }));
-          } catch (e) { vorr.forEach(q => res.push({ name: 'Vorraum', kind: 'hall', fp: q, area: polygonArea(q) })); }
-        } else vorr.forEach(q => res.push({ name: 'Vorraum', kind: 'hall', fp: q, area: polygonArea(q) }));
-        if (stDef) belegt.push(rAB(stDef));
-        // Wohnküche: der Rest des Geschosses — EIN Raum, zur Gartenseite durchgesteckt
-        const restDef = liste.find(r => r.rest);
-        if (restDef && C && belegt.length) {
-          try {
-            const diff = legalBoolean(C.ClipType.ctDifference,
-              [legalToPath(signedArea(fpH) < 0 ? fpH.slice().reverse() : fpH)],
-              belegt.map(q => legalToPath(signedArea(q) < 0 ? q.slice().reverse() : q)), C.PolyFillType.pftNonZero);
-            const cl = legalLargest(diff);
-            if (cl.length >= 3 && polygonArea(cl) >= 4) res.push({ name: restDef.name, kind: restDef.kind, fp: cl, area: polygonArea(cl) });
-          } catch (e) { /* nur Darstellung */ }
-        }
-        res.frame = { ux, uy }; res.outerFp = footprint;
-        if (res.length) drawUnitRooms(group, res, y + 0.03, 0x8a8a8e, { opacity: 0.55 });
-      }
-    }
-    // Die Treppen zählen NICHT zur gemeinsamen Erschließung — sie liegen in der Einheit.
-    treppe.forEach(tFp => {
-      units.push({ type: 'kern', area: polygonArea(tFp), footprint: tFp, kind: 'stiege', inUnit: true });
-      if (showZoning) {
-        const l = buildZoneLine(tFp, y, ZONE_LINE_COLOR); if (l) group.add(l);
-        group.add(buildStaircaseHint(tFp, y, ux, uy, 0, coreRef.stairWidth, coreRef.stairTread, coreRef.stepsPerFlight, 0, 'wohnungstreppe'));
-      }
-    });
-    return { group, units };
-  }
-  // ---- Wohnanlage: gemeinsame Geschoßaufteilung (gaPlan) ----
-  if (coreRef.plan) return gaLayout(footprint, y, showRoomHints, showZoning, coreRef);
-  // ---- Stiegenhäuser ----
-  const cores = (coreRef.cores || [{ lo: coreRef.coreLo, hi: coreRef.coreHi, vlo: coreRef.coreVLo, vhi: coreRef.coreVHi, extLo: true, extHi: true, main: true, center: (coreRef.coreLo + coreRef.coreHi) / 2 }]);
-  // Das Stiegenhaus behält seine berechnete Breite — es zu vergrößern, nur damit es ins
-  // Raster passt, kostet Wohnfläche. Stattdessen beginnt das Achsraster an seiner Kante:
-  // so liegen die Wohnungen links und rechts davon in ganzen Achsen, genau wie im Plan.
-  if (cores.length) window.__rast0 = cores[0].hi;
-  const coreRects = cores.map(c => rect(c.lo, c.hi, c.extLo ? V0 - M : c.vlo, c.extHi ? V1 + M : c.vhi));
-  cores.forEach((c, k) => {
-    const fp = cut(coreRects[k]);
-    if (fp.length < 3 || polygonArea(fp) < 1) return;
-    circ.push(fp);
-    units.push({ type: 'kern', area: polygonArea(fp), footprint: fp, kind: 'stiege' });
-    if (showZoning) {
-      const l = buildZoneLine(fp, y, ZONE_LINE_COLOR); if (l) group.add(l);
-      group.add(buildStaircaseHint(fp, y, ux, uy, coreRef.liftSize || 0, coreRef.stairWidth, coreRef.stairTread, coreRef.stepsPerFlight, coreRef.liftV, coreRef.art));
-    }
-  });
-  // ---- Innenzone (> 12,5 m hinter der Fassade; bei Mittelgang-Typen mit einseitig orientierten
-  // Wohnungen schon ab 9 m — tiefer lässt sich eine einseitige Wohnung nicht sinnvoll belichten,
-  // der Rest wird Neben-/Abstellfläche am Gang) ----
-  const innerOff = type === 'mittelgang' ? 9.0 : 12.5;
-  let innerZone = [];
-  if (C) {
-    try {
-      const co = new C.ClipperOffset(2, 0.01 * LEGAL_SC);
-      co.AddPath(legalToPath(signedArea(footprint) < 0 ? footprint.slice().reverse() : footprint), C.JoinType.jtMiter, C.EndType.etClosedPolygon);
-      (footprint.holes || []).forEach(h => co.AddPath(legalToPath(signedArea(h) < 0 ? h : h.slice().reverse()), C.JoinType.jtMiter, C.EndType.etClosedPolygon)); // Hofrand ist Fassade
-      const o = new C.Paths(); co.Execute(o, -innerOff * LEGAL_SC);
-      innerZone = o.filter(pth => C.Clipper.Area(pth) > 6 * LEGAL_SC * LEGAL_SC).map(legalFromPath);
-    } catch (e) { innerZone = []; }
-  }
-  const blocked = coreRects.concat(innerZone);
-  innerZone.forEach(z => { const r = cutAll(z, coreRects); r.forEach(pth => addZone(legalFromPath(pth), 'inner')); });
-  // ---- Wohnungsfelder ----
-  const cells = [];   // { r: Rechteck, minus: zusätzlich abzuziehen }
-  const NV = north ? V1 : V0, SV = north ? V0 : V1;                 // Nord-/Südkante im v-System
-  const toN = (d) => north ? V1 + M : V0 - M, toS = () => north ? V0 - M : V1 + M;
-  const bounds = [U0 - M];
-  for (let k = 0; k < cores.length - 1; k++) bounds.push((cores[k].center + cores[k + 1].center) / 2);
-  bounds.push(U1 + M);
-  if (type === 'klein') {
-    const c = cores[0];
-    if (aptMix.mode === 'custom' && polygonArea(footprint) < mixMeanArea() * 1.55) cells.push({ r: rect(U0 - M, U1 + M, V0 - M, V1 + M), minus: [] });
-    else [[U0 - M, c.lo], [c.hi, U1 + M]].forEach(([a, b]) => cells.push({ r: rect(a, b, V0 - M, V1 + M) }));
-  } else if (type === 'spaenner') {
-    cores.forEach((c, k) => {
-      const mLo = bounds[k], mHi = bounds[k + 1];
-      const aLo = Math.max(mLo, U0), aHi = Math.min(mHi, U1);
-      const depthS = (V1 - V0) - (c.vhi - c.vlo);                    // Tiefe vor dem Stiegenhaus (Süd)
-      const Dm = V1 - V0, sideW = Math.min(c.lo - aLo, aHi - c.hi);
-      const sv = north ? [V0 - M, c.vlo] : [c.vhi, V1 + M];
-      if (!(c.extLo && c.extHi) && depthS >= 5 && sideW >= 5.2) {
-        // Dreispänner: Südwohnung vor der Stiege; ihre Breite gleicht die Wohnungsgrößen aus
-        // (seitliche Wohnungen ca. 85 m²). Wird sie breiter als 12 m → zwei Südwohnungen (Vierspänner)
-        // Größe der seitlichen Wohnungen: Marktmix ca. 85 m², eigener Mix aus der Typenliste;
-        // „Neu generieren“ variiert sie
-        const custom = typeof aptMix !== 'undefined' && aptMix.mode === 'custom';
-        const sideA = custom ? Math.max(pickType().a, pickType().a) : 85 * (0.88 + 0.24 * rng());
-        const x = Math.max(0.6, Math.min(sideW - 5.2, (sideW * Dm - sideA) / depthS));
-        const sLo = achsRund(c.lo - x, U0, c.lo - 0.6), sHi = achsRund(c.hi + x, c.hi + 0.6, U1), south = rect(sLo, sHi, sv[0], sv[1]);
-        const southSplit = custom ? (sHi - sLo) * depthS > mixMeanArea() * 1.45 : sHi - sLo > 12;
-        if (southSplit && sHi - sLo >= 10.4) { const m = (c.lo + c.hi) / 2; cells.push({ r: rect(sLo, m, sv[0], sv[1]) }, { r: rect(m, sHi, sv[0], sv[1]) }); }
-        else cells.push({ r: south });
-        cells.push({ r: rect(mLo, c.lo, V0 - M, V1 + M), minus: [south] }, { r: rect(c.hi, mHi, V0 - M, V1 + M), minus: [south] });
-      } else {
-        // Zweispänner: die Fläche vor der Stiege teilen sich die beiden Wohnungen
-        const m = (c.lo + c.hi) / 2;   // liegt durch das Kernraster selbst auf einer halben Achse
-        cells.push({ r: rect(mLo, m, V0 - M, V1 + M) }, { r: rect(m, mHi, V0 - M, V1 + M) });
-      }
-    });
-  } else if (type === 'laubengang') {
-    // Laubengang 1,5 m an der Nordseite (zählt zur Erschließung)
-    const gv = north ? [V1 - 1.5, V1 + M] : [V0 - M, V0 + 1.5];
-    const gang = cutAll(rect(U0 - M, U1 + M, gv[0], gv[1]), coreRects);
-    gang.forEach(pth => addZone(legalFromPath(pth), 'gang'));
-    const gRect = rect(U0 - M, U1 + M, gv[0], gv[1]);
-    const segs = []; let prev = U0 - M;
-    // nur eine Stiege über die volle Tiefe teilt die Zeile; eine gangseitig verkürzte Stiege wird
-    // aus der angrenzenden Wohnung ausgeschnitten (Endwohnung greift um die Stiege)
-    cores.forEach(c => { if (c.extLo && c.extHi) { segs.push([prev, c.lo]); prev = c.hi; } }); segs.push([prev, U1 + M]);
-    segs.forEach(([a, b]) => {
-      const a2 = Math.max(a, U0), b2 = Math.min(b, U1); if (b2 - a2 < 2) return;
-      // einseitig orientiert: alle Aufenthaltsräume an der gangabgewandten Fassade → breitere Wohnungen
-      ranges(a2, b2, (V1 - V0) - 1.5, true).forEach(([x0, x1, t], i, arr) => cells.push({ r: rect(i === 0 ? a : x0, i === arr.length - 1 ? b : x1, V0 - M, V1 + M), minus: [gRect], t }));
-    });
-  } else if (type === 'mittelgang') {
-    // Innengang 1,25 m: Living Hinterkaiser (St. Johann, 15 Wohnungen) erschließt neun
-    // Wohnungen je Geschoß über einen Gang von 47,81 m² auf 38,50 m Länge — das sind
-    // 1,25 m. OIB-RL 4 Punkt 2.4.1 fordert 1,20 m für allgemeine Gänge. Die früheren
-    // 1,60 m kosteten je Gangmeter 0,35 m² Wohnfläche.
-    const D = V1 - V0, endW = Math.max(6, Math.min(9.5, (typeof aptMix !== 'undefined' && aptMix.mode === 'custom' ? Math.max(...activeUnitMix().map(m => m.a)) * 2 : 92 * (0.92 + 0.16 * rng())) / D));
-    const g0 = vc - 0.625, g1 = vc + 0.625;
-    const gang = cutAll(rect(U0 + endW, U1 - endW, g0, g1), coreRects);
-    gang.forEach(pth => addZone(legalFromPath(pth), 'gang'));
-    const gRect = rect(U0 + endW, U1 - endW, g0, g1);
-    // Eckwohnungen an den Stirnseiten; bei großer Tiefe je Stirnseite zwei (Nord/Süd, am Gang geteilt)
-    if (endW * D > (typeof aptMix !== 'undefined' && aptMix.mode === 'custom' ? 1.45 * mixMeanArea() : 125)) [[U0 - M, U0 + endW], [U1 - endW, U1 + M]].forEach(([a, b]) => cells.push({ r: rect(a, b, V0 - M, vc), t: pickType() }, { r: rect(a, b, vc, V1 + M), t: pickType() }));
-    else cells.push({ r: rect(U0 - M, U0 + endW, V0 - M, V1 + M), t: pickType() }, { r: rect(U1 - endW, U1 + M, V0 - M, V1 + M), t: pickType() });
-    [[V0 - M, g0, g0 - V0], [g1, V1 + M, V1 - g1]].forEach(([r0, r1, depth]) => {
-      const isNorthRow = north ? r0 === g1 : r1 === g0;
-      let segs = [[U0 + endW, U1 - endW]];
-      if (isNorthRow) cores.forEach(c => { const nx = []; segs.forEach(([x, x2]) => { if (c.hi <= x || c.lo >= x2) nx.push([x, x2]); else { if (c.lo - x > 2) nx.push([x, c.lo]); if (x2 - c.hi > 2) nx.push([c.hi, x2]); } }); segs = nx; });
-      segs.forEach(([a, b]) => { if (b - a < 2) return; ranges(a, b, Math.min(innerOff, depth), true).forEach(([x0, x1, t]) => cells.push({ r: rect(x0, x1, r0, r1), minus: [gRect], t })); });
-    });
-  } else { // punkt
-    const c = cores[0], uc = (c.lo + c.hi) / 2, many = polygonArea(footprint) / (aptMix.mode === 'custom' ? mixMeanArea() : TARGET_UNIT_AREA) > 5.5;
-    const us = many ? [[U0 - M, c.lo], [c.lo, c.hi], [c.hi, U1 + M]] : [[U0 - M, uc], [uc, U1 + M]];
-    [[V0 - M, vc], [vc, V1 + M]].forEach(([v0, v1]) => us.forEach(([a, b]) => cells.push({ r: rect(a, b, v0, v1) })));
-  }
-  // Felder ausschneiden; Reste < 25 m² der größten angrenzenden Wohnung zuschlagen
-  const pieces = [], pieceT = [];
-  cells.forEach(cell => {
-    const fp = cut(cell.r, blocked.concat(cell.minus || []));
-    if (fp.length >= 3 && polygonArea(fp) > 0.5) { pieces.push(fp); pieceT.push(cell.t || null); }
-  });
-  let changed = true, guard = 30;
-  while (changed && guard-- > 0 && C) {
-    changed = false;
-    for (let i = 0; i < pieces.length; i++) {
-      const minKeep = typeof aptMix !== 'undefined' && aptMix.mode === 'custom' ? Math.max(WOHNUNG_MIN, 0.6 * Math.min(...activeUnitMix().map(m => m.a))) : WOHNUNG_MIN;
-      if (polygonArea(pieces[i]) >= minKeep || pieces.length < 2) continue;
-      let best = -1, bestA = -1;
-      const maxMerge = typeof aptMix !== 'undefined' && aptMix.mode === 'custom' ? 1.4 * Math.max(...activeUnitMix().map(m => m.a)) : Infinity;
-      pieces.forEach((q, j) => { if (j === i || (polygonArea(q) + polygonArea(pieces[i]) > maxMerge && polygonArea(pieces[i]) >= WOHNUNG_MIN)) return; const u = legalBoolean(C.ClipType.ctUnion, [legalToPath(pieces[i])], [legalToPath(q)], C.PolyFillType.pftNonZero); if (u.length === 1 && polygonArea(q) > bestA) { best = j; bestA = polygonArea(q); } });
-      // Zweiter Anlauf: ergibt die Vereinigung kein zusammenhängendes Polygon (schiefe
-      // Umrisse, Aussparungen), dann entscheidet die längste gemeinsame Wand. Ohne das
-      // blieb der Zwickel als eigene "Wohnung" stehen.
-      if (best < 0) {
-        let bestL = 0.3;
-        pieces.forEach((q, j) => {
-          if (j === i) return;
-          let g2 = 0;
-          for (let k = 0; k < pieces[i].length; k++) {
-            const a2 = pieces[i][k], b2 = pieces[i][(k + 1) % pieces[i].length];
-            const L2 = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]); if (L2 < 0.05) continue;
-            const m2 = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
-            if (distPointToPolygon(m2, q) <= 0.12) g2 += L2;
-          }
-          if (g2 > bestL) { bestL = g2; best = j; }
-        });
-      }
-      // Findet sich überhaupt kein Nachbar, fällt der Rest als Nebenfläche weg —
-      // besser keine Einheit als eine mit 4 m².
-      if (best < 0) { pieces.splice(i, 1); pieceT.splice(i, 1); changed = true; break; }
-      pieces[best] = legalLargest(legalBoolean(C.ClipType.ctUnion, [legalToPath(pieces[i])], [legalToPath(pieces[best])], C.PolyFillType.pftNonZero));
-      pieces.splice(i, 1); pieceT.splice(i, 1); changed = true; break;
-    }
-  }
-  pieces.forEach((unitFp0, pi) => {
-    const mixT = pieceT[pi];
-    let unitFp = unitFp0, area = polygonArea(unitFp);
-    if (area < WOHNUNG_MIN) return;
-    const frame = { ux, uy, centroid };
-    // sehr tiefe, einseitig belichtete Wohnungen: der unbelichtete Rest hinter der Nasszone gehört
-    // nicht zur Wohnung, sondern wird allgemeine Nebenfläche (Abstellräume am Gang)
-    if (C) {
-      const rest = planUnitRooms(unitFp, frame, footprint, circ, unitRoomsFor(unitFp, footprint, area)).filter(r => r.rest && r.area > 8);
-      if (rest.length) {
-        const cutR = legalBoolean(C.ClipType.ctDifference, [legalToPath(unitFp)], rest.map(r => legalToPath(signedArea(r.fp) < 0 ? r.fp.slice().reverse() : r.fp)), C.PolyFillType.pftNonZero);
-        const main = legalLargest(cutR);
-        if (main.length >= 3 && polygonArea(main) >= 30) { rest.forEach(r => addZone(r.fp, 'inner')); unitFp = main; area = polygonArea(unitFp); }
-      }
-    }
-    // eigener Mix: Typ nach der tatsächlichen Wohnungsgröße (nächstliegende Zielgröße)
-    let mixIdx = mixT ? mixT.idx : null, wantR = mixT && mixT.idx != null ? mixT.rooms : null;
-    if (typeof aptMix !== 'undefined' && aptMix.mode === 'custom') {
-      const MIX = activeUnitMix(); let bi = 0;
-      MIX.forEach((m, k) => { if (Math.abs(m.a - area) < Math.abs(MIX[bi].a - area)) bi = k; });
-      mixIdx = bi; wantR = MIX[bi].rooms || null;
-    }
-    const nR = unitRoomsFor(unitFp, footprint, area, wantR);
-    units.push({ type: 'wohnung', area, footprint: unitFp, rooms: nR, frame, circ, mixIdx });
-    if (showZoning) { const l = buildZoneLine(unitFp, y, ZONE_LINE_COLOR); if (l) group.add(l); }
-    if (showRoomHints) drawUnitRooms(group, planUnitRooms(unitFp, frame, footprint, circ, nR), y + 0.03, 0x8a8a8e, { opacity: 0.55 });
-  });
   return { group, units };
 }
+
 
 // massing-level roof: triangulates the footprint flat (ShapeGeometry/earcut, same trick
 // as the terrain) and displaces each vertex by a height field.
@@ -21741,39 +20212,24 @@ function drawPlanVector(ctx, f, M, opt) {
       }
     });
 
-    // ---------------- Räume, lichte Flächen, Wände ----------------
-    // Zonierung: an die Stelle der Einheiten treten die Zonen. Sie werden ohne 'frame'
-    // weitergereicht — dann liefert planUnitGeometry keine Räume, es entstehen also
-    // weder Innenwände noch Möbel. Übrig bleibt die Außenwand, und darin liegen die
-    // Zonen als solide Flächen.
-    const zonMode = !!opt.zonierung;
-    let zonen = null;
-    if (zonMode) {
-      try {
-        zonen = planZonierung(pc.fp, pc.core, (typeof aptMix !== 'undefined' && aptMix.mode === 'custom') ? mixMeanArea() : TARGET_UNIT_AREA);
-      } catch (e) { zonen = null; }
-    }
-    // ---- Zonierung: die Flächen zuerst, als HINTERGRUND --------------------------
-    // Vorgabe Ozan: die Schraffur liegt immer hinten. Alles, was danach kommt —
-    // Kernflächen, Stiegenlinien, Wandaufbau, Fenster, Bemassung, Beschriftung —
-    // zeichnet darüber und bleibt dadurch lesbar. Der Geschosskörper (slab) ist an
-    // dieser Stelle schon gezeichnet, die Füllung wird also nicht überdeckt.
-    if (zonMode && zonen && zonen.length) {
+    // ---------------- Einheiten als solide Farbflächen ----------------
+    // Vorgabe Ozan: nur Zonen — keine Innenwände, keine Möblierung. Die Einheiten
+    // tragen kein 'frame' mehr, planUnitGeometry liefert deshalb keine Räume; übrig
+    // bleiben Außenwand und Farbfläche. Die Füllung steht VOR dem Wandaufbau, damit
+    // Wände, Bemaßung und Beschriftung darüber lesbar bleiben.
+    const units = pc.units.filter(u => u.type === 'wohnung');
+    const kerne = pc.units.filter(u => u.type === 'kern');
+    const ehMode = opt.einheiten !== false && units.length > 0;
+    if (ehMode) {
       const dunkelZ = !!opt.dark;
-      zonen.forEach(z => {
-        if (!z.fp || z.fp.length < 3) return;
+      units.forEach((u, i) => {
+        if (!u.footprint || u.footprint.length < 3) return;
         ctx.save();
-        ctx.fillStyle = zonFarbe(z.nr || 0, z.art === 'erschliessung', dunkelZ);
-        path(z.fp, true); ctx.fill();
+        ctx.fillStyle = einheitFarbe(u.zonNr != null ? u.zonNr : i, dunkelZ);
+        path(u.footprint, true); ctx.fill();
         ctx.restore();
       });
     }
-    const units = zonMode
-      ? (zonen || []).filter(z => z.art === 'wohnung' || z.art === 'haus').map(z => ({ type: 'wohnung', area: z.area, footprint: z.fp, zonNr: z.nr }))
-      : pc.units.filter(u => u.type === 'wohnung');
-    const kerne = zonMode
-      ? (zonen || []).filter(z => z.art === 'erschliessung').map(z => ({ type: 'kern', area: z.area, footprint: z.fp, kind: 'zone' }))
-      : pc.units.filter(u => u.type === 'kern');
     const geos = [];
     units.forEach(u => {
       let fpU = u.footprint;
@@ -22022,90 +20478,41 @@ function drawPlanVector(ctx, f, M, opt) {
     }
 
     // ---------------- Beschriftung ----------------
-    // ---- Zonierung: nur Bezeichnung und Größe, sonst nichts ----
-    if (zonMode && zonen && zonen.length && k > 2) {
+    // ---- Einheiten: Bezeichnung und Größe, sonst nichts ----
+    if (ehMode && k > 2) {
       const fs = Math.max(7, Math.min(opt.fsMax || 13, k * 0.40));
-      const basis = (pc.zonTop0 || 0);
-      zonen.forEach(z => {
-        if (!z.fp || z.fp.length < 3 || z.area < 4) return;
-        const c = M.toPx(zonLabelPunkt(z.fp));
+      units.forEach((u, i2) => {
+        const z = u.footprint;
+        if (!z || z.length < 3 || u.area < 4) return;
+        const c = M.toPx(ehLabelPunkt(z));
+        const txt = 'Top ' + String(u.top != null ? u.top : (u.zonNr != null ? u.zonNr : i2) + 1).padStart(2, '0');
+        // Passt der Name nicht quer in die Fläche, wird er hochkant gesetzt —
+        // schmale Wohnungen hätten sich sonst gegenseitig überschrieben.
+        let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+        z.forEach(q => { const pq = M.toPx(q); bx0 = Math.min(bx0, pq[0]); bx1 = Math.max(bx1, pq[0]); by0 = Math.min(by0, pq[1]); by1 = Math.max(by1, pq[1]); });
+        ctx.save();
         ctx.textAlign = 'center';
-        if (z.art === 'erschliessung') {
-          // Das Wort nur setzen, wenn es in die Fläche passt — sonst steht es quer
-          // über den Wohnungen und macht den Plan unlesbar.
-          ctx.fillStyle = ink;
-          ctx.font = `600 ${fs}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-          const breit = ctx.measureText('Erschließung').width;
-          let platz = 0;
-          { // grobe Breite der Zone an der Beschriftungsstelle
-            let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-            z.fp.forEach(q => { const pq = M.toPx(q); x0 = Math.min(x0, pq[0]); x1 = Math.max(x1, pq[0]); y0 = Math.min(y0, pq[1]); y1 = Math.max(y1, pq[1]); });
-            platz = Math.min(x1 - x0, (y1 - y0) * 3);
-          }
-          if (platz > breit + 6) {
-            ctx.fillText('Erschließung', c[0], c[1] - fs * 0.1);
-            ctx.font = `400 ${fs * 0.88}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-            ctx.fillStyle = soft;
-            ctx.fillText(`${Math.round(z.area)} m²`, c[0], c[1] + fs * 1.05);
-          } else if (platz > 30) {
-            ctx.font = `400 ${fs * 0.88}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-            ctx.fillStyle = soft;
-            ctx.fillText(`${Math.round(z.area)} m²`, c[0], c[1] + fs * 0.3);
-          }
-        } else {
-          // Auf der gefüllten Fläche braucht auch die Zahl vollen Kontrast —
-          // in Grau verschwindet sie in der Farbe.
-          // Die Bezeichnung folgt der Typologie: eine Reihenhausanlage hat Häuser,
-          // kein Top; ein Haus/eine Maisonette ebenso.
-          const wort = (z.art === 'haus' || z.bez === 'Haus') ? 'Haus' : 'Top';
-          // dieselbe Nummer wie in der Einheiten-Ansicht (gleiche Aufteilung, gleiche Wohnung)
-          let topZ = null;
-          try {
-            const cz = polygonCentroid(z.fp);
-            const tu = (pc.units || []).find(u => u.type === 'wohnung' && Math.abs(u.area - z.area) < 1 && Math.hypot(polygonCentroid(u.footprint)[0] - cz[0], polygonCentroid(u.footprint)[1] - cz[1]) < 0.5);
-            if (tu) topZ = tu.top != null ? tu.top : ((tu._apt && tu._apt._haus && tu._apt._haus.top) || (tu._apt && tu._apt.top));
-          } catch (e) { topZ = null; }
-          const txt = wort + ' ' + String(topZ != null ? topZ : basis + (z.nr || 0) + 1).padStart(2, '0');
-          // Breite der Zone an der Beschriftungsstelle: passt der Name nicht quer,
-          // wird er hochkant gesetzt. Reihenhausstreifen sind schmal und hoch —
-          // nebeneinander gesetzte Namen überschrieben sich sonst gegenseitig.
-          let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
-          z.fp.forEach(q => { const pq = M.toPx(q); bx0 = Math.min(bx0, pq[0]); bx1 = Math.max(bx1, pq[0]); by0 = Math.min(by0, pq[1]); by1 = Math.max(by1, pq[1]); });
-          ctx.save();
-          ctx.fillStyle = ink;
-          ctx.font = `700 ${fs * 1.15}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-          const noetig = ctx.measureText(txt).width + 6;
-          const hoch = (bx1 - bx0) < noetig && (by1 - by0) > noetig;
-          if (hoch) { ctx.translate(c[0], c[1]); ctx.rotate(-Math.PI / 2); ctx.translate(-c[0], -c[1]); }
-          ctx.fillText(txt, c[0], c[1] - fs * 0.25);
-          ctx.font = `500 ${fs * 0.95}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-          ctx.globalAlpha = 0.78;
-          ctx.fillText(`${Math.round(z.area)} m²`, c[0], c[1] + fs * 1.05);
-          ctx.globalAlpha = 1;
-          ctx.restore();
-        }
+        ctx.fillStyle = ink;
+        ctx.font = `700 ${fs * 1.15}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+        const noetig = ctx.measureText(txt).width + 6;
+        const hoch = (bx1 - bx0) < noetig && (by1 - by0) > noetig;
+        if (hoch) { ctx.translate(c[0], c[1]); ctx.rotate(-Math.PI / 2); ctx.translate(-c[0], -c[1]); }
+        ctx.fillText(txt, c[0], c[1] - fs * 0.25);
+        ctx.font = `500 ${fs * 0.95}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+        ctx.globalAlpha = 0.78;
+        ctx.fillText(`${Math.round(u.area)} m²`, c[0], c[1] + fs * 1.05);
+        ctx.globalAlpha = 1;
+        ctx.restore();
       });
       ctx.textAlign = 'left';
-    }
-    if (!zonMode && opt.labels !== false && k > 3) {
-      const fs = Math.max(6, Math.min(opt.fsMax || 11, k * 0.33));
-      geos.forEach(({ u, fpU, geo }) => {
-        geo.rooms.forEach(r => {
-          if (r.area < 2.5) return;
-          const c = M.toPx(polygonCentroid(r.fp));
-          const nm = r.name === 'Schrankraum' && r.area < 7 ? 'SR' : r.name === 'Abstellraum' && r.area < 4 ? 'AR' : r.name;
-          ctx.fillStyle = soft; ctx.font = `400 ${fs}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`; ctx.textAlign = 'center';
-          ctx.fillText(nm, c[0], c[1] - fs * 0.15);
-          ctx.fillText(`${r.area.toFixed(1).replace('.', ',')} m²`, c[0], c[1] + fs * 1.0);
-        });
-        const topNo = u.top != null ? u.top : ((u._apt && u._apt._haus && u._apt._haus.top) || (u._apt && u._apt.top));
-        if (topNo != null) {
-          const c = M.toPx(polygonCentroid(fpU));
-          ctx.font = `600 ${fs * 1.25}px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`; ctx.fillStyle = ink; ctx.textAlign = 'center';
-          ctx.fillText(`Top ${String(topNo).padStart(2, '0')}`, c[0], c[1] - fs * 1.6);
-        }
-      });
-      ctx.textAlign = 'left';
+      // gewählte Einheit: geschlossene Umrahmung in Orange
+      const wahl = window.__ehWahlFp;
+      if (wahl && wahl.length >= 3) {
+        ctx.save();
+        ctx.strokeStyle = '#e98f6c'; ctx.lineWidth = 2.2; ctx.lineJoin = 'round';
+        path(wahl, true); ctx.stroke();
+        ctx.restore();
+      }
     }
     // Umriss (Außenkante Dämmung) als feine Linie, damit die Kontur auch ohne Füllung klar bleibt
     ctx.strokeStyle = ink; ctx.lineWidth = 0.6; ctx.lineJoin = 'miter';
@@ -23777,39 +22184,9 @@ function rebuild() {
       // ---- Wohnanlage: Trakte, Erschließung und Wohnungen aus EINER Rechnung (gaPlan) ----
       // Die Stiegenhäuser kommen dann aus diesem Plan — so stehen sie im 3D-Modell genau
       // dort, wo die Wohnungen sie im Grundriss erwarten.
-      let gaP = null;
-      if (ek.typ === 'wohnanlage' && !(refFp.holes && refFp.holes.length) && planType !== 'klein') {
-        // EINMAL je Baukörper: die Hangprüfung und der Aufbau sehen denselben Plan.
-        // Geplant wird am größten Geschoß; die Stiegen müssen im untersten und im
-        // obersten Geschoß liegen.
-        if (!pieceGaMemo.fertig) {
-          pieceGaMemo.fertig = true;
-          try {
-            const fps = (typeof floorFootprints !== 'undefined' && floorFootprints.length) ? floorFootprints : [refFp];
-            let gross = refFp;
-            fps.forEach(q => { if (q && q.length >= 3 && !(q.holes && q.holes.length) && fpArea(q) > fpArea(gross) * 1.02) gross = q; });
-            pieceGaMemo.plan = gaPlan(gross, { ux: refUx, uy: refUy, centroid: refCentroid, ek,
-              kernU: liftSize > 0.55 ? ek.coreU : Math.max(2.4, ek.coreU - ek.liftU - 0.05),
-              kernV: Math.max(ek.coreV + 1.4, 4.2), strasse: streetQ,
-              untenFp: refFp, topFp: fps[fps.length - 1],
-              seed: (typeof aptMix !== 'undefined' && aptMix.seed) || 0 });
-          } catch (e) { pieceGaMemo.plan = null; }
-        }
-        gaP = pieceGaMemo.plan;
-        if (gaP && gaP.kerne.length) {
-          const ext = gaP.kerne.map((k, i) => {
-            let lo = Infinity, hi = -Infinity, vlo = Infinity, vhi = -Infinity;
-            k.fp.forEach(p => { const u = refProj(p), v = refProjV(p); lo = Math.min(lo, u); hi = Math.max(hi, u); vlo = Math.min(vlo, v); vhi = Math.max(vhi, v); });
-            return { lo, hi, vlo, vhi, extLo: false, extHi: false, main: false, center: (lo + hi) / 2, wing: k.w, ga: true };
-          });
-          let mi = 0;
-          ext.forEach((c, i) => { const m = ext[mi]; if ((c.wing === 0 && m.wing !== 0) || (c.wing === m.wing && Math.abs(c.center - midU) < Math.abs(m.center - midU))) mi = i; });
-          ext[mi].main = true;
-          coreList.length = 0; ext.forEach(c => coreList.push(c));
-          mainCoreIdx = mi;
-          planType = gaP.planType;
-        } else gaP = null;
-      }
+      // Die Kerne stehen wieder an ihrer klassischen Lage: die Geschoßaufteilung
+      // kennt seit v3.07 keine Erschließung mehr.
+      const gaP = null;
       const mainCore = coreList[mainCoreIdx];
       const coreRef = { ux: refUx, uy: refUy, centroid: refCentroid, coreLo: mainCore.lo, coreHi: mainCore.hi, liftSize, liftV, stairWidth, stairTread, stepsPerFlight, art: ek.art, haeuser: ek.haeuser || 0,
         planType, uMin: refUMin, uMax: refUMax, vMin: refVMinFull, vMax: refVMaxFull, vc: refVc, coreVLo: mainCore.vlo, coreVHi: mainCore.vhi, vPointsNorth, cores: coreList, coreDepth: CORE_D, coreSideStreet, refL, refD, ek, plan: gaP };
@@ -23839,8 +22216,8 @@ function rebuild() {
           return layoutMemo.get(key);
         };
         const layoutOfRoh = (fp, f) => {
-          const us = buildApartmentLayout(fp, 0, false, false, cs.coreRef, seededRandom(pieceIdx * 10000 + f + 500 + aptMix.seed * 7919)).units.filter(u => u.type === 'wohnung');
-          return { areas: us.map(u => u.area), bad: us.reduce((q, u) => q + (u.gaOrd != null ? (u.erreichbar === false ? 1 : 0) : unitAccessProblems(u, fp)), 0) };   // Geschoßaufteilung: Zugang ist schon geprüft
+          const us = buildApartmentLayout(fp, 0, false, false, cs.coreRef, seededRandom(pieceIdx * 10000 + f + 500 + 0)).units.filter(u => u.type === 'wohnung');
+          return { areas: us.map(u => u.area), bad: 0 };   // ohne Erschließung gibt es kein Zugangsproblem mehr
         };
         validate = (fpCut, fpFull, f) => {
           try {
@@ -24174,7 +22551,7 @@ function rebuild() {
         });
       } catch (e) { /* nur Darstellung */ }
     } else {
-      const highlightActive = showApartments && selectedApartmentIndex !== null;
+      const highlightActive = false;   // Auswahl zeigt sich nur als Umrahmung (Vorgabe Ozan, 12.10.2026)
       const pieceEditActive = selectedPieceIdx !== null && currentPieceInfo.length >= 1;
       // the core (Stiegenhaus/Aufzug) is computed once from this piece's ground floor and
       // reused unchanged for every floor above, so the shaft actually runs straight up
@@ -24267,21 +22644,8 @@ function rebuild() {
           // Grundriss liegt auf der Oberseite des Geschosses (Schnitt von oben); sichtbar ist nur das
           // oberste bzw. das gewählte Geschoss — die darunter sind von deckenden Geschossen verdeckt
           const planTop = f === floors - 1 || (highlightActive && selPieceIdx === pieceIdx && f === selFloorIdx);
-          // In der Zonierungs-Ansicht treten die Zonen an die Stelle der Einheitenlinien:
-          // keine Wohnungstrennlinien aus der Einheiten-Aufteilung, sondern die solide
-          // Zonenfläche. Die Einheiten werden weiterhin berechnet, weil Kennzahlen,
-          // Stellplatz-Soll und Spielplatzpflicht daran hängen.
-          const zonAnsicht = viewMode() === 'zonierung';
           const yPlan = showApartments ? ebeneY(f + 1) + 0.03 : ebeneY(f) + 0.04;
-          const layout = buildApartmentLayout(fp, yPlan, false, showApartments && showZoning && !zonAnsicht, coreRef, seededRandom(pieceIdx * 10000 + f + 500 + aptMix.seed * 7919), { f, floors });
-          // In der Zonierung tritt eine EIGENE Gruppe an die Stelle der Einheiten-Darstellung:
-          // nur die Zonenflächen, keine Wohnungstrennlinien, keine Stiegensymbole, keine
-          // Terrassen- und Balkonlinien. Die Übersicht ist hier das Ziel.
-          let zonGruppe = null;
-          if (zonAnsicht && showApartments) try {
-            const zn = planZonierung(fp, coreRef, (typeof aptMix !== 'undefined' && aptMix.mode === 'custom') ? mixMeanArea() : TARGET_UNIT_AREA);
-            zonGruppe = buildZonenFlaechen(zn, yPlan, document.documentElement.getAttribute('data-theme') !== 'light');
-          } catch (e) { zonGruppe = null; }
+          const layout = buildApartmentLayout(fp, yPlan, false, showApartments && showZoning, coreRef, seededRandom(pieceIdx * 10000 + f + 500 + 0), { f, floors });
           if (f === 0) (window.__floorLayouts = window.__floorLayouts || []).push({ piece: pieceIdx, type: coreRef.planType, units: layout.units.map(u => ({ type: u.type, area: Math.round(u.area), fp: u.footprint })) });
           // Fensterzonen für die Fassade: nur wenn die Visualisierung sie braucht
           if (showViz) try {
@@ -24302,12 +22666,9 @@ function rebuild() {
               });
             });
           } catch (e) { /* ohne Zonen weiter — die Fassade nimmt dann die Standardbrüstung */ }
-          if (showApartments) {
-            const g3 = zonAnsicht ? zonGruppe : layout.group;
-            if (g3) {
-              if (highlightActive && hideFloorsAboveSelected(f)) g3.visible = false;
-              apartmentGroup.add(g3);
-            }
+          if (showApartments && layout.group) {
+            if (highlightActive && hideFloorsAboveSelected(f)) layout.group.visible = false;
+            apartmentGroup.add(layout.group);
           }
           apartmentAreaLog.push({ piece: pieceIdx + 1, floor: f, units: layout.units });
           {
@@ -24529,37 +22890,20 @@ function rebuild() {
     // keine Stellplaetze im Freien
   }
 
-  // keine 3D-Möblierung im 3D-Fenster (bewusst entfernt)
-  // Einheiten: ALLE Wohnungsgrundrisse möbliert auf jedem Geschoss. Gewählte Wohnung 100 %
-  // Deckkraft (helle Bodenplatte, Raumbezeichnungen), alle anderen 35 %; ist keine gewählt
-  // (kurzer Klick ins Leere), zeigen alle Einheiten 100 %.
-  if (viewMode() !== 'zonierung' && document.getElementById('toggle-apartments').checked && document.getElementById('toggle-roomhints') && document.getElementById('toggle-roomhints').checked) {
-    const sel = selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex] ? allApartmentUnits[selectedApartmentIndex] : null;
-    allApartmentUnits.forEach(u => {
-      if (u === sel || !u.frame) return;
-      if (sel && u.pieceIdx === sel.pieceIdx && u.floorIdx > sel.floorIdx) return;   // Geschosse über der gewählten Wohnung sind ausgeblendet
-      const g = new THREE.Group();
-      try { drawUnitRooms(g, planUnitRooms(u.footprint, u.frame, u.outerFootprint, u.circ, u.rooms), u.floorBaseY + u.floorH + 0.06, 0xd8d5ce, { furniture: true, furnitureColor: 0xb9b6ae, opacity: 0.8 }); } catch (e) { return; }
-      const k = sel ? 0.35 : 1;
-      if (k < 1) g.traverse(ch => { if (ch.material) { ch.material = ch.material.clone(); ch.material.transparent = true; ch.material.opacity = (ch.material.opacity != null ? ch.material.opacity : 1) * k; } });
-      apartmentGroup.add(g);
-    });
-  }
-  if (viewMode() !== 'zonierung' && document.getElementById('toggle-apartments').checked && selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) {
+  // Die gewählte Einheit bekommt eine geschlossene Umrahmung in Orange — kein
+  // Hervorheben durch Ausblenden, keine Kamerafahrt, keine Raumskizze.
+  // (Vorgabe Ozan, 12.10.2026)
+  window.__ehWahlFp = null;
+  if (document.getElementById('toggle-apartments').checked && selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) {
     const u = allApartmentUnits[selectedApartmentIndex];
-    // deckende, helle Bodenplatte der gewählten Wohnung auf dem geschnittenen Geschoss —
-    // Linien liegen 2–3 cm darüber, Platte und Geschoss sind per polygonOffset zurückgesetzt
+    window.__ehWahlFp = u.footprint;
     const topY = u.floorBaseY + u.floorH;
-    const plate = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(u.footprint.map(p => new THREE.Vector2(p[0], -p[1])))),
-      new THREE.MeshStandardMaterial({ color: 0xf5f1ea, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
-    plate.rotation.x = -Math.PI / 2; plate.position.y = topY + 0.04;   // über den Geschosslinien: nur der eigene Grundriss ist sichtbar plate.receiveShadow = true;
-    buildingGroup.add(plate);
-    { const pts = u.footprint.map(p => new THREE.Vector3(p[0], topY + 0.062, p[1])); pts.push(pts[0].clone());
-      buildingGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe98f6c }))); }
-    const sketch = new THREE.Group();
-    if (u.frame) drawUnitRooms(sketch, planUnitRooms(u.footprint, u.frame, u.outerFootprint, u.circ, u.rooms), topY + 0.06, 0xd9774f, { labels: true, furniture: true, furnitureColor: 0x4d4c55, opacity: 0.95 });
-    else sketch.add(buildUnitRoomSketch(u.footprint, u.floorBaseY + u.floorH + 0.02, u.coreCentroid, 0xe98f6c, northRad, u.outerFootprint, u.floorH));
-    buildingGroup.add(sketch);
+    const pts = u.footprint.map(p => new THREE.Vector3(p[0], topY + 0.06, p[1]));
+    pts.push(pts[0].clone());
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xe98f6c, depthTest: false, depthWrite: false }));
+    ln.renderOrder = 7;
+    buildingGroup.add(ln);
   }
 
   const gapEl = document.getElementById('s-buildinggap-actual');
@@ -25140,7 +23484,7 @@ function resetPieceOverridesKeepHeight() { pieceOverrides = pieceOverrides.map(o
   document.getElementById(id).addEventListener('input', resetPieceOverridesKeepHeight)
 );
 
-['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ',
+['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ', 'eh-anzahl', 'eh-flaeche',
  'building-gap', 'num-parts', 'split-angle',
  'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass', 'toggle-earthwork',
  'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'toggle-ortho', 'ortho-opacity'].forEach(id =>
@@ -25154,9 +23498,6 @@ const LAYER_VIEW_PRESETS = {
   widmung: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   aushub: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': true, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   einheiten: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false },
-  // Zonierung: wie die Einheiten-Ansicht, aber die Raumaufteilung bleibt aus — im Plan
-  // zählt nur, wie groß eine Wohnung ist und wo sie liegt
-  zonierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': true, 'toggle-roomhints': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
   schnitt: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
 };
@@ -25179,7 +23520,7 @@ function applyViewPreset(mode) {
   if (mode === 'aushub') {
     // die Kennzahlen bleiben, wie der Nutzer sie gestellt hat
     aptOverlay.classList.add('hidden');
-  } else if (mode === 'einheiten' || mode === 'zonierung') {
+  } else if (mode === 'einheiten') {
     aptOverlay.classList.remove('hidden');
     statsOverlay.classList.add('hidden');
     statsBtn.classList.remove('active');
@@ -25238,7 +23579,7 @@ document.querySelectorAll('.val').forEach(span => {
 });
 
 // ---- Datei/Bearbeiten: Undo/Redo, Speichern/Laden, PNG-Export ----
-const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
+const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'eh-modus', 'eh-nach', 'eh-anzahl', 'eh-flaeche', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
   'building-gap', 'num-parts', 'split-angle', 'toggle-eigen', 'light-intensity', 'camera-fov-mm', 'model-mode', 'view-mode',
   'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass',
   'toggle-earthwork', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'tree-seed', 'tree-style', 'toggle-ortho', 'ortho-opacity', 'nb-default-floors', 'site-preset', 'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-theme',
@@ -25268,6 +23609,7 @@ function getFullState() {
     pieceOverrides: pieceOverrides.map(o => ({ ...o })),
     vizSaved: vizSaved.map(v => ({ ...v })),
     aptMix: typeof aptMix === 'object' && aptMix ? JSON.parse(JSON.stringify(aptMix)) : null,
+    ehCfg: typeof ehCfg === 'object' && ehCfg ? JSON.parse(JSON.stringify(ehCfg)) : null,
     exposeShots: typeof exposeShotSettings === 'object' && exposeShotSettings ? JSON.parse(JSON.stringify(exposeShotSettings)) : {},
     exposeSettings: exposeSettings ? JSON.parse(JSON.stringify(exposeSettings)) : null,
     parcelSource: parcelSource ? JSON.parse(JSON.stringify(parcelSource)) : null,
@@ -25319,6 +23661,7 @@ function applyFullState(state) {
   naechsteFreiNr = freieKoerper.length + 1;
   vizSaved = Array.isArray(state.vizSaved) ? state.vizSaved.map(v => ({ ...v })) : [];
   if (state.aptMix && Array.isArray(state.aptMix.rows)) { aptMix = JSON.parse(JSON.stringify(state.aptMix)); if (!Array.isArray(aptMix.saved)) aptMix.saved = []; }
+  if (state.ehCfg) { try { ehCfg = Object.assign({ modus: 'gleich', anzahl: 4, flaeche: 75, nachAnzahl: true }, state.ehCfg); } catch (e) { /* Vorgabe bleibt */ } }
   if (typeof renderUnitMix === 'function') renderUnitMix();
   exposeShotSettings = state.exposeShots && typeof state.exposeShots === 'object' ? JSON.parse(JSON.stringify(state.exposeShots)) : {};
   exposeSettings = state.exposeSettings && state.exposeSettings.sections ? Object.assign(defaultExposeSettings(), JSON.parse(JSON.stringify(state.exposeSettings))) : defaultExposeSettings();
@@ -26231,6 +24574,7 @@ function syncVizControls() {
     if (sl && sv) sv.textContent = Math.round(parseFloat(sl.value) * 100) + ' cm'; }
   // Die Auswahlknöpfe zeigen den aktuellen Wert an
   if (typeof window.__wahlSync === 'function') window.__wahlSync();
+  if (typeof renderUnitMix === 'function' && document.getElementById('eh-modus')) renderUnitMix();
   document.querySelectorAll('.viz-seg').forEach(seg => {
     const v = document.getElementById(seg.dataset.target).value;
     seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
@@ -26246,43 +24590,42 @@ function syncVizControls() {
 }
 function setVizValue(id, v) {
   document.getElementById(id).value = v;
-  if (id === 'mix-mode') { aptMix.mode = v; renderUnitMix(); }
+  if (id === 'eh-modus' || id === 'eh-nach') renderUnitMix();
   syncVizControls(); rebuild(); pushHistory();
 }
 // ---- Wohnungsmix: Eingabetabelle, Neu generieren, Varianten ----
 function renderUnitMix() {
-  const mm = document.getElementById('mix-mode'); if (!mm) return;
-  mm.value = aptMix.mode;
-  document.getElementById('mix-custom').style.display = aptMix.mode === 'custom' ? '' : 'none';
+  const mm = document.getElementById('eh-modus'); if (!mm) return;
+  const mix = mm.value === 'mix';
+  ehCfg.modus = mix ? 'mix' : 'gleich';
+  aptMix.mode = mix ? 'custom' : 'auto';   // die Kennzahlen lesen diesen Schalter weiter
+  const nach = (document.getElementById('eh-nach') || {}).value || 'anzahl';
+  ehCfg.nachAnzahl = nach === 'anzahl';
+  ehCfg.anzahl = Math.max(1, parseInt((document.getElementById('eh-anzahl') || {}).value || '4', 10));
+  ehCfg.flaeche = Math.max(25, parseFloat((document.getElementById('eh-flaeche') || {}).value || '75'));
+  document.getElementById('eh-gleich').style.display = mix ? 'none' : '';
+  document.getElementById('mix-custom').style.display = mix ? '' : 'none';
+  document.getElementById('eh-anzahl-row').style.display = ehCfg.nachAnzahl ? '' : 'none';
+  document.getElementById('eh-flaeche-row').style.display = ehCfg.nachAnzahl ? 'none' : '';
+  setzWert('v-eh-anzahl', String(ehCfg.anzahl));
+  setzWert('v-eh-flaeche', Math.round(ehCfg.flaeche) + ' m\u00b2');
   const tb = document.getElementById('mix-rows');
   tb.innerHTML = aptMix.rows.map((r, i) => `<tr data-i="${i}">
     <td><select data-f="rooms">${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === r.rooms ? ' selected' : ''}>${n === 1 ? 'Garçonnière' : n + ' Zi'}</option>`).join('')}</select></td>
     <td><input data-f="area" type="number" min="25" max="200" step="1" value="${r.area}"></td>
     <td><input data-f="count" type="number" min="0" max="500" step="1" value="${r.count}"></td>
     <td><button type="button" class="mix-del" title="Entfernen">✕</button></td></tr>`).join('');
-  const sv = document.getElementById('mix-saved');
-  sv.innerHTML = aptMix.saved.map(v => `<div class="mix-var${v.seed === aptMix.seed && v.mode === aptMix.mode && JSON.stringify(v.rows) === JSON.stringify(aptMix.rows) ? ' current' : ''}">
-    <button type="button" class="mix-load" data-id="${v.id}">${escapeHtml(v.name)}<small>${v.mode === 'custom' ? v.rows.map(r => `${r.count}× ${r.rooms === 1 ? 'Garç.' : r.rooms + ' Zi'} ${r.area} m²`).join(' · ') : 'Marktmix'} · #${v.seed}${v.ist ? ' · ' + v.ist : ''}</small></button>
-    <button type="button" class="mix-vdel" data-id="${v.id}" title="Löschen">✕</button></div>`).join('');
 }
 function renderUnitMixIst(units) {
   const el = document.getElementById('mix-ist'); if (!el) return;
   const wo = (units || []).filter(u => u.area);
   if (!wo.length) { el.innerHTML = ''; return; }
-  if (aptMix.mode === 'custom') {
-    const rows = aptMix.rows.filter(r => r.area > 20 && r.count > 0);
-    const ist = rows.map(() => 0);
-    wo.forEach(u => { let bi = u.mixIdx; if (bi == null || bi >= rows.length) { bi = 0; rows.forEach((r, i) => { if (Math.abs(r.rooms - u.rooms) * 30 + Math.abs(r.area - u.area) < Math.abs(rows[bi].rooms - u.rooms) * 30 + Math.abs(rows[bi].area - u.area)) bi = i; }); } ist[bi]++; });
-    const sc = aptMix.scale || 1, sollN = rows.reduce((q, r) => q + r.count, 0);
-    el.innerHTML = '<b>Soll / Ist</b> (Anzahl)<br>' + rows.map((r, i) => `${r.rooms === 1 ? 'Garçonnière' : r.rooms + ' Zi'} ~${r.area} m²: ${r.count} / <b>${ist[i]}</b>`).join('<br>') + `<br>Gesamt: ${rows.reduce((q, r) => q + r.count, 0)} / <b>${wo.length}</b>`
-      + (Math.abs(sc - 1) > 0.04 ? `<br>${sc > 1 ? 'Mehr Fläche als der Mix braucht' : 'Weniger Fläche als der Mix braucht'} — Wohnungsgrößen ×${sc.toFixed(2).replace('.', ',')} angepasst.` : '')
-      + (wo.length > sollN * 1.15 ? `<br>Das Gebäude fasst mehr Wohnungen als gewünscht — die Anzahlen wirken als Verhältnis. Für weniger, größere Wohnungen Zielgrößen erhöhen oder Baumasse reduzieren.` : wo.length < sollN * 0.87 ? `<br>Nicht alle gewünschten Wohnungen passen ins Gebäude — Zielgrößen verkleinern oder mehr Baumasse zulassen.` : '');
-  } else {
-    const by = {}; wo.forEach(u => { by[u.rooms] = (by[u.rooms] || 0) + 1; });
-    el.innerHTML = '<b>Ergebnis</b>: ' + Object.keys(by).sort().map(k => `${by[k]}× ${k === '1' ? 'Garç.' : k + ' Zi'}`).join(' · ') + ` · gesamt ${wo.length}`;
-  }
+  const fl = wo.map(u => u.area).sort((a, b) => a - b);
+  const mit = fl.reduce((q, a) => q + a, 0) / fl.length;
+  el.innerHTML = `<b>Ergebnis</b>: ${wo.length} Wohnungen · ${Math.round(fl[0])}–${Math.round(fl[fl.length - 1])} m² · im Mittel ${Math.round(mit)} m²`;
   aptMix.lastIst = `${wo.length} Whg.`;
 }
+
 let mixInputTimer = null;
 document.getElementById('mix-rows').addEventListener('input', e => {
   const tr = e.target.closest('tr'); if (!tr || e.target.tagName !== 'INPUT') return;
@@ -26306,20 +24649,6 @@ document.getElementById('mix-add').addEventListener('click', e => {
   const last = aptMix.rows[aptMix.rows.length - 1];
   aptMix.rows.push(last ? { rooms: Math.min(5, last.rooms + 1), area: last.area + 20, count: 2 } : { rooms: 2, area: 55, count: 5 });
   renderUnitMix(); rebuild(); pushHistory();
-});
-document.getElementById('mix-regen').addEventListener('click', e => { e.stopPropagation(); aptMix.seed = (aptMix.seed || 0) + 1; renderUnitMix(); rebuild(); pushHistory(); });
-document.getElementById('mix-save').addEventListener('click', e => {
-  e.stopPropagation();
-  aptMix.saved.push({ id: Date.now(), name: `Variante ${aptMix.saved.length + 1}`, mode: aptMix.mode, seed: aptMix.seed, rows: JSON.parse(JSON.stringify(aptMix.rows)), ist: aptMix.lastIst || '' });
-  renderUnitMix(); pushHistory();
-});
-document.getElementById('mix-saved').addEventListener('click', e => {
-  const del = e.target.closest('.mix-vdel'), load = e.target.closest('.mix-load');
-  if (!del && !load) return; e.stopPropagation();
-  if (del) { aptMix.saved = aptMix.saved.filter(v => String(v.id) !== del.dataset.id); renderUnitMix(); pushHistory(); return; }
-  const v = aptMix.saved.find(x => String(x.id) === load.dataset.id); if (!v) return;
-  aptMix.mode = v.mode; aptMix.seed = v.seed; aptMix.rows = JSON.parse(JSON.stringify(v.rows));
-  renderUnitMix(); syncVizControls(); rebuild(); pushHistory();
 });
 renderUnitMix();
 document.querySelectorAll('.viz-seg').forEach(seg => seg.addEventListener('click', e => {
@@ -32064,7 +30393,7 @@ function draw2DOverlays() {
       const P = prep(id, v); if (!P) return;
       const { ctx, w, h } = P, pxPerM = P.k;
       const M = { pxPerM, toPx: p => [w / 2 + (p[0] - view2DCenterX) * pxPerM, h / 2 + (p[1] - view2DCenterZ) * pxPerM], clip: [0, 0, w, h] };
-      if (isPlan) drawPlanVector(ctx, plan2DFloor, M, { dark, dims: pxPerM > 2.5, furniture: true, labels: pxPerM > 5, neighbours: true, zonierung: viewMode() === 'zonierung' });
+      if (isPlan) drawPlanVector(ctx, plan2DFloor, M, { dark, dims: pxPerM > 2.5, furniture: true, labels: pxPerM > 5, neighbours: true });
       else drawTopVector(ctx, M, dark);
     });
     // Ansicht (ohne Fenster), mit Staffage und Höhenkoten wie im Exposé
@@ -36313,57 +34642,6 @@ function buildOrthoDrape(heightFn) {
 // Esstisch ab 16 m², Dusche ab 3,5 m²) stammen aus den ausgewerteten Einreichplänen.
 // Das Ergebnis wird je Modellstand einmal gerechnet und gemerkt.
 // ============================================================================
-let moeblProbeCache = null, moeblProbeKey = '';
-function moeblierungsProbe(units) {
-  const liste = (units || []).filter(u => u && u.frame && u.footprint);
-  if (!liste.length) return { raeume: 0, bestanden: 0, fehlt: [], wohnungen: 0 };
-  // Schlüssel aus Anzahl und Flächen — ändert sich der Baukörper, wird neu gerechnet
-  const key = liste.length + ':' + liste.reduce((q, u) => q + Math.round((u.area || 0) * 10), 0);
-  if (moeblProbeCache && moeblProbeKey === key) return moeblProbeCache;
-  const erg = { raeume: 0, bestanden: 0, fehlt: [], wohnungen: 0 };
-  // Fensterzonen gleich mitsammeln: wo liegt an der Außenwand welche Raumart? Daraus
-  // folgt in der Visualisierung die Brüstungshöhe. Ein Durchlauf, zwei Ergebnisse.
-  const zonen = [];
-  // bei sehr vielen Einheiten eine Stichprobe, damit das Zeichnen nicht hängt
-  const schritt = liste.length > 40 ? Math.ceil(liste.length / 40) : 1;
-  for (let i = 0; i < liste.length; i += schritt) {
-    const u = liste[i];
-    let r;
-    try {
-      r = planUnitRooms(u.footprint, u.frame, u.outerFootprint || u.footprint, u.circ, u.rooms);
-      if (!r || !r.length) continue;
-      const tmp = new THREE.Group();
-      furnishRooms(tmp, r, 0, 0x888888);
-      tmp.traverse(q => { if (q.geometry) q.geometry.dispose(); if (q.material) q.material.dispose(); });
-    } catch (e) { continue; }
-    // Fassadenkanten je Raum merken (Mitte, Länge, Raumart)
-    try {
-      const of = u.outerFootprint || u.footprint;
-      r.forEach(x => {
-        if (!x.fp || x.fp.length < 3 || !['living', 'bed', 'bath', 'wc'].includes(x.kind)) return;
-        for (let k = 0; k < x.fp.length; k++) {
-          const a = x.fp[k], b = x.fp[(k + 1) % x.fp.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-          if (L < 0.8) continue;
-          const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-          const drauf = distPointToPolygon(m, of) <= 0.35 || (of.holes || []).some(h => distPointToPolygon(m, h) <= 0.35);
-          if (!drauf) continue;
-          zonen.push({ piece: u.pieceIdx, f: u.floorIdx, m, L, kind: x.kind, name: x.name });
-        }
-      });
-    } catch (e) { /* ohne Zonen weiter */ }
-    if (!r._probe) continue;
-    erg.wohnungen++;
-    erg.raeume += r._probe.raeume;
-    erg.bestanden += r._probe.bestanden;
-    r._probe.fehlt.forEach(f => erg.fehlt.push({ top: u.top || i + 1, flaeche: Math.round(u.area || 0), raum: f.raum, raumFl: f.flaeche, fehlt: f.fehlt }));
-  }
-  erg.stichprobe = schritt > 1;
-  moeblProbeCache = erg; moeblProbeKey = key;
-  window.__moeblProbe = erg;
-  // Die Zonen des Durchlaufs stehen schon; nur falls keine da sind, diese nehmen
-  if (!(window.__fensterZonen || []).length) window.__fensterZonen = zonen;
-  return erg;
-}
 function renderOibChecks(o) {
   const el = document.getElementById('oib-checks'); if (!el) return;
   const out = []; const add = (lvl, title, text) => out.push({ lvl, title, text });
@@ -36414,38 +34692,8 @@ function renderOibChecks(o) {
   add(FN > 22 ? 'warn' : 'ok', 'Aufzug', FN > 32 ? 'Fluchtniveau > 32 m: mindestens 2 Personenaufzüge, einer mit Fahrkorb 1,10 × 2,10 m (OIB-RL 4, 2.3.2/2.3.3).' : FN > 22 ? 'Fluchtniveau > 22 m: Fahrkorb mind. 1,10 × 2,10 m (Krankentrage, OIB-RL 4, 2.3.2).' : 'Fahrkorb 1,10 × 1,40 m, Türen 90 cm, alle Geschoße inkl. UG/Garage verbunden (OIB-RL 4, 2.3.1).');
   // Absturzsicherung (OIB-RL 4, 4.2.1)
   add('ok', 'Absturzsicherung', `Geländer/Brüstung ${FN + o.floorH > 12 ? '1,10 m (Absturzhöhe > 12 m)' : '1,00 m'} (OIB-RL 4, 4.2.1).`);
-  // Belichtung: Lichteintritt ≥ 12 % der Bodenfläche, +1 % je m Raumtiefe über 5 m (OIB-RL 3, 9.1)
-  let rooms = 0, dark = 0;
-  (o.units || []).forEach(u => {
-    if (!u.frame) return;
-    planUnitRooms(u.footprint, u.frame, u.outerFootprint, u.circ, u.rooms).forEach(r => {
-      if (r.kind !== 'living' && r.kind !== 'bed') return;
-      rooms++;
-      let fac = 0;
-      r.fp.forEach((a, i) => { const b = r.fp[(i + 1) % r.fp.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; if (distPointToPolygon(m, u.outerFootprint) < 0.3 || (u.outerFootprint.holes || []).some(h => distPointToPolygon(m, h) < 0.3)) fac += L; });
-      const depth = fac > 0 ? r.area / fac : 99;
-      const need = r.area * (0.12 + 0.01 * Math.max(0, Math.ceil(depth - 5)));
-      const win = fac * 0.6 * 2.3;   // ca. 60 % der Fassadenbreite verglast, 2,30 m Fensterhöhe (Architekturlicht)
-      if (win < need) dark++;
-    });
-  });
-  add(dark ? 'warn' : 'ok', 'Belichtung', dark ? `${dark} von ${rooms} Aufenthaltsräumen mit zu wenig Fassade für 12 % Lichteintritt (+1 %/m Tiefe > 5 m) — Raum zu tief oder Fassade zu kurz (OIB-RL 3, 9.1).` : `alle ${rooms} Aufenthaltsräume mit ausreichender Fassade für ≥ 12 % Lichteintritt (OIB-RL 3, 9.1).`);
-  // Möblierungsprobe — der Test, den eine Flächenangabe nicht leisten kann
-  try {
-    const mp = moeblierungsProbe(o.units);
-    if (mp.raeume > 0) {
-      const q = mp.bestanden / mp.raeume;
-      // Welche Möbel fehlen, zusammengefasst — der häufigste Mangel zuerst
-      const zz = {};
-      mp.fehlt.forEach(f => f.fehlt.forEach(x => { const k = f.raum + ': ' + x; zz[k] = (zz[k] || 0) + 1; }));
-      const top3 = Object.entries(zz).sort((a, b) => b[1] - a[1]).slice(0, 3)
-        .map(([k, v]) => v > 1 ? k + ' (' + v + '×)' : k).join(', ');
-      add(q >= 0.95 ? 'ok' : q >= 0.85 ? 'warn' : 'bad', 'Möblierungsprobe',
-        q >= 0.95
-          ? `${mp.bestanden} von ${mp.raeume} Räumen in ${mp.wohnungen} Einheit${mp.wohnungen === 1 ? '' : 'en'} nehmen ihre Möbel samt Bewegungsflächen auf (Maße nach VDI 6000 Blatt 1).`
-          : `${mp.raeume - mp.bestanden} von ${mp.raeume} Räumen nehmen ihre Möbel nicht auf — ${top3}. Diese Räume sind zu schmal oder zu verwinkelt geschnitten, nicht zu klein.`);
-    }
-  } catch (e) { /* Prüfung ist nur Information */ }
+  // Belichtung und Möblierungsprobe sind entfallen: die Kubaturstudie teilt ein
+  // Geschoß in Wohnungen, sie legt keine Räume mehr fest (Vorgabe Ozan, 12.10.2026).
   add('ok', 'Gänge / Flure', 'allgemeine Gänge ≥ 1,20 m, Wohnungsflure 1,20 m (OIB-RL 4, 2.4.1).');
   window.liveOibChecks = out;
   const nb = out.filter(x => x.lvl === 'bad').length, nw = out.filter(x => x.lvl === 'warn').length;
@@ -38071,7 +36319,6 @@ function northUpView() {
       ['massenmodell2', 'Linienmodell', '<path d="M12 3.5l7.5 4.2v8.6L12 20.5 4.5 16.3V7.7z"/><path d="M4.5 11.8l7.5 4.2 7.5-4.2" opacity=".6"/><path d="M4.5 7.7L12 11.9l7.5-4.2" opacity=".35"/>'],
       ['huellkoerper', 'Hüllkörper', '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" stroke-dasharray="3 2"/>'],
       ['einheiten', 'Einheiten', '<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/>'],
-      ['zonierung', 'Zonierung', '<rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M3.5 10.5h17M10.5 10.5v10" opacity=".75"/><rect x="3.5" y="3.5" width="17" height="7" rx="1.5" fill="currentColor" opacity=".22" stroke="none"/>'],
       ['aushub', 'Aushub', '<path d="M3 18l5-7 4 4 3-4 6 7z"/><path d="M3 21h18"/>'],
       ['schnitt', 'Schnittmodell', '<path d="M3.5 8.5l8.5-5 8.5 5v7l-8.5 5-8.5-5z"/><path d="M3.5 12h17M12 3.5v17" opacity=".45"/><rect x="8.2" y="9.6" width="3" height="3" rx=".4" opacity=".8"/>'],
       ['visualisierung', 'Visualisierung', '<path d="M1.8 12S5.4 5.5 12 5.5 22.2 12 22.2 12 18.6 18.5 12 18.5 1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/>']
@@ -39972,7 +38219,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.06';
+  const VERSION = 'v3.07';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
