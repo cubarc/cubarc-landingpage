@@ -17294,6 +17294,8 @@ function zonLabelPunkt(fp) {
 // Teilt ein Geschoß in Wohnungen und Erschließung. Liefert
 // [{ art: 'wohnung' | 'erschliessung', fp, area, nr }] in Weltkoordinaten.
 function planZonierung(fp, coreRef, zielFlaeche) {
+  // Wohnanlage: die Zonen SIND die Einheiten — eine Aufteilung, zwei Darstellungen
+  if (coreRef && coreRef.plan) { try { return gaZonen(gaGeschoss(coreRef.plan, fp)); } catch (e) { /* alte Rechnung */ } }
   const out = [];
   if (!fp || fp.length < 3 || typeof ClipperLib === 'undefined') return out;
   const C = ClipperLib, A0 = polygonArea(fp);
@@ -17504,6 +17506,1018 @@ function planZonierung(fp, coreRef, zielFlaeche) {
     });
   });
   return aufraeumen(out);
+}
+
+// ============================================================================
+// GESCHOSSAUFTEILUNG — EINE Rechnung für Einheiten UND Zonierung (seit v3.06)
+// ----------------------------------------------------------------------------
+// Bis v3.05 gab es zwei voneinander unabhängige Aufteilungen (Einheiten und
+// Zonierung). Beide schnitten das Geschoß frei in Rechtecke. Daraus entstanden
+// Wohnungen ohne Anschluss an Stiege oder Gang, 200-m²-Streifen quer durch
+// Seitenflügel und Geschoße, deren Wohnungen nicht übereinander lagen.
+//
+// Jetzt wird so entworfen, wie ein Architekt vorgeht — und wie TestFit und
+// Finch es im Kern auch tun (Erschließung zuerst, dann Wohnungen entlang der
+// Fassade, dann Varianten bewerten):
+//   1. Der Baukörper wird in TRAKTE zerlegt: ein L wird zu zwei Riegeln.
+//   2. Je Trakt entscheidet die Tiefe die Erschließung — Laubengang, Spänner
+//      (2/3/4 Wohnungen je Stiege), Mittelgang, Punkthaus.
+//   3. Stiegenhäuser liegen an der Zugangsfassade. Ihre Zahl folgt aus dem
+//      Fluchtweg: höchstens 40 m ab der Wohnungstür (OIB-RL 2, Punkt 5.1).
+//   4. Die Wohnungen werden entlang der Fassade abgeteilt. Breite = Zielfläche
+//      aus dem Wohnungsschlüssel ÷ tatsächliche Tiefe an dieser Stelle.
+//   5. Viele Varianten, harte Regeln (jede Wohnung an Stiege oder Gang, keine
+//      Wohnung unter 45 m², Fluchtweg) und eine Bewertung (Treue zum
+//      Wohnungsschlüssel, Erschließungsanteil, Belichtung) — die beste gewinnt.
+// Gerechnet wird EINMAL je Baukörper am Referenzgeschoß. Jedes Geschoß
+// übernimmt diese Aufteilung und schneidet sie nur auf seinen Umriss zu: die
+// Wohnungstrennwände stehen übereinander, die Stiegen laufen durch.
+// ============================================================================
+const GA_GANG = 1.25;        // Innengang (Living Hinterkaiser 1,25 m; OIB-RL 4: 1,20 m)
+const GA_LAUBE = 1.50;       // Laubengang
+const GA_MIN = 45;           // keine Wohnung darunter (Vorgabe Ozan, 09.10.2026)
+const GA_FLUCHT = 40;        // Fluchtweg ab Wohnungstür (OIB-RL 2, Punkt 5.1)
+
+function gaW(w, a, b) { return [w.O[0] + a * w.e[0] + b * w.n[0], w.O[1] + a * w.e[1] + b * w.n[1]]; }
+function gaRechteck(w, r) {
+  const p = [gaW(w, r[0], r[2]), gaW(w, r[1], r[2]), gaW(w, r[1], r[3]), gaW(w, r[0], r[3])];
+  return signedArea(p) < 0 ? p.reverse() : p;
+}
+function gaPfad(poly) { return legalToPath(signedArea(poly) < 0 ? poly.slice().reverse() : poly); }
+function gaAlle(paths, min) {
+  // nur Außenringe — ein Loch (negativ orientiert) ist keine eigene Fläche
+  return (paths || []).filter(p => ClipperLib.Clipper.Area(p) > (min || 0.05) * LEGAL_SC * LEGAL_SC)
+    .map(p => { let q = legalFromPath(ClipperLib.Clipper.CleanPolygon(p, 0.002 * LEGAL_SC)); if (signedArea(q) < 0) q.reverse(); return q; })
+    .filter(q => q.length >= 3);
+}
+function gaBool(typ, a, b) {
+  const C = ClipperLib;
+  if (!a.length) return [];
+  if (!b.length) return typ === C.ClipType.ctIntersection ? [] : a;
+  return legalBoolean(typ, a, b, C.PolyFillType.pftNonZero);
+}
+function gaRect(r) { return r[1] - r[0] > 1e-6 && r[3] - r[2] > 1e-6; }
+function gaSchnitt(r, s) { return [Math.max(r[0], s[0]), Math.min(r[1], s[1]), Math.max(r[2], s[2]), Math.min(r[3], s[3])]; }
+
+// Flächenraster eines Trakts: summierte Flächentabelle. Damit ist die Fläche
+// "Rechteck ∩ Trakt" in konstanter Zeit abfragbar — so lassen sich hunderte
+// Varianten rechnen, ohne jedes Mal Polygone zu verschneiden. Die bilineare
+// Interpolation der Tabelle ist das exakte Integral der Zellbelegung.
+function gaRaster(polyAB, L, D) {
+  const h = 0.1, nx = Math.max(1, Math.ceil(L / h)), ny = Math.max(1, Math.ceil(D / h)), W = ny + 1;
+  const S = new Float64Array((nx + 1) * W), col = new Float64Array(ny), n = polyAB.length;
+  for (let i = 0; i < nx; i++) {
+    const a = (i + 0.5) * h, xs = [];
+    for (let k = 0; k < n; k++) {
+      const p = polyAB[k], q = polyAB[(k + 1) % n];
+      if ((p[0] > a) !== (q[0] > a)) xs.push(p[1] + (a - p[0]) / (q[0] - p[0]) * (q[1] - p[1]));
+    }
+    xs.sort((x, y) => x - y);
+    col.fill(0);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const b0 = Math.max(0, xs[k]), b1 = Math.min(ny * h, xs[k + 1]);
+      for (let j = Math.max(0, Math.floor(b0 / h)); j <= Math.min(ny - 1, Math.floor(b1 / h)); j++) {
+        const c0 = Math.max(b0, j * h), c1 = Math.min(b1, (j + 1) * h);
+        if (c1 > c0) col[j] += (c1 - c0) * h;
+      }
+    }
+    for (let j = 0; j < ny; j++) S[(i + 1) * W + j + 1] = col[j] + S[i * W + j + 1] + S[(i + 1) * W + j] - S[i * W + j];
+  }
+  const sat = (a, b) => {
+    const x = Math.max(0, Math.min(nx, a / h)), y = Math.max(0, Math.min(ny, b / h));
+    const i = Math.min(nx - 1, Math.floor(x)), j = Math.min(ny - 1, Math.floor(y)), fx = x - i, fy = y - j;
+    return S[i * W + j] * (1 - fx) * (1 - fy) + S[(i + 1) * W + j] * fx * (1 - fy) + S[i * W + j + 1] * (1 - fx) * fy + S[(i + 1) * W + j + 1] * fx * fy;
+  };
+  return (a0, a1, b0, b1) => (a1 <= a0 || b1 <= b0) ? 0 : sat(a1, b1) - sat(a0, b1) - sat(a1, b0) + sat(a0, b0);
+}
+// Bisektion für eine steigende Funktion. Reicht die Fläche bis hi nicht, wird
+// linear weitergerechnet — so bleibt das Ergebnis stetig und die äußere
+// Skalierung findet ihren Wert.
+function gaLoese(f, lo, hi, ziel, steig) {
+  const fh = f(hi);
+  if (fh < ziel) return hi + (ziel - fh) / Math.max(0.5, steig || 10);
+  if (f(lo) >= ziel) return lo;
+  for (let i = 0; i < 34; i++) { const m = (lo + hi) / 2; if (f(m) < ziel) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+
+// Zielgrößen für N Wohnungen aus dem Wohnungsschlüssel (größter Rest), in einer
+// von vier Anordnungen: große an den Enden (Eckwohnungen mit zwei Fassaden),
+// große in der Mitte, groß/klein im Wechsel, oder der Größe nach.
+function gaZiele(N, mix, art) {
+  if (N <= 0) return [];
+  const w = mix.reduce((q, m) => q + m.w, 0) || 1;
+  const roh = mix.map((m, i) => ({ i, a: m.a, n: N * m.w / w }));
+  const cnt = roh.map(r => Math.floor(r.n));
+  let rest = N - cnt.reduce((q, c) => q + c, 0);
+  roh.map((r, k) => [r.n - cnt[k], k]).sort((x, y) => y[0] - x[0]).forEach(([, k]) => { if (rest > 0) { cnt[k]++; rest--; } });
+  const L = [];
+  cnt.forEach((c, k) => { for (let j = 0; j < c; j++) L.push({ T: roh[k].a, idx: roh[k].i }); });
+  L.sort((x, y) => y.T - x.T);
+  const out = new Array(N);
+  const vonAussen = liste => { let l = 0, r = N - 1; liste.forEach((z, j) => { if (j % 2 === 0) out[l++] = z; else out[r--] = z; }); };
+  if (art === 'rand') vonAussen(L);
+  else if (art === 'mitte') vonAussen(L.slice().reverse());
+  else if (art === 'wechsel') { let l = 0, r = L.length - 1; for (let j = 0; j < N; j++) out[j] = (j % 2 === 0) ? L[l++] : L[r--]; }
+  else L.forEach((z, j) => { out[j] = z; });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Zerlegung in Trakte
+// ---------------------------------------------------------------------------
+// An jeder deutlich einspringenden Ecke kann der Umriss geteilt werden — in
+// Verlängerung einer der beiden Kanten (auf die Gebäudeachsen eingerastet).
+// Alle Kombinationen werden bewertet: rechteckige Trakte mit wohnbarer Tiefe
+// gewinnen, schmale Restzipfel verlieren.
+function gaTrakte(poly) {      // poly in u/v (Referenzachsen), gegen den Uhrzeigersinn
+  let P = poly.map(p => [p[0], p[1]]);
+  if (signedArea(P) < 0) P.reverse();
+  const clean = Q => {
+    let R = Q.slice(), chg = true;
+    while (chg && R.length > 3) {
+      chg = false;
+      for (let i = 0; i < R.length; i++) {
+        const a = R[(i - 1 + R.length) % R.length], b = R[i], c = R[(i + 1) % R.length];
+        const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        const cr = ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])) / Math.max(1e-9, l1 * l2);
+        if (l1 < 0.04 || Math.abs(cr) < 0.035) { R.splice(i, 1); chg = true; break; }
+      }
+    }
+    return R;
+  };
+  P = clean(P);
+  const start = P.map(p => ({ p, cut: false }));
+  const flaeche = Q => polygonArea(Q.map(x => x.p));
+  // einspringende Ecken (Rechtsknick bei CCW), beide Schenkel ≥ 1,5 m, Knick ≥ 25°
+  const einspringend = Q => {
+    const out = [];
+    for (let i = 0; i < Q.length; i++) {
+      const a = Q[(i - 1 + Q.length) % Q.length].p, b = Q[i].p, c = Q[(i + 1) % Q.length].p;
+      const d1 = [b[0] - a[0], b[1] - a[1]], d2 = [c[0] - b[0], c[1] - b[1]];
+      const l1 = Math.hypot(d1[0], d1[1]), l2 = Math.hypot(d2[0], d2[1]);
+      if (l1 < 1.5 || l2 < 1.5) continue;
+      const cr = (d1[0] * d2[1] - d1[1] * d2[0]) / (l1 * l2);
+      if (cr < -Math.sin(25 * Math.PI / 180)) out.push({ i, p: b, d1: [d1[0] / l1, d1[1] / l1], d2: [d2[0] / l2, d2[1] / l2] });
+    }
+    return out;
+  };
+  const rasten = d => {
+    const ang = Math.atan2(d[1], d[0]);
+    for (const t of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      let df = Math.abs(ang - t); df = Math.min(df, 2 * Math.PI - df);
+      if (df < 20 * Math.PI / 180) return [Math.round(Math.cos(t)), Math.round(Math.sin(t))];
+    }
+    return d;
+  };
+  // Teilt Q an der Ecke i in Richtung d bis zur nächsten Kante
+  const teile = (Q, i, d) => {
+    const X = Q[i].p, n = Q.length;
+    let best = null;
+    for (let j = 0; j < n; j++) {
+      if (j === i || (j + 1) % n === i) continue;
+      const A = Q[j].p, B = Q[(j + 1) % n].p, e = [B[0] - A[0], B[1] - A[1]];
+      const den = d[0] * e[1] - d[1] * e[0];
+      if (Math.abs(den) < 1e-9) continue;
+      const w = [A[0] - X[0], A[1] - X[1]];
+      const t = (w[0] * e[1] - w[1] * e[0]) / den, s = (w[0] * d[1] - w[1] * d[0]) / den;
+      if (t > 0.05 && s >= -1e-9 && s <= 1 + 1e-9 && (!best || t < best.t)) best = { t, j, s };
+    }
+    if (!best || best.t < 2) return null;
+    const H = [X[0] + d[0] * best.t, X[1] + d[1] * best.t];
+    const mid = [X[0] + d[0] * best.t / 2, X[1] + d[1] * best.t / 2];
+    if (!pointInPolygon(mid, Q.map(x => x.p))) return null;
+    const j = best.j, p1 = [], p2 = [];
+    for (let k = i; ; k = (k + 1) % n) { p1.push({ p: Q[k].p, cut: Q[k].cut }); if (k === j) break; }
+    p1.push({ p: H, cut: true });
+    p2.push({ p: H, cut: Q[j].cut });
+    for (let k = (j + 1) % n; ; k = (k + 1) % n) { if (k === i) { p2.push({ p: Q[i].p, cut: true }); break; } p2.push({ p: Q[k].p, cut: Q[k].cut }); }
+    const ok = R => R.length >= 3 && polygonArea(R.map(x => x.p)) > 4;
+    return ok(p1) && ok(p2) ? [p1, p2] : null;
+  };
+  const bewerte = teile2 => {
+    let s = 0;
+    teile2.forEach(Q => {
+      const pts = Q.map(x => x.p), a = polygonArea(pts);
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      pts.forEach(p => { u0 = Math.min(u0, p[0]); u1 = Math.max(u1, p[0]); v0 = Math.min(v0, p[1]); v1 = Math.max(v1, p[1]); });
+      const lu = u1 - u0, lv = v1 - v0, Dw = Math.min(lu, lv), fill = a / Math.max(1, lu * lv);
+      s += 8 + (1 - fill) * 60;
+      // ein Trakt braucht Platz für eine Stiege und mindestens eine Wohnung
+      if (a < 90) s += 40; else if (a < 150) s += 6;
+      if (Dw < 7.5) s += (7.5 - Dw) * 6;
+      s += Math.max(0, Dw - 24) * 2;
+    });
+    return s;
+  };
+  // alle Schnittkombinationen (höchstens vier einspringende Ecken)
+  const ecken = einspringend(start).sort((x, y) => 0).slice(0, 4).map(e => e.p);
+  let best = { s: bewerte([start]), teile: [start] };
+  const rek = (stueck, k) => {
+    if (k >= ecken.length) { const s = bewerte(stueck); if (s < best.s - 1e-6) best = { s, teile: stueck }; return; }
+    rek(stueck, k + 1);
+    const X = ecken[k];
+    for (let q = 0; q < stueck.length; q++) {
+      const Q = stueck[q], i = Q.findIndex(x => Math.hypot(x.p[0] - X[0], x.p[1] - X[1]) < 1e-6);
+      if (i < 0) continue;
+      const e = einspringend(Q).find(z => z.i === i);
+      if (!e) continue;
+      [rasten(e.d1), rasten([-e.d2[0], -e.d2[1]])].forEach(d => {
+        const r = teile(Q, i, d);
+        if (r) rek(stueck.slice(0, q).concat(r, stueck.slice(q + 1)), k + 1);
+      });
+    }
+  };
+  rek([start], 0);
+  return best.teile.filter(Q => flaeche(Q) > 4);
+}
+
+// ---------------------------------------------------------------------------
+// 2. Varianten je Trakt
+// ---------------------------------------------------------------------------
+// Ein Trakt hat ein eigenes Koordinatensystem: a entlang des Trakts (0…L),
+// b in die Tiefe, b = 0 an der Zugangsfassade. Die Stiegenhäuser liegen im
+// Band b ∈ [kb0, kb1] an dieser Fassade. Jede Variante liefert Kerne, Gänge und
+// Wohnungsfelder als Rechtecklisten in diesem System.
+//
+// Zwei Arten zu rechnen:
+//   frei  — am Referenzgeschoß: die Stiegen werden mitgesucht.
+//   fest  — an einem abweichenden Geschoß (Staffelgeschoß, Hangschnitt): die
+//           Stiegen stehen schon (X.fixK), nur die Wohnungen werden neu geteilt.
+
+// Liegt die Stiege nicht an der Fassade (weil sie bis ins zurückversetzte
+// oberste Geschoß reichen muss), führt ein Eingangsstich von der Fassade hin.
+function gaStich(kerne, kb0) {
+  if (!(kb0 > 0.3)) return [];
+  return kerne.map(k => { const p = (k[0] + k[1]) / 2; return [p - 0.7, p + 0.7, -0.05, k[2] + 0.02]; });
+}
+
+// SPÄNNER: je Stiege 2, 3 oder 4 Wohnungen. Die beiden seitlichen reichen über
+// die ganze Tiefe; beim Drei- und Vierspänner liegt vor dem Stiegenhaus eine
+// (bzw. zwei) Wohnung(en) zur Gegenfassade.
+function gaSpaenner(Z, n, k, X) {
+  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, fb = Math.max(0, kb1);
+  const fd = Math.max(1, A(0, L, fb, D) / Math.max(1, L));
+  const zellenFuer = (x, p, x2, f1, f2, z, c0, c1) => {
+    const out = [];
+    if (k === 2) { out.push({ r: [[x, p, 0, D]], z: z[0] }, { r: [[p, x2, 0, D]], z: z[1] }); return out; }
+    out.push({ r: [[x, p - f1, 0, D], [p - f1, c0, 0, fb]], z: z[0] });
+    if (k === 3) out.push({ r: [[p - f1, p + f2, fb, D]], z: z[1], front: true });
+    else out.push({ r: [[p - f1, p, fb, D]], z: z[1], front: true }, { r: [[p, p + f2, fb, D]], z: z[2], front: true });
+    out.push({ r: [[p + f2, x2, 0, D], [c1, p + f2, 0, fb]], z: z[k - 1] });
+    return out;
+  };
+  const regeln = (x, p, x2, f1, f2, c0, c1) => {
+    let pen = 0;
+    if (k === 2) {
+      if (c0 - x < 2.0) pen += 15;
+      if (x2 - c1 < 2.0) pen += 15;
+    } else {
+      if (p - f1 - x < 2.6) pen += 20;
+      if (x2 - (p + f2) < 2.6) pen += 20;
+      if (k === 3 && f1 + f2 < 4.5) pen += 15;
+      if (k === 4 && Math.min(f1, f2) < 3.8) pen += 15;
+      if (D - fb > 9.5) pen += (D - fb - 9.5) * 4;
+      if (D - fb < 5.5) pen += 25;
+    }
+    return pen;
+  };
+  // Front links/rechts der Stiegenmitte auf ihre Zielfläche bringen
+  const front = (p, c0, c1, tF1, tF2, lo, hi) => [
+    Math.max(p - c0, Math.min(p - lo - 2.6, gaLoese(f => A(p - f, p, fb, D), 0, Math.max(0.1, p - lo), tF1, D - fb))),
+    Math.max(c1 - p, Math.min(hi - p - 2.6, gaLoese(f => A(p, p + f, fb, D), 0, Math.max(0.1, hi - p), tF2, D - fb)))];
+  const tFront = t => [k === 3 ? t[1] / 2 : k === 4 ? t[1] : 0, k === 3 ? t[1] / 2 : k === 4 ? t[2] : 0];
+
+  if (X.fixK) {
+    // ---- feste Stiegen: nur die Trennwände zwischen den Stiegen sind frei ----
+    const K = X.fixK.slice().sort((a, b) => a[0] - b[0]);
+    if (k === 1) return { typ: 'klein', k: 1, n: K.length, zellen: [{ r: [[0, L, 0, D]], z: Z[0] }], kerne: K.map(q => q.slice()), gaenge: gaStich(K, K[0][2]), pen: 0 };
+    const nK = K.length, P = K.map(q => (q[0] + q[1]) / 2);
+    const z = i => Z.slice(i * k, i * k + k);
+    const F = K.map((q, i) => {
+      if (k === 2) return [0, 0];
+      const t = z(i).map(x => x.T), [a, b] = tFront(t);
+      return front(P[i], q[0], q[1], a, b, i ? P[i - 1] : 0, i < nK - 1 ? P[i + 1] : L);
+    });
+    const rechts = (i, q) => k === 2 ? A(P[i], q, 0, D) - A(P[i], K[i][1], kb0, kb1) : A(P[i] + F[i][1], q, 0, D) + A(K[i][1], P[i] + F[i][1], 0, fb);
+    const links = (i, q) => k === 2 ? A(q, P[i], 0, D) - A(K[i][0], P[i], kb0, kb1) : A(q, P[i] - F[i][0], 0, D) + A(P[i] - F[i][0], K[i][0], 0, fb);
+    const Q = [0];
+    let pen = 0;
+    for (let i = 0; i + 1 < nK; i++) {
+      const tR = z(i)[k - 1].T, tL = z(i + 1)[0].T, anteil = tR / (tR + tL);
+      const lo = k === 2 ? P[i] : P[i] + F[i][1], hi = k === 2 ? P[i + 1] : P[i + 1] - F[i + 1][0];
+      if (hi - lo < 1) pen += 40;
+      Q.push(gaLoese(q => { const r = rechts(i, q), l = links(i + 1, q); return r / Math.max(1e-6, r + l); }, lo, Math.max(lo, hi), anteil, 1));
+    }
+    Q.push(L);
+    const zellen = [];
+    K.forEach((q, i) => {
+      zellen.push(...zellenFuer(Q[i], P[i], Q[i + 1], F[i][0], F[i][1], z(i), q[0], q[1]));
+      pen += regeln(Q[i], P[i], Q[i + 1], F[i][0], F[i][1], q[0], q[1]);
+    });
+    return { typ: 'spaenner', k, n: nK, zellen, kerne: K.map(q => q.slice()), gaenge: gaStich(K, K[0][2]), pen };
+  }
+
+  const bauen = s => {
+    let x = 0, pen = 0;
+    const zellen = [], kerne = [];
+    for (let c = 0; c < n; c++) {
+      const z = Z.slice(c * k, c * k + k), t = z.map(q => q.T * s);
+      if (k === 1) {
+        const p = L / 2;
+        kerne.push([p - cw / 2, p + cw / 2, kb0, kb1]);
+        zellen.push({ r: [[0, L, 0, D]], z: z[0] });
+        x = L; break;
+      }
+      const [tF1, tF2] = tFront(t);
+      let f1 = k >= 3 ? Math.max(cw / 2, tF1 / fd) : 0, f2 = k >= 3 ? Math.max(cw / 2, tF2 / fd) : 0;
+      const flL = p => k === 2 ? A(x, p, 0, D) - A(p - cw / 2, p, kb0, kb1) : A(x, p - f1, 0, D) + A(p - f1, p - cw / 2, 0, fb);
+      let p = gaLoese(flL, x + (k === 2 ? cw / 2 : f1), L, t[0], D);
+      if (k >= 3) for (let it = 0; it < 2; it++) {
+        [f1, f2] = front(p, p - cw / 2, p + cw / 2, tF1, tF2, x, L + 30);
+        p = gaLoese(flL, x + f1, L, t[0], D);
+      }
+      const c0 = p - cw / 2, c1 = p + cw / 2;
+      kerne.push([c0, c1, kb0, kb1]);
+      const flR = x2 => k === 2 ? A(p, x2, 0, D) - A(p, c1, kb0, kb1) : A(p + f2, x2, 0, D) + A(c1, p + f2, 0, fb);
+      const x2 = gaLoese(flR, k === 2 ? p : p + f2, L, t[k - 1], D);
+      zellen.push(...zellenFuer(x, p, x2, f1, f2, z, c0, c1));
+      pen += regeln(x, p, x2, f1, f2, c0, c1);
+      x = x2;
+    }
+    return { x, zellen, kerne, gaenge: [], pen };
+  };
+  let lo = 0.25, hi = 4;
+  for (let i = 0; i < 28; i++) { const m = (lo + hi) / 2; if (bauen(m).x < L) lo = m; else hi = m; }
+  const v = bauen((lo + hi) / 2);
+  const last = v.zellen[v.zellen.length - 1];
+  if (last) last.r[0][1] = L;
+  v.typ = k === 1 ? 'klein' : 'spaenner'; v.k = k; v.n = n;
+  v.gaenge = gaStich(v.kerne, kb0);
+  return v;
+}
+
+// LAUBENGANG: Gang 1,50 m an der Zugangsfassade über die ganze Länge, Stiegen an
+// den Enden (bei sehr langen Zeilen zusätzlich in der Mitte). Die Wohnungen
+// reichen vom Gang bis zur Gegenfassade.
+function gaLaubengang(Z, n, ende, X) {
+  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, g = GA_LAUBE;
+  const fest = !!X.fixK;
+  let kernA = fest ? X.fixK.map(q => q[0]).sort((a, b) => a - b)
+    : n === 1 ? [ende ? L - cw : 0] : n === 2 ? [0, L - cw] : [0, L / 2 - cw / 2, L - cw];
+  const kw = fest ? X.fixK.map(q => q[1] - q[0]) : kernA.map(() => cw);
+  const N = Z.length;
+  const net = (x0, x1) => {
+    let a = A(x0, x1, g, D);
+    kernA.forEach((c0, i) => { a -= A(Math.max(x0, c0), Math.min(x1, c0 + kw[i]), Math.max(g, kb0), kb1); });
+    return a;
+  };
+  const bauen = s => {
+    const xs = [0];
+    for (let i = 0; i < N; i++) { const x0 = xs[i]; xs.push(gaLoese(x1 => net(x0, x1), x0, L, Z[i].T * s, D - g)); }
+    return xs;
+  };
+  let lo = 0.25, hi = 4;
+  for (let i = 0; i < 28; i++) { const m = (lo + hi) / 2; if (bauen(m)[N] < L) lo = m; else hi = m; }
+  const xs = bauen((lo + hi) / 2); xs[N] = L;
+  if (!fest && n === 3) { let bi = 1; for (let i = 1; i < N; i++) if (Math.abs(xs[i] - L / 2) < Math.abs(xs[bi] - L / 2)) bi = i; kernA[1] = xs[bi] - cw / 2; }
+  const kerne = kernA.map((c0, i) => [c0, c0 + kw[i], kb0, kb1]);
+  const zellen = [];
+  let pen = 0;
+  for (let i = 0; i < N; i++) {
+    zellen.push({ r: [[xs[i], xs[i + 1], g, D]], z: Z[i] });
+    // Anschluss an den Gang und Fluchtweg bis zur nächsten Stiege
+    let frei = [[xs[i], xs[i + 1]]];
+    kernA.forEach((c0, j) => { const c1 = c0 + kw[j]; frei = frei.flatMap(([a, b]) => { const o = []; if (c0 - a > 0.01) o.push([a, Math.min(b, c0)]); if (b - c1 > 0.01) o.push([Math.max(a, c1), b]); return o.filter(q => q[1] - q[0] > 0.01); }); });
+    const lang = frei.reduce((q, f) => q + f[1] - f[0], 0);
+    if (lang < 1.0) pen += 40;
+    const tuer = frei.length ? (frei[0][0] + frei[0][1]) / 2 : (xs[i] + xs[i + 1]) / 2;
+    const weg = Math.min(...kernA.map((c0, j) => tuer < c0 ? c0 - tuer : tuer > c0 + kw[j] ? tuer - c0 - kw[j] : 0));
+    if (weg > GA_FLUCHT) pen += 200;
+    if (xs[i + 1] - xs[i] < 4.0) pen += 12;
+  }
+  // eingerückte Stiege: Stich vom Laubengang zum Stiegenhaus
+  const gaenge = [[0, L, 0, g]];
+  kerne.forEach(k2 => { if (k2[2] > g + 0.3) { const p = (k2[0] + k2[1]) / 2; gaenge.push([p - 0.7, p + 0.7, g - 0.02, k2[2] + 0.02]); } });
+  return { typ: 'laubengang', n: kernA.length, zellen, kerne, gaenge, pen };
+}
+
+// MITTELGANG: innenliegender Gang in der Gebäudemitte, beidseitig einseitig
+// orientierte Wohnungen. An den Stirnseiten wahlweise Kopfwohnungen über die
+// ganze Tiefe (drei Fassaden) — oder der Gang läuft bis zur Fassade durch.
+// Die Stiegen liegen an der Zugangsfassade und binden mit einem kurzen
+// Stichgang an den Mittelgang an.
+function gaMittelgang(Zall, n, mitEnden, X) {
+  const { L, D, A, cw, mix } = X, kb0 = X.kb0;
+  const Dm = A(0, L, 0, D) / Math.max(1, L), bm = Dm / 2, gLo = bm - GA_GANG / 2, gHi = bm + GA_GANG / 2;
+  if (gLo < 3.2 || D - gHi < 3.2) return null;
+  const kd = kb0 > 0.3 ? gLo : Math.min(X.kb1, gLo);
+  const kc0 = kb0 > 0.3 ? Math.max(0, Math.min(kb0, gLo - 2.9)) : kb0;
+  let pen = 0;
+  const groesst = Math.max(...mix.map(m => m.a));
+  const K = X.fixK ? X.fixK.slice().sort((a, b) => a[0] - b[0]) : null;
+  let e0 = mitEnden ? gaLoese(e => A(0, e, 0, D), 0, L / 3, groesst, D) : 0;
+  let e1 = mitEnden ? L - gaLoese(e => A(L - e, L, 0, D), 0, L / 3, groesst, D) : L;
+  if (K) { e0 = Math.min(e0, K[0][0] - 3); e1 = Math.max(e1, K[K.length - 1][1] + 3); if (e0 < 3) e0 = 0; if (L - e1 < 3) e1 = L; }
+  if (e1 - e0 < cw + 6) return null;
+  const ps = K ? K.map(q => (q[0] + q[1]) / 2) : Array.from({ length: n }, (_, i) => e0 + (e1 - e0) * (i + 0.5) / n);
+  const kerne = K ? K.map(q => [q[0], q[1], kc0, kd]) : ps.map(p => [p - cw / 2, p + cw / 2, kc0, kd]);
+  const gaenge = [[e0, e1, gLo, gHi]];
+  ps.forEach(p => { if (gLo - kd > 0.2) gaenge.push([p - 0.7, p + 0.7, kd - 0.02, gLo + 0.02]); });
+  gaStich(kerne, kc0).forEach(g2 => gaenge.push(g2));
+  const meanT = mix.reduce((q, m) => q + m.a * m.w, 0) / (mix.reduce((q, m) => q + m.w, 0) || 1);
+  const netZ = (x0, x1) => {
+    let a = A(x0, x1, 0, gLo);
+    kerne.forEach(k => { a -= A(Math.max(x0, k[0]), Math.min(x1, k[1]), Math.max(0, k[2]), k[3]); });
+    gaenge.slice(1).forEach(g2 => { a -= A(Math.max(x0, g2[0]), Math.min(x1, g2[1]), Math.max(0, g2[2]), Math.min(gLo, g2[3])); });
+    return a;
+  };
+  const netG = (x0, x1) => A(x0, x1, gHi, D);
+  // Abschnitte: Zugangsseite zwischen den Stiegenmitten, Gegenseite durchgehend
+  const absch = [];
+  const grenzen = [e0].concat(ps, [e1]);
+  for (let i = 0; i + 1 < grenzen.length; i++) absch.push({ x0: grenzen[i], x1: grenzen[i + 1], net: netZ, band: [0, gLo] });
+  absch.push({ x0: e0, x1: e1, net: netG, band: [gHi, D] });
+  absch.forEach(s => { s.m = Math.max(1, Math.round(s.net(s.x0, s.x1) / meanT)); });
+  const N = absch.reduce((q, s) => q + s.m, 0) + (mitEnden && e0 > 0 ? 1 : 0) + (mitEnden && e1 < L ? 1 : 0);
+  const Z = Zall(N);
+  let zi = 0;
+  const zellen = [];
+  if (mitEnden && e0 > 0) zellen.push({ r: [[0, e0, 0, D]], z: Z[zi++] });
+  const zEnd = mitEnden && e1 < L ? Z[N - 1] : null;
+  absch.forEach(s => {
+    const zz = Z.slice(zi, zi + s.m); zi += s.m;
+    const summe = zz.reduce((q, z) => q + z.T, 0), tot = s.net(s.x0, s.x1);
+    let x = s.x0;
+    zz.forEach((z, j) => {
+      const x1 = j === zz.length - 1 ? s.x1 : gaLoese(q => s.net(x, q), x, s.x1, tot * z.T / summe, s.band[1] - s.band[0]);
+      zellen.push({ r: [[x, x1, s.band[0], s.band[1]]], z });
+      if (x1 - x < 3.6) pen += 12;
+      x = x1;
+    });
+  });
+  if (zEnd) zellen.push({ r: [[e1, L, 0, D]], z: zEnd });
+  // einseitig belichtet: Wohnungstiefe über 9 m wird dunkel
+  [gLo, D - gHi].forEach(t => { if (t > 9) pen += (t - 9) * 5; });
+  // Fluchtweg: Gang von der Wohnungstür bis zur nächsten Stiege
+  zellen.forEach(c => {
+    const r = c.r[0], tuer = Math.max(e0, Math.min(e1, (r[0] + r[1]) / 2));
+    const weg = Math.min(...ps.map(p => Math.abs(tuer - p))) + Math.max(0, gLo - kd);
+    if (weg > GA_FLUCHT) pen += 200;
+  });
+  return { typ: 'mittelgang', n: ps.length, zellen, kerne, gaenge, pen };
+}
+
+// PUNKTHAUS: eine Stiege an der Zugangsfassade, ein kurzer Gang in die Tiefe,
+// links und rechts davon je zwei oder drei Wohnungen; kleine Punkthäuser mit
+// einer durchgehenden Wohnung auf der Rückseite.
+function gaPunkt(Z, variante, X) {
+  const { L, D, A, cw } = X, kb0 = X.kb0, kb1 = X.kb1, g = GA_GANG, fb = Math.max(0, kb1);
+  const K = X.fixK ? X.fixK[0] : null;
+  const p = K ? (K[0] + K[1]) / 2 : L / 2, kern = K ? K.slice() : [p - cw / 2, p + cw / 2, kb0, kb1];
+  const sumT = Z.reduce((q, z) => q + z.T, 0);
+  const kernIn = (x0, x1, b) => A(Math.max(x0, kern[0]), Math.min(x1, kern[1]), Math.max(0, kern[2]), Math.min(b, kern[3]));
+  const gangIn = (x0, x1, b) => b > fb ? A(Math.max(x0, p - g / 2), Math.min(x1, p + g / 2), fb, b) : 0;
+  const tot = A(0, L, 0, D) - kernIn(0, L, D);
+  const zellen = [], gaenge = [];
+  let pen = 0;
+  if (p < 4 || L - p < 4) return null;
+  if (variante === 45 || variante === 46) {
+    // Vierspänner mit seitlichem Gang: der Gang setzt an einer Seite des Stiegenhauses
+    // an; die Wohnung auf der anderen Seite bekommt einen breiten, möblierbaren
+    // Schenkel hinter der Stiege. Jede Spalte wird für sich in vorn/hinten geteilt.
+    const cx = variante === 45 ? kern[1] - g / 2 : kern[0] + g / 2;
+    const gangX = (x0, x1, b) => b > fb ? A(Math.max(x0, cx - g / 2), Math.min(x1, cx + g / 2), fb, b) : 0;
+    const spalte = (x0, x1, zv, zh) => {
+      const fl = b => A(x0, x1, 0, b) - kernIn(x0, x1, b) - gangX(x0, x1, b);
+      return gaLoese(fl, 0, D, fl(D) * zv.T / (zv.T + zh.T), x1 - x0);
+    };
+    const bl = spalte(0, cx, Z[0], Z[2]), br = spalte(cx, L, Z[1], Z[3]);
+    gaenge.push([cx - g / 2, cx + g / 2, fb - 0.02, Math.min(D - 2.5, Math.max(bl, br) + 1.2)]);
+    zellen.push({ r: [[0, cx, 0, bl]], z: Z[0] }, { r: [[cx, L, 0, br]], z: Z[1] });
+    zellen.push({ r: [[0, cx, bl, D]], z: Z[2] }, { r: [[cx, L, br, D]], z: Z[3] });
+    [bl, br].forEach(b => { if (b < 4.5) pen += 20; if (D - b < 4.5) pen += 20; });
+    if (Math.min(cx, L - cx) < 5) pen += 25;
+  } else if (variante === 44) {
+    // Vierspänner mit Vorplatz: das Stiegenhaus reicht als Vorplatz bis zur Querwand,
+    // die vorderen Wohnungen liegen rechteckig daneben, die hinteren dahinter
+    const vorn = (Z[0].T + Z[1].T) / sumT * tot;
+    const bc = gaLoese(b => A(0, L, 0, b) - A(kern[0], kern[1], 0, b), 0, D, vorn, L);
+    if (bc > fb + 0.3) gaenge.push([kern[0], kern[1], fb - 0.02, bc + 0.02]);
+    zellen.push({ r: [[0, kern[0], 0, bc]], z: Z[0] }, { r: [[kern[1], L, 0, bc]], z: Z[1] });
+    zellen.push({ r: [[0, p, bc, D]], z: Z[2] }, { r: [[p, L, bc, D]], z: Z[3] });
+    if (bc < 4.5) pen += 20;
+    if (D - bc < 4.5) pen += 20;
+    if (kern[0] < 3.5 || L - kern[1] < 3.5) pen += 25;
+  } else if (variante === 3 || variante === 4) {
+    // Schnitt bc in der Tiefe: vordere Wohnungen bis bc, hintere ab bc
+    const vorn = (Z[0].T + Z[1].T) / sumT * tot;
+    const bc = gaLoese(b => A(0, L, 0, b) - kernIn(0, L, b) - gangIn(0, L, b), 0, D, vorn, L);
+    if (bc > fb + 0.3) gaenge.push([p - g / 2, p + g / 2, fb - 0.02, Math.min(D - 2.5, bc + (variante === 4 ? 1.2 : 0))]);
+    zellen.push({ r: [[0, p, 0, bc]], z: Z[0] }, { r: [[p, L, 0, bc]], z: Z[1] });
+    // schmaler Schenkel hinter dem Stiegenhaus ist kaum möblierbar
+    if (bc - fb > 2 && (p - g / 2) - kern[0] < 3) pen += 22;
+    if (variante === 4) zellen.push({ r: [[0, p, bc, D]], z: Z[2] }, { r: [[p, L, bc, D]], z: Z[3] });
+    else zellen.push({ r: [[0, L, bc, D]], z: Z[2] });
+    if (bc < 4.5) pen += 20;
+    if (D - bc < 4.5) pen += 20;
+  } else {   // 6: je Seite drei Wohnungen hintereinander in die Tiefe
+    const spalte = (x0, x1, zz) => {
+      const fl = b => A(x0, x1, 0, b) - kernIn(x0, x1, b) - gangIn(x0, x1, b);
+      const ges = fl(D), s3 = zz.reduce((q, z) => q + z.T, 0);
+      return [gaLoese(fl, 0, D, ges * zz[0].T / s3, x1 - x0), gaLoese(fl, 0, D, ges * (zz[0].T + zz[1].T) / s3, x1 - x0)];
+    };
+    const [l1, l2] = spalte(0, p, [Z[0], Z[1], Z[2]]), [r1, r2] = spalte(p, L, [Z[3], Z[4], Z[5]]);
+    const b2 = Math.max(l2, r2);
+    gaenge.push([p - g / 2, p + g / 2, fb - 0.02, Math.min(D - 2.5, b2 + 1.2)]);
+    zellen.push({ r: [[0, p, 0, l1]], z: Z[0] }, { r: [[0, p, l1, l2]], z: Z[1] }, { r: [[0, p, l2, D]], z: Z[2] });
+    zellen.push({ r: [[p, L, 0, r1]], z: Z[3] }, { r: [[p, L, r1, r2]], z: Z[4] }, { r: [[p, L, r2, D]], z: Z[5] });
+    if (p - g / 2 > 10) pen += (p - g / 2 - 10) * 5;     // Mittelwohnung nur über die Stirnseite belichtet
+    [l1, l2 - l1, D - l2, r1, r2 - r1, D - r2].forEach(t => { if (t < 4) pen += 15; });
+  }
+  gaStich([kern], kern[2]).forEach(g2 => gaenge.push(g2));
+  return { typ: 'punkt', n: 1, zellen, kerne: [kern], gaenge, pen, variante };
+}
+
+// Bewertung einer Variante: Treue zum Wohnungsschlüssel, keine Wohnung unter
+// 45 m², Erschließungsanteil, plus die Strafpunkte der Variante selbst.
+function gaBewerte(v, X) {
+  const { A, L, D } = X;
+  const circ = v.kerne.concat(v.gaenge);
+  let circA = 0;
+  v.kerne.forEach(k => { circA += A(k[0], k[1], Math.max(0, k[2]), k[3]); });
+  v.gaenge.forEach(g => { let a = A(g[0], g[1], g[2], g[3]); v.kerne.forEach(k => { const s = gaSchnitt(g, k); if (gaRect(s)) a -= A(s[0], s[1], Math.max(0, s[2]), s[3]); }); circA += Math.max(0, a); });
+  const tot = Math.max(1, A(0, L, 0, D));
+  let s = v.pen || 0, dev = 0;
+  v.zellen.forEach(c => {
+    let a = 0;
+    c.r.forEach(r => {
+      if (!gaRect(r)) return;
+      a += A(r[0], r[1], r[2], r[3]);
+      circ.forEach(k => { const q = gaSchnitt(r, k); if (gaRect(q)) a -= A(q[0], q[1], Math.max(0, q[2]), q[3]); });
+    });
+    c.A = a;
+    const T = c.z ? c.z.T : a;
+    dev += Math.abs(a - T) / T;
+    if (a < GA_MIN) s += 30 + (GA_MIN - a);
+    if (a > X.maxT * 1.5) s += (a - X.maxT * 1.5) * 0.5;
+  });
+  s += 30 * dev / Math.max(1, v.zellen.length);
+  s += 160 * Math.max(0, circA / tot - 0.07);   // Erschließung kostet verkaufbare Fläche
+  v.circA = circA; v.score = s;
+  return s;
+}
+
+// Alle Varianten für einen Trakt erzeugen und nach Bewertung sortieren.
+// nurTyp: am abweichenden Geschoß bleibt die Erschließung des Trakts erhalten.
+function gaVarianten(X, nurTyp) {
+  const { L, D, A, mix, cw } = X;
+  const Dm = A(0, L, 0, D) / Math.max(1, L), fl = A(0, L, 0, D);
+  const meanT = mix.reduce((q, m) => q + m.a * m.w, 0) / (mix.reduce((q, m) => q + m.w, 0) || 1);
+  X.maxT = Math.max(...mix.map(m => m.a));
+  const cd = X.kb1 - X.kb0;
+  // bevorzugter Typ nach der Tiefe — dieselben Schwellen wie bisher, an den
+  // ausgewerteten Einreichplänen geprüft (Kirchbichl, Wörgl, Hinterkaiser)
+  const prim = nurTyp || ((L / Dm < 1.6 && Dm > 13 && fl <= 750) ? 'punkt' : (Dm <= 10.5 && L >= 22) ? 'laubengang' : Dm <= 15.5 ? 'spaenner' : 'mittelgang');
+  const darf = t => true;
+  const arten = ['rand', 'wechsel', 'mitte', 'block'];
+  const V = [];
+  // Typwechsel kostet — am abweichenden Geschoß mehr, damit das Haus einheitlich bleibt
+  const nimm = v => { if (!v) return; gaBewerte(v, X); if (v.typ !== prim && !(prim === 'klein' && v.typ === 'spaenner')) v.score += nurTyp ? 15 : 8; V.push(v); };
+  const nFix = X.fixK ? X.fixK.length : 0;
+  // eine Stiege, eine Wohnung — nur wenn für zwei kein Platz ist
+  if (fl - cw * cd < 2 * GA_MIN + 10 && (!X.fixK || nFix === 1)) nimm(gaSpaenner(gaZiele(1, mix, 'block'), 1, 1, X));
+  // Spänner
+  if (darf('spaenner') && Dm <= 17) {
+    const nListe = X.fixK ? [nFix] : Array.from({ length: Math.max(1, Math.ceil(L / (cw + 2 * 3.8))) }, (_, i) => i + 1);
+    for (let k = 2; k <= 4; k++) {
+      if (k >= 3 && Dm - Math.max(0, X.kb1) < 6.0) continue;
+      nListe.forEach(n => {
+        const N = n * k;
+        if ((fl - n * cw * cd) / N < GA_MIN * 0.9) return;
+        if (!X.fixK && (fl - n * cw * cd) / N > X.maxT * 1.8) return;
+        arten.forEach(art => nimm(gaSpaenner(gaZiele(N, mix, art), n, k, X)));
+      });
+    }
+  }
+  // Laubengang
+  const fest = !!X.fixK;
+  if (darf('laubengang') && Dm <= (fest ? 14 : 11.5) && L >= 16) {
+    const N0 = Math.max(1, Math.round((fl - L * GA_LAUBE) / meanT));
+    [N0 - 1, N0, N0 + 1].filter(N => N >= 2).forEach(N => {
+      (X.fixK ? [nFix] : [1, 2, 3]).forEach(n => {
+        if (!X.fixK && n === 3 && L < 70) return;
+        if (!X.fixK && n === 2 && L < 30) return;
+        (n === 1 && !X.fixK ? [0, 1] : [0]).forEach(ende => arten.forEach(art => nimm(gaLaubengang(gaZiele(N, mix, art), n, ende, X))));
+      });
+    });
+  }
+  // Mittelgang
+  if (darf('mittelgang') && Dm >= (fest ? 12 : 15)) {
+    const n0 = Math.max(1, Math.ceil(L / (2 * 38)));
+    (X.fixK ? [nFix] : [n0, n0 + 1]).forEach(n => [true, false].forEach(ende => arten.forEach(art => nimm(gaMittelgang(N => gaZiele(N, mix, art), n, ende, X)))));
+  }
+  // Punkthaus
+  if (darf('punkt') && L / Dm < 1.8 && Dm >= 11 && (!X.fixK || nFix === 1)) {
+    const N0 = Math.round((fl - cw * cd) / meanT);
+    if (N0 <= 4) arten.forEach(art => nimm(gaPunkt(gaZiele(3, mix, art), 3, X)));
+    if (N0 >= 3 && N0 <= 6) arten.forEach(art => { nimm(gaPunkt(gaZiele(4, mix, art), 4, X)); nimm(gaPunkt(gaZiele(4, mix, art), 44, X)); nimm(gaPunkt(gaZiele(4, mix, art), 45, X)); nimm(gaPunkt(gaZiele(4, mix, art), 46, X)); });
+    if (N0 >= 5) arten.forEach(art => nimm(gaPunkt(gaZiele(6, mix, art), 6, X)));
+  }
+  V.sort((x, y) => x.score - y.score);
+  return { varianten: V, prim };
+}
+
+// ---------------------------------------------------------------------------
+// 3. Plan für einen Baukörper
+// ---------------------------------------------------------------------------
+// refFp: Referenzgeschoß (Welt). ctx: { ux, uy, centroid, kernU, kernV,
+// strasse (Punkt oder null), topFp (oberstes Geschoß), seed }
+function gaPlan(refFp, ctx) {
+  if (!refFp || refFp.length < 3 || typeof ClipperLib === 'undefined') return null;
+  const { ux, uy, centroid } = ctx, vx = -uy, vy = ux;
+  const toUV = p => [(p[0] - centroid[0]) * ux + (p[1] - centroid[1]) * uy, (p[0] - centroid[0]) * vx + (p[1] - centroid[1]) * vy];
+  const toW = q => [centroid[0] + q[0] * ux + q[1] * vx, centroid[1] + q[0] * uy + q[1] * vy];
+  const mix = activeUnitMix().filter(m => m.a > 20 && m.w > 0);
+  if (!mix.length) return null;
+  const teile = gaTrakte(refFp.map(toUV));
+  const C = ClipperLib;
+  const pruefPf = [ctx.untenFp, ctx.topFp].filter(q => q && q.length >= 3).map(q => [gaPfad(q)]);
+  const trakte = [];
+  teile.forEach((Q, ti) => {
+    const pts = Q.map(x => x.p);
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    pts.forEach(p => { u0 = Math.min(u0, p[0]); u1 = Math.max(u1, p[0]); v0 = Math.min(v0, p[1]); v1 = Math.max(v1, p[1]); });
+    const entlangU = (u1 - u0) >= (v1 - v0);
+    const eUV = entlangU ? [1, 0] : [0, 1];
+    // die beiden möglichen Zugangsseiten
+    const opt = [1, -1].map(sg => {
+      const nUV = entlangU ? [0, sg] : [-sg, 0];        // zeigt von der Zugangsfassade ins Haus
+      const a0 = entlangU ? u0 : v0;
+      const bRef = entlangU ? (sg > 0 ? v0 : v1) : (sg > 0 ? u1 : u0);
+      const OUV = entlangU ? [a0, bRef] : [bRef, a0];
+      const loc = q => [(q[0] - OUV[0]) * eUV[0] + (q[1] - OUV[1]) * eUV[1], (q[0] - OUV[0]) * nUV[0] + (q[1] - OUV[1]) * nUV[1]];
+      // Außenfassade auf dieser Seite (keine Schnittkante zu einem Nachbartrakt)
+      let fassade = 0;
+      Q.forEach((x, i) => {
+        if (x.cut) return;
+        const a = loc(x.p), b = loc(Q[(i + 1) % Q.length].p);
+        if (a[1] < 0.5 && b[1] < 0.5) fassade += Math.abs(b[0] - a[0]);
+      });
+      const O = toW(OUV), e = [eUV[0] * ux + eUV[1] * vx, eUV[0] * uy + eUV[1] * vy], n = [nUV[0] * ux + nUV[1] * vx, nUV[0] * uy + nUV[1] * vy];
+      return { O, e, n, fassade, loc };
+    });
+    // Zugang: zur Straße, wenn sie eindeutig auf einer Seite liegt, sonst nach Norden
+    // (Wohnräume zur ruhigen bzw. sonnigen Seite — wie in allen sieben Referenzplänen)
+    const mitte = toW([(u0 + u1) / 2, (v0 + v1) / 2]);
+    const wert = o => {
+      const aus = [-o.n[0], -o.n[1]];
+      let w = 0;
+      if (ctx.strasse) {
+        const d = [ctx.strasse[0] - mitte[0], ctx.strasse[1] - mitte[1]], l = Math.hypot(d[0], d[1]) || 1;
+        const dot = (aus[0] * d[0] + aus[1] * d[1]) / l;
+        if (Math.abs(dot) > 0.35) w += dot * 10;
+      }
+      if (!w) { try { const b = worldDirToBearing(aus[0], aus[1]); w += Math.cos(b * Math.PI / 180) * 3; } catch (e) { /* ohne Nordrichtung */ } }
+      if (o.fassade < ctx.kernU + 1) w -= 100;
+      return w;
+    };
+    const wahl = wert(opt[0]) >= wert(opt[1]) ? opt[0] : opt[1];
+    const polyAB = pts.map(wahl.loc);
+    let L = 0, D = 0;
+    polyAB.forEach(p => { L = Math.max(L, p[0]); D = Math.max(D, p[1]); });
+    const w = { O: wahl.O, e: wahl.e, n: wahl.n, L, D, polyAB, poly: pts.map(toW), idx: ti };
+    w.A = gaRaster(polyAB, L, D);
+    w.flaeche = polygonArea(w.poly);
+    trakte.push(w);
+  });
+  if (!trakte.length) return null;
+  // Größter Trakt = Haupttrakt (bestimmt den Typ für Kennzahlen und Plan)
+  trakte.sort((a, b) => b.flaeche - a.flaeche);
+  const kernU = ctx.kernU;
+  trakte.forEach(w => {
+    const cd = Math.min(ctx.kernV, Math.max(2.9, w.D - 4.5));
+    // Die Stiege muss bis ins oberste Geschoß reichen. Ist es an der Zugangsseite
+    // zurückversetzt (Lichtabstand, Staffelgeschoß), rückt sie um diesen Betrag ins Haus.
+    let kb0 = 0;
+    if (ctx.topFp && ctx.topFp.length >= 3) {
+      const loc = p => [(p[0] - w.O[0]) * w.e[0] + (p[1] - w.O[1]) * w.e[1], (p[0] - w.O[0]) * w.n[0] + (p[1] - w.O[1]) * w.n[1]];
+      const tb = ctx.topFp.map(loc).filter(p => p[0] > -1 && p[0] < w.L + 1 && p[1] > -1 && p[1] < w.D + 1).map(p => p[1]);
+      if (tb.length) kb0 = Math.max(0, Math.min(Math.min(...tb), w.D - cd - 3));
+      if (kb0 < 2.5) kb0 = 0;     // darunter ragt das Stiegenhaus oben einfach etwas vor
+    }
+    const X = { L: w.L, D: w.D, A: w.A, cw: kernU, kb0, kb1: kb0 + cd, mix };
+    let V = gaVarianten(X).varianten;
+    if (!V.length) { const v = gaSpaenner(gaZiele(1, mix, 'block'), 1, 1, X); gaBewerte(v, X); V = [v]; }
+    // Stiegen sollen auch im obersten Geschoß liegen (sonst endet die Stiege unter einer Terrasse)
+    // und ebenso im untersten Geschoß — sie muss vom Eingang bis oben durchlaufen
+    if (pruefPf.length) V.slice(0, 24).forEach(v => {
+      let fehl = 0;
+      v.kerne.forEach(k => {
+        const kp = gaRechteck(w, k), a = polygonArea(kp);
+        pruefPf.forEach(pf => {
+          const t = gaAlle(gaBool(C.ClipType.ctIntersection, [gaPfad(kp)], pf)).reduce((q, x) => q + polygonArea(x), 0);
+          fehl += 1 - Math.min(1, t / Math.max(1, a));
+        });
+      });
+      v.score += 60 * fehl;
+    });
+    V = V.slice(0, 24).sort((x, y) => x.score - y.score);
+    // „Neu generieren“: unter den nahezu gleich guten Varianten wechseln
+    const gute = V.filter(v => v.score <= V[0].score + 4);
+    w.v = gute[(ctx.seed || 0) % gute.length] || V[0];
+    w.cd = cd; w.kb0 = kb0;
+  });
+  const kerne = [];
+  trakte.forEach((w, wi) => w.v.kerne.forEach(k => kerne.push({ fp: gaRechteck(w, k), w: wi, rect: k, ux: w.e[0], uy: w.e[1] })));
+  const kernPf = kerne.map(k => gaPfad(k.fp));
+  trakte.forEach((w, wi) => { w.felder = gaFelder(w, w.v, w.poly, kernPf, wi * 1000); });
+  const haupt = trakte[0];
+  return { trakte, kerne, planType: haupt.v.typ, mix, kernU, seed: ctx.seed || 0, maxT: Math.max(...mix.map(m => m.a)) };
+}
+
+// Rechtecke einer Variante in Weltpolygone wandeln: Gänge und Wohnungsfelder
+// (Rechteckvereinigung ∩ Trakt − Erschließung)
+function gaFelder(w, v, traktPoly, erschlPf, ordBasis) {
+  const C = ClipperLib, tPfad = [gaPfad(traktPoly)];
+  const gaenge = [], zellen = [];
+  // Gänge vereinigen (Stich und Mittelgang überlappen) und die Stiegenhäuser aussparen
+  if (v.gaenge.length) {
+    let u = [];
+    v.gaenge.forEach(g => { if (gaRect(g)) u = u.length ? legalBoolean(C.ClipType.ctUnion, u, [gaPfad(gaRechteck(w, g))], C.PolyFillType.pftNonZero) : [gaPfad(gaRechteck(w, g))]; });
+    gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, u, tPfad), erschlPf), 0.3).forEach(fp => gaenge.push(fp));
+  }
+  const minus = erschlPf.concat(gaenge.map(gaPfad));
+  v.zellen.forEach(c => {
+    // Mehrteilige Felder (L-Form) um 2 mm überlappen lassen: bei schräg liegenden
+    // Baukörpern trifft die Rundung auf Millimeter sonst die T-Stöße nicht genau,
+    // und das Feld zerfiele in zwei Teile
+    const e2 = c.r.length > 1 ? 0.002 : 0;
+    let u = [];
+    c.r.forEach(r => { if (gaRect(r)) { const q = [gaPfad(gaRechteck(w, [r[0] - e2, r[1] + e2, r[2] - e2, r[3] + e2]))]; u = u.length ? legalBoolean(C.ClipType.ctUnion, u, q, C.PolyFillType.pftNonZero) : q; } });
+    const st = gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, u, tPfad), minus), 0.3).sort((x, y) => polygonArea(y) - polygonArea(x));
+    if (!st.length) return;
+    const r0 = c.r[0];
+    zellen.push({ fp: st[0], rest: st.slice(1), z: c.z, ord: ordBasis + (r0[2] > 0.5 ? 500 : 0) + (r0[0] + r0[1]) / 2, ux: w.e[0], uy: w.e[1] });
+  });
+  return { gaenge, zellen };
+}
+
+// ---------------------------------------------------------------------------
+// 4. Übertragung auf ein Geschoß
+// ---------------------------------------------------------------------------
+// Gemeinsame Kantenlänge zweier Polygone (Abtastung im 25-cm-Raster)
+function gaKontakt(a, b, tol) {
+  let l = 0; const t = tol || 0.12;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i], q = a[(i + 1) % a.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (L < 0.01) continue;
+    const n = Math.max(1, Math.ceil(L / 0.25));
+    for (let k = 0; k < n; k++) {
+      const s = (k + 0.5) / n, m = [p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s];
+      if (distPointToPolygon(m, b) <= t) l += L / n;
+    }
+  }
+  return l;
+}
+function gaVereinige(a, b) {
+  const C = ClipperLib;
+  let r = gaAlle(legalBoolean(C.ClipType.ctUnion, [gaPfad(a)], [gaPfad(b)], C.PolyFillType.pftNonZero));
+  if (r.length === 1) return r[0];
+  // nur Kantenberührung mit Rundungsfehlern: kurz aufblasen und wieder zurück
+  try {
+    const co = new C.ClipperOffset(2, 0.25);
+    co.AddPaths([gaPfad(a), gaPfad(b)], C.JoinType.jtMiter, C.EndType.etClosedPolygon);
+    const o = new C.Paths(); co.Execute(o, 0.01 * LEGAL_SC);
+    const u = legalBoolean(C.ClipType.ctUnion, o, [], C.PolyFillType.pftNonZero);
+    const co2 = new C.ClipperOffset(2, 0.25); co2.AddPaths(u, C.JoinType.jtMiter, C.EndType.etClosedPolygon);
+    const o2 = new C.Paths(); co2.Execute(o2, -0.01 * LEGAL_SC);
+    r = gaAlle(o2);
+  } catch (e) { /* bleibt getrennt */ }
+  return r.sort((x, y) => polygonArea(y) - polygonArea(x))[0] || a;
+}
+
+// Zwischenspeicher: dieselbe Aufteilung wird für Einheiten, Zonierung, 2D-Plan
+// und Hangprüfung mehrfach je Geschoß abgefragt
+const gaCache = new WeakMap();
+
+// Liefert die Einheiten eines Geschosses im bekannten Format:
+// { type: 'kern', kind: 'stiege'|'gang', footprint, area } und
+// { type: 'wohnung', footprint, area, rooms, frame, circ, mixIdx, gaOrd }
+function gaGeschoss(plan, fp) {
+  if (!plan || !fp || fp.length < 3) return [];
+  let cm = gaCache.get(plan);
+  if (!cm) { cm = new Map(); gaCache.set(plan, cm); }
+  const key = fp.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
+  if (cm.has(key)) return cm.get(key).map(u => Object.assign({}, u));
+  const units = gaGeschossRechnen(plan, fp);
+  if (cm.size > 200) cm.clear();
+  cm.set(key, units);
+  return units.map(u => Object.assign({}, u));
+}
+function gaGeschossRechnen(plan, fp) {
+  const C = ClipperLib, units = [];
+  const fpP = [gaPfad(fp)];
+  const circ = [];
+  const kerneVoll = plan.kerne.map(k => k.fp);
+  const kernPf = kerneVoll.map(gaPfad);
+  plan.kerne.forEach(k => {
+    gaAlle(gaBool(C.ClipType.ctIntersection, fpP, [gaPfad(k.fp)]), 0.5).forEach(q => {
+      circ.push(q);
+      units.push({ type: 'kern', kind: 'stiege', area: polygonArea(q), footprint: q, gaUx: k.ux, gaUy: k.uy });
+    });
+  });
+  // Geschoß auf die Trakte verteilen
+  const tPf = plan.trakte.map(w => gaPfad(w.poly));
+  let W = [], rest = [];
+  const gaengeAlle = [];
+  plan.trakte.forEach((w, wi) => {
+    const teil = gaAlle(gaBool(C.ClipType.ctDifference, gaBool(C.ClipType.ctIntersection, fpP, [tPf[wi]]), []), 0.3)
+      .sort((x, y) => polygonArea(y) - polygonArea(x));
+    if (!teil.length) return;
+    teil.slice(1).forEach(q => rest.push(q));
+    const tp = teil[0], ta = polygonArea(tp);
+    const tpP = [gaPfad(tp)];
+    const zuschnitt = f => {
+      const g = [], z = [], r = [];
+      f.gaenge.forEach(q => gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(q)]), 0.3).forEach(x => g.push(x)));
+      f.zellen.forEach(c => {
+        const st = gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(c.fp)]), 0.3).sort((x, y) => polygonArea(y) - polygonArea(x));
+        if (!st.length) return;
+        z.push({ fp: st[0], c });
+        st.slice(1).forEach(q => r.push(q));
+        (c.rest || []).forEach(q => gaAlle(gaBool(C.ClipType.ctIntersection, tpP, [gaPfad(q)]), 0.3).forEach(q2 => r.push(q2)));
+      });
+      return { g, z, r };
+    };
+    // 1. Die Aufteilung des Referenzgeschoßes übernehmen — die Wände stehen dann
+    //    übereinander. Das gilt, solange dabei keine Wohnung ohne Zugang, unter
+    //    45 m² oder übergroß entsteht.
+    let erg = zuschnitt(w.felder);
+    const mangel = e => e.z.filter(x => {
+      const a = polygonArea(x.fp);
+      if (a < 8) return false;
+      if (a < GA_MIN * 0.95 || a > plan.maxT * 1.7) return true;
+      return !(kerneVoll.some(k => gaKontakt(x.fp, k, 0.15) >= 0.9) || e.g.some(g => gaKontakt(x.fp, g, 0.15) >= 0.9));
+    }).length;
+    // 2. Sonst (Staffelgeschoß, Hangschnitt) die Wohnungen mit FESTEN Stiegen neu teilen
+    if (ta / w.flaeche < 0.97 && mangel(erg) > 0) {
+      const loc = p => [(p[0] - w.O[0]) * w.e[0] + (p[1] - w.O[1]) * w.e[1], (p[0] - w.O[0]) * w.n[0] + (p[1] - w.O[1]) * w.n[1]];
+      const ab = tp.map(loc);
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      ab.forEach(p => { a0 = Math.min(a0, p[0]); a1 = Math.max(a1, p[0]); b0 = Math.min(b0, p[1]); b1 = Math.max(b1, p[1]); });
+      const polyAB = ab.map(p => [p[0] - a0, p[1] - b0]);
+      const L = a1 - a0, D = b1 - b0;
+      const ww = { O: [w.O[0] + a0 * w.e[0] + b0 * w.n[0], w.O[1] + a0 * w.e[1] + b0 * w.n[1]], e: w.e, n: w.n };
+      const fixK = w.v.kerne.map(k => [k[0] - a0, k[1] - a0, k[2] - b0, k[3] - b0]).filter(k => k[1] > 0.5 && k[0] < L - 0.5);
+      const X = { L, D, A: gaRaster(polyAB, L, D), cw: plan.kernU, kb0: fixK.length ? fixK[0][2] : (w.kb0 || 0) - b0, kb1: fixK.length ? fixK[0][3] : (w.kb0 || 0) + w.cd - b0, mix: plan.mix, fixK: fixK.length ? fixK : null };
+      let V = [];
+      try { V = gaVarianten(X, w.v.typ === 'klein' ? 'spaenner' : w.v.typ).varianten; } catch (e) { V = []; }
+      if (V.length) {
+        const gute = V.filter(x => x.score <= V[0].score + 4);
+        const v = gute[(plan.seed || 0) % gute.length] || V[0];
+        const e2 = zuschnitt(gaFelder(ww, v, tp, kernPf, wi * 1000));
+        if (mangel(e2) <= mangel(erg)) erg = e2;
+      }
+    }
+    erg.g.forEach(g => {
+      gaAlle(gaBool(C.ClipType.ctIntersection, fpP, [gaPfad(g)]), 0.3).forEach(q => {
+        q.gang = true; circ.push(q); gaengeAlle.push(q);
+        units.push({ type: 'kern', kind: 'gang', area: polygonArea(q), footprint: q });
+      });
+    });
+    erg.z.forEach(x => W.push(x));
+    erg.r.forEach(q => rest.push(q));
+  });
+  // Was kein Feld abdeckt (Geschoß größer als das Referenzgeschoß, Rundung)
+  try {
+    const belegt = W.map(x => gaPfad(x.fp)).concat(circ.map(gaPfad), rest.map(gaPfad));
+    gaAlle(gaBool(C.ClipType.ctDifference, fpP, belegt), 0.3).forEach(q => rest.push(q));
+  } catch (e) { /* ohne Restflächen */ }
+  // Restflächen der Wohnung mit der längsten gemeinsamen Wand zuschlagen;
+  // berührt der Rest keine Wohnung, wird er Teil der Erschließung
+  rest.forEach(q => {
+    if (polygonArea(q) < 0.3) return;
+    let bi = -1, bl = 0.2;
+    W.forEach((x, i) => { const l = gaKontakt(q, x.fp); if (l > bl) { bl = l; bi = i; } });
+    if (bi >= 0) { W[bi].fp = gaVereinige(W[bi].fp, q); return; }
+    if (circ.some(c2 => gaKontakt(q, c2) > 0.2)) { circ.push(q); units.push({ type: 'kern', kind: 'gang', area: polygonArea(q), footprint: q }); }
+  });
+  // Erschließung aus jeder Wohnung herausschneiden. Umschließt eine Wohnung ein
+  // Stiegenhaus ganz (Loch), wird sie quer durch dessen Mitte geteilt — dann liegen
+  // zwei Wohnungen am Podest, wie beim Zweispänner.
+  {
+    const erPf = kerneVoll.map(k => gaPfad(k)).concat(gaengeAlle.map(gaPfad));
+    const neu = [], splitter = [];
+    W.forEach(x => {
+      const roh = gaBool(C.ClipType.ctDifference, [gaPfad(x.fp)], erPf);
+      const loch = roh.some(p => ClipperLib.Clipper.Area(p) < -0.5 * LEGAL_SC * LEGAL_SC);
+      const aussen = gaAlle(roh, 0.3).sort((m, n2) => polygonArea(n2) - polygonArea(m));
+      if (!aussen.length) return;
+      if (!loch) { x.fp = aussen[0]; aussen.slice(1).forEach(q => splitter.push(q)); neu.push(x); return; }
+      const kern = kerneVoll.find(k => gaAlle(gaBool(C.ClipType.ctIntersection, [gaPfad(x.fp)], [gaPfad(k)]), 0.3).length) || kerneVoll[0];
+      const e = [x.c.ux, x.c.uy], nn = [-e[1], e[0]], kc = polygonCentroid(kern), s0 = kc[0] * e[0] + kc[1] * e[1], q0 = kc[0] * nn[0] + kc[1] * nn[1];
+      const P = (t, u) => [e[0] * t + nn[0] * u, e[1] * t + nn[1] * u];
+      [[s0 - 500, s0], [s0, s0 + 500]].forEach(([t0, t1], h) => {
+        const r = [P(t0, q0 - 500), P(t1, q0 - 500), P(t1, q0 + 500), P(t0, q0 + 500)];
+        const st = gaAlle(gaBool(C.ClipType.ctIntersection, gaBool(C.ClipType.ctDifference, [gaPfad(x.fp)], erPf), [gaPfad(signedArea(r) < 0 ? r.reverse() : r)]), 0.3).sort((m, n2) => polygonArea(n2) - polygonArea(m));
+        if (st.length) neu.push({ fp: st[0], c: h ? Object.assign({}, x.c, { ord: x.c.ord + 0.5 }) : x.c });
+      });
+    });
+    W = neu;
+    // abgetrennte Splitter der Nachbarwohnung mit der längsten gemeinsamen Wand
+    splitter.forEach(q => { let bi = -1, bl = 0.2; W.forEach((y, j) => { const l = gaKontakt(q, y.fp); if (l > bl) { bl = l; bi = j; } }); if (bi >= 0) W[bi].fp = gaVereinige(W[bi].fp, q); });
+  }
+  // Erreichbarkeit: jede Wohnung braucht eine Tür zur Stiege oder zum Gang.
+  const erreicht = x => kerneVoll.some(k => gaKontakt(x.fp, k, 0.15) >= 0.9) || gaengeAlle.some(g => gaKontakt(x.fp, g, 0.15) >= 0.9);
+  const zusammen = (i, nurErreichbar) => {
+    let bi = -1, bl = 0.8;
+    W.forEach((y, j) => { if (j === i || (nurErreichbar && !y.ok)) return; const l = gaKontakt(W[i].fp, y.fp); if (l > bl) { bl = l; bi = j; } });
+    if (bi < 0) return false;
+    W[bi].fp = gaVereinige(W[bi].fp, W[i].fp);
+    W.splice(i, 1);
+    return true;
+  };
+  const hatStiege = units.some(u => u.kind === 'stiege');
+  W.forEach(x => { x.ok = !hatStiege || erreicht(x); });
+  for (let schutz = 0; schutz < 30; schutz++) {
+    const i = W.findIndex(x => !x.ok);
+    if (i < 0 || !zusammen(i, true)) break;
+  }
+  // Zu kleine Wohnungen (Zuschnitt im obersten Geschoß) zur Nachbarwohnung
+  const versucht = new Set();
+  for (let schutz = 0; schutz < 40; schutz++) {
+    const i = W.findIndex(x => polygonArea(x.fp) < GA_MIN && !versucht.has(x));
+    if (i < 0 || W.length < 2) break;
+    const x = W[i];
+    if (!zusammen(i, true) && !zusammen(i, false)) versucht.add(x);
+  }
+  // Übergroße Wohnungen (Reste am Staffelgeschoß) quer zur Traktachse halbieren,
+  // wenn beide Hälften mindestens 45 m² haben und an Stiege oder Gang liegen
+  for (let schutz = 0; schutz < 12; schutz++) {
+    const i = W.findIndex(x => polygonArea(x.fp) > plan.maxT * 1.6 && !x.ganz);
+    if (i < 0) break;
+    const x = W[i], A0 = polygonArea(x.fp), e = [x.c.ux, x.c.uy], d = p => p[0] * e[0] + p[1] * e[1];
+    let s0 = Infinity, s1 = -Infinity; x.fp.forEach(p => { s0 = Math.min(s0, d(p)); s1 = Math.max(s1, d(p)); });
+    // Halbebene als großes Rechteck — robust auch für L-förmige Wohnungen
+    const nn = [-e[1], e[0]], c0 = polygonCentroid(x.fp);
+    const halb = (s, seite) => {
+      const q0 = c0[0] * nn[0] + c0[1] * nn[1];
+      const P = (t, u) => [e[0] * t + nn[0] * u, e[1] * t + nn[1] * u];
+      const r = seite < 0 ? [P(s - 500, q0 - 500), P(s, q0 - 500), P(s, q0 + 500), P(s - 500, q0 + 500)] : [P(s, q0 - 500), P(s + 500, q0 - 500), P(s + 500, q0 + 500), P(s, q0 + 500)];
+      return gaAlle(gaBool(ClipperLib.ClipType.ctIntersection, [gaPfad(x.fp)], [gaPfad(r)]), 0.2).sort((m, n2) => polygonArea(n2) - polygonArea(m))[0] || [];
+    };
+    const links = s => halb(s, -1);
+    let lo = s0, hi = s1;
+    for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; const l = links(m); if ((l.length >= 3 ? polygonArea(l) : 0) < A0 / 2) lo = m; else hi = m; }
+    const sm = (lo + hi) / 2, L1 = links(sm), R1 = halb(sm, 1);
+    const gut = q => q.length >= 3 && polygonArea(q) >= GA_MIN && (!hatStiege || erreicht({ fp: q }));
+    if (gut(L1) && gut(R1)) { W.splice(i, 1, { fp: L1, c: x.c, ok: true }, { fp: R1, c: Object.assign({}, x.c, { ord: x.c.ord + 0.5 }), ok: true }); }
+    else x.ganz = true;
+  }
+  const MIX = activeUnitMix();
+  W.forEach(x => {
+    const area = polygonArea(x.fp);
+    let mixIdx = null, wantR = null;
+    if (typeof aptMix !== 'undefined' && aptMix.mode === 'custom' && MIX.length) {
+      let bi = 0; MIX.forEach((m, k) => { if (Math.abs(m.a - area) < Math.abs(MIX[bi].a - area)) bi = k; });
+      mixIdx = bi; wantR = MIX[bi].rooms || null;
+    }
+    const frame = { ux: x.c.ux, uy: x.c.uy, centroid: polygonCentroid(x.fp) };
+    units.push({ type: 'wohnung', area, footprint: x.fp, rooms: unitRoomsFor(x.fp, fp, area, wantR), frame, circ, mixIdx, gaOrd: x.c.ord, erreichbar: x.ok });
+  });
+  return units;
+}
+
+// Zonen aus den Einheiten: Wohnungen bleiben, was sie sind; Stiegenhaus und
+// Gang sind EINE Erschließungsfläche (man geht durch, ohne sie zu verlassen).
+function gaZonen(units) {
+  const C = ClipperLib, out = [];
+  const whg = units.filter(u => u.type === 'wohnung').slice().sort((a, b) => (a.gaOrd || 0) - (b.gaOrd || 0));
+  whg.forEach((u, i) => out.push({ art: 'wohnung', fp: u.footprint, area: u.area, nr: i }));
+  const er = units.filter(u => u.type === 'kern');
+  if (er.length) {
+    let u = [gaPfad(er[0].footprint)];
+    er.slice(1).forEach(e => { u = legalBoolean(C.ClipType.ctUnion, u, [gaPfad(e.footprint)], C.PolyFillType.pftNonZero); });
+    gaAlle(u, 0.5).forEach(fp => out.push({ art: 'erschliessung', fp, area: polygonArea(fp) }));
+  }
+  return out;
+}
+
+// Einheiten eines Geschosses aus dem Plan des Baukörpers (siehe gaPlan)
+function gaLayout(footprint, y, showRoomHints, showZoning, coreRef) {
+  const group = new THREE.Group();
+  const units = gaGeschoss(coreRef.plan, footprint);
+  units.forEach(u => {
+    if (showZoning) { const l = buildZoneLine(u.footprint, y, ZONE_LINE_COLOR); if (l) group.add(l); }
+    if (showZoning && u.type === 'kern' && u.kind === 'stiege') {
+      try { group.add(buildStaircaseHint(u.footprint, y, u.gaUx != null ? u.gaUx : coreRef.ux, u.gaUy != null ? u.gaUy : coreRef.uy, coreRef.liftSize || 0, coreRef.stairWidth, coreRef.stairTread, coreRef.stepsPerFlight, coreRef.liftV, coreRef.art)); } catch (e) { /* nur Darstellung */ }
+    }
+    if (showRoomHints && u.type === 'wohnung') {
+      try { drawUnitRooms(group, planUnitRooms(u.footprint, u.frame, footprint, u.circ, u.rooms), y + 0.03, 0x8a8a8e, { opacity: 0.55 }); } catch (e) { /* nur Darstellung */ }
+    }
+  });
+  return { group, units };
 }
 
 function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, rng, gInfo) {
@@ -17791,6 +18805,8 @@ function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, 
     });
     return { group, units };
   }
+  // ---- Wohnanlage: gemeinsame Geschoßaufteilung (gaPlan) ----
+  if (coreRef.plan) return gaLayout(footprint, y, showRoomHints, showZoning, coreRef);
   // ---- Stiegenhäuser ----
   const cores = (coreRef.cores || [{ lo: coreRef.coreLo, hi: coreRef.coreHi, vlo: coreRef.coreVLo, vhi: coreRef.coreVHi, extLo: true, extHi: true, main: true, center: (coreRef.coreLo + coreRef.coreHi) / 2 }]);
   // Das Stiegenhaus behält seine berechnete Breite — es zu vergrößern, nur damit es ins
@@ -18813,7 +19829,20 @@ function hangStaffelung(floorFps, baseLevel, floorH, heightFn, embedFloors, prot
       if (protect && protect.length && typeof ClipperLib !== 'undefined') {
         try {
           const C = ClipperLib, strips = [];
-          protect.forEach(pr => { const tm = Math.max(...pr.corners.map(t)) + 0.3; if (tm <= tcv) return; const sp = clipHalfPlane(pr.poly, p => tm - t(p), true); if (sp.length >= 3) strips.push(cpPoly(sp)); });
+          // Der Streifen läuft in Schnittrichtung von der Talseite bis hinter den Kern —
+          // bei einem Hang quer wie längs zum Haus (vorher nur quer: längs fiel die Stiege
+          // im Erdgeschoß weg)
+          protect.forEach(pr => {
+            const tm = Math.max(...pr.corners.map(t)) + 0.3; if (tm <= tcv) return;
+            // höchstens 10 m in den Hang — sonst wird aus dem Zugang ein Tunnel; dann
+            // bekommen die Gartenwohnungen dieses Geschoßes ihren eigenen Eingang
+            if (tm - tcv > 10) return;
+            const sq = q => -q[0] * sz + q[1] * sx, s0 = Math.min(...pr.corners.map(sq)), s1 = Math.max(...pr.corners.map(sq));
+            const P = (tt, ss) => [tt * sx - ss * sz, tt * sz + ss * sx];
+            let sp = [P(t0 - 50, s0), P(tm, s0), P(tm, s1), P(t0 - 50, s1)];
+            if (signedArea(sp) < 0) sp.reverse();
+            strips.push(cpPoly(sp));
+          });
           if (strips.length) {
             const keepCore = cpBool(C.ClipType.ctIntersection, [cpPoly(fp)], strips);
             const u = legalLargest(cpUnion([cpPoly(clipped)].concat(keepCore)));
@@ -21029,7 +22058,14 @@ function drawPlanVector(ctx, f, M, opt) {
           // Die Bezeichnung folgt der Typologie: eine Reihenhausanlage hat Häuser,
           // kein Top; ein Haus/eine Maisonette ebenso.
           const wort = (z.art === 'haus' || z.bez === 'Haus') ? 'Haus' : 'Top';
-          const txt = wort + ' ' + String(basis + (z.nr || 0) + 1).padStart(2, '0');
+          // dieselbe Nummer wie in der Einheiten-Ansicht (gleiche Aufteilung, gleiche Wohnung)
+          let topZ = null;
+          try {
+            const cz = polygonCentroid(z.fp);
+            const tu = (pc.units || []).find(u => u.type === 'wohnung' && Math.abs(u.area - z.area) < 1 && Math.hypot(polygonCentroid(u.footprint)[0] - cz[0], polygonCentroid(u.footprint)[1] - cz[1]) < 0.5);
+            if (tu) topZ = tu.top != null ? tu.top : ((tu._apt && tu._apt._haus && tu._apt._haus.top) || (tu._apt && tu._apt.top));
+          } catch (e) { topZ = null; }
+          const txt = wort + ' ' + String(topZ != null ? topZ : basis + (z.nr || 0) + 1).padStart(2, '0');
           // Breite der Zone an der Beschriftungsstelle: passt der Name nicht quer,
           // wird er hochkant gesetzt. Reihenhausstreifen sind schmal und hoch —
           // nebeneinander gesetzte Namen überschrieben sich sonst gegenseitig.
@@ -22624,6 +23660,7 @@ function rebuild() {
     const koten = [baseLevel];
     for (let f = 0; f < floorFootprints.length + 2; f++) koten.push(koten[f] + ghOf(f));
     const ebeneY = f => koten[Math.max(0, Math.min(koten.length - 1, f))];
+    const pieceGaMemo = {};   // Geschoßaufteilung dieses Baukörpers (gaPlan), einmal gerechnet
     function pieceCoreSetup(refFp) {
       const [refUx, refUy] = principalAxisDir(refFp);
       const refCentroid = polygonCentroid(refFp);
@@ -22686,7 +23723,7 @@ function rebuild() {
       //   mittelgang  tiefer — innenliegender Gang, einseitig orientierte Wohnungen
       //   reihenhaus  aneinandergebaute Häuser: senkrechte Streifen über alle Geschoße, je Haus
       //               ein eigener Eingang von außen, Treppe innerhalb des Hauses
-      const planType = ek.typ === 'reihenhaus' ? 'reihenhaus'
+      let planType = ek.typ === 'reihenhaus' ? 'reihenhaus'
         : refA < 110 ? 'klein' : (refL / refD < 1.6 && refD > 13 && refA <= 750) ? 'punkt' : (refD <= 10.5 && refL >= 22) ? 'laubengang' : refD <= 15.5 ? 'spaenner' : 'mittelgang';   // Punkthaus nur bis ca. 750 m² Geschossfläche (4–6 Wohnungen um einen Kern)
       const refVc = 0; // Schwerpunkt des Erdgeschosses
       // Erschließungsseite: die Straßenseite (Hauseingang von der Straße, Wohnräume zur ruhigen
@@ -22715,7 +23752,7 @@ function rebuild() {
         ? (nCores === 2 ? [refUMin + refCoreWidth / 2 + 0.3, refUMax - refCoreWidth / 2 - 0.3] : [uStreet < 0 ? refUMin + refCoreWidth / 2 + 0.3 : refUMax - refCoreWidth / 2 - 0.3])
         : Array.from({ length: nCores }, (_, k) => refUMin + refL * (k + 0.5) / nCores);
       const midU = (refUMin + refUMax) / 2;
-      const mainCoreIdx = coreCenters.reduce((bi, c, k) => Math.abs(c - midU) < Math.abs(coreCenters[bi] - midU) ? k : bi, 0);
+      let mainCoreIdx = coreCenters.reduce((bi, c, k) => Math.abs(c - midU) < Math.abs(coreCenters[bi] - midU) ? k : bi, 0);
       const coreList = coreCenters.map((c, k) => {
         const lo = c - refCoreWidth / 2, hi = lo + refCoreWidth, [a, z] = bandV(lo, hi);
         let vlo = a, vhi = z;
@@ -22737,9 +23774,45 @@ function rebuild() {
         else if (z - a > kernTiefe + 1.5) { if (vPointsNorth) vlo = z - kernTiefe; else vhi = a + kernTiefe; }
         return { lo, hi, vlo, vhi, extLo: vlo <= a + 0.01, extHi: vhi >= z - 0.01, main: k === mainCoreIdx, center: c };
       });
+      // ---- Wohnanlage: Trakte, Erschließung und Wohnungen aus EINER Rechnung (gaPlan) ----
+      // Die Stiegenhäuser kommen dann aus diesem Plan — so stehen sie im 3D-Modell genau
+      // dort, wo die Wohnungen sie im Grundriss erwarten.
+      let gaP = null;
+      if (ek.typ === 'wohnanlage' && !(refFp.holes && refFp.holes.length) && planType !== 'klein') {
+        // EINMAL je Baukörper: die Hangprüfung und der Aufbau sehen denselben Plan.
+        // Geplant wird am größten Geschoß; die Stiegen müssen im untersten und im
+        // obersten Geschoß liegen.
+        if (!pieceGaMemo.fertig) {
+          pieceGaMemo.fertig = true;
+          try {
+            const fps = (typeof floorFootprints !== 'undefined' && floorFootprints.length) ? floorFootprints : [refFp];
+            let gross = refFp;
+            fps.forEach(q => { if (q && q.length >= 3 && !(q.holes && q.holes.length) && fpArea(q) > fpArea(gross) * 1.02) gross = q; });
+            pieceGaMemo.plan = gaPlan(gross, { ux: refUx, uy: refUy, centroid: refCentroid, ek,
+              kernU: liftSize > 0.55 ? ek.coreU : Math.max(2.4, ek.coreU - ek.liftU - 0.05),
+              kernV: Math.max(ek.coreV + 1.4, 4.2), strasse: streetQ,
+              untenFp: refFp, topFp: fps[fps.length - 1],
+              seed: (typeof aptMix !== 'undefined' && aptMix.seed) || 0 });
+          } catch (e) { pieceGaMemo.plan = null; }
+        }
+        gaP = pieceGaMemo.plan;
+        if (gaP && gaP.kerne.length) {
+          const ext = gaP.kerne.map((k, i) => {
+            let lo = Infinity, hi = -Infinity, vlo = Infinity, vhi = -Infinity;
+            k.fp.forEach(p => { const u = refProj(p), v = refProjV(p); lo = Math.min(lo, u); hi = Math.max(hi, u); vlo = Math.min(vlo, v); vhi = Math.max(vhi, v); });
+            return { lo, hi, vlo, vhi, extLo: false, extHi: false, main: false, center: (lo + hi) / 2, wing: k.w, ga: true };
+          });
+          let mi = 0;
+          ext.forEach((c, i) => { const m = ext[mi]; if ((c.wing === 0 && m.wing !== 0) || (c.wing === m.wing && Math.abs(c.center - midU) < Math.abs(m.center - midU))) mi = i; });
+          ext[mi].main = true;
+          coreList.length = 0; ext.forEach(c => coreList.push(c));
+          mainCoreIdx = mi;
+          planType = gaP.planType;
+        } else gaP = null;
+      }
       const mainCore = coreList[mainCoreIdx];
       const coreRef = { ux: refUx, uy: refUy, centroid: refCentroid, coreLo: mainCore.lo, coreHi: mainCore.hi, liftSize, liftV, stairWidth, stairTread, stepsPerFlight, art: ek.art, haeuser: ek.haeuser || 0,
-        planType, uMin: refUMin, uMax: refUMax, vMin: refVMinFull, vMax: refVMaxFull, vc: refVc, coreVLo: mainCore.vlo, coreVHi: mainCore.vhi, vPointsNorth, cores: coreList, coreDepth: CORE_D, coreSideStreet, refL, refD, ek };
+        planType, uMin: refUMin, uMax: refUMax, vMin: refVMinFull, vMax: refVMaxFull, vc: refVc, coreVLo: mainCore.vlo, coreVHi: mainCore.vhi, vPointsNorth, cores: coreList, coreDepth: CORE_D, coreSideStreet, refL, refD, ek, plan: gaP };
       return { refUx, refUy, refCentroid, refProj, refVx, refVy, refProjV, refUMin, refUMax, refVMinFull, refVMaxFull, STAIR_STEPS_PER_FLOOR, stairRiser, stairTread, stepsPerFlight, flightRun, stairWidth, landingDepth, availV, liftSize, liftV, liftGap, refCoreWidth, refCoreLo, refCoreHi, refCoreFp, refVMin, refVMax, refL, refA, refD, planType, refVc, vPointsNorth, CORE_D, bandV, spaennerCores, nCores, coreCenters, midU, mainCoreIdx, coreList, mainCore, coreRef, ek };
     }
     // Hangstaffelung (siehe hangStaffelung): unterste Geschosse nur so weit in den Hang wie nötig
@@ -22757,9 +23830,17 @@ function rebuild() {
         cs.coreList.forEach(c => protect.push({ poly: [W(c.lo, -500), W(c.hi, -500), W(c.hi, 500), W(c.lo, 500)], corners: [W(c.lo, c.vlo), W(c.hi, c.vlo), W(c.hi, c.vhi), W(c.lo, c.vhi)] }));
         // Prüfung je geschnittenem Geschoss: die Wohnungsaufteilung darf nicht schlechter werden
         // (keine Kleinstwohnungen < 35 m², keine übergroßen Restwohnungen) — sonst weniger schneiden
+        // je Umriss nur einmal rechnen — die Prüfung fragt das ungeschnittene Geschoß
+        // bei jedem Schnittversuch erneut ab
+        const layoutMemo = new Map();
         const layoutOf = (fp, f) => {
+          const key = f + '|' + fp.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(';');
+          if (!layoutMemo.has(key)) layoutMemo.set(key, layoutOfRoh(fp, f));
+          return layoutMemo.get(key);
+        };
+        const layoutOfRoh = (fp, f) => {
           const us = buildApartmentLayout(fp, 0, false, false, cs.coreRef, seededRandom(pieceIdx * 10000 + f + 500 + aptMix.seed * 7919)).units.filter(u => u.type === 'wohnung');
-          return { areas: us.map(u => u.area), bad: us.reduce((q, u) => q + unitAccessProblems(u, fp), 0) };
+          return { areas: us.map(u => u.area), bad: us.reduce((q, u) => q + (u.gaOrd != null ? (u.erreichbar === false ? 1 : 0) : unitAccessProblems(u, fp)), 0) };   // Geschoßaufteilung: Zugang ist schon geprüft
         };
         validate = (fpCut, fpFull, f) => {
           try {
@@ -23238,7 +24319,7 @@ function rebuild() {
               if (f > 0) terraces = planTerraces(fp, lowerFp);
             } catch (e) { /* Freiflächen nur Darstellung */ }
             (planFloorsTmp[f] = planFloorsTmp[f] || []).push({ fp, pieceIdx, units: layout.units, y: ebeneY(f), floorH: ebeneY(f + 1) - ebeneY(f), lowerFp, loggiaFp, balconies, terraces, houseDoors: pieceDoors.filter(d => d.f === f).map(d => ({ pt: d.pt, e: d.e, n: d.n })), core: { ux: coreRef.ux, uy: coreRef.uy, liftSize: coreRef.liftSize, liftV: coreRef.liftV, stairWidth: coreRef.stairWidth, stairTread: coreRef.stairTread, stepsPerFlight: coreRef.stepsPerFlight, art: coreRef.art,
-              planType: coreRef.planType, ekTyp: (coreRef.ek || {}).typ, vPointsNorth: coreRef.vPointsNorth, haeuser: coreRef.haeuser || 0, nCores: (coreRef.cores || []).length } });
+              planType: coreRef.planType, ekTyp: (coreRef.ek || {}).typ, vPointsNorth: coreRef.vPointsNorth, haeuser: coreRef.haeuser || 0, nCores: (coreRef.cores || []).length, plan: coreRef.plan || null } });
           }
           const wohnUnits = layout.units.filter(u => u.type === 'wohnung');
           wohnUnits.forEach(u => {
@@ -38891,7 +39972,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.05';
+  const VERSION = 'v3.06';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
