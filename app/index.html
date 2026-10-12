@@ -14172,10 +14172,13 @@ function buildTerrain(heightFn, holeFps) {
   // Ist die Böschung aktiv, wird feiner unterteilt — die Schräge soll weich laufen
   const boeAn = (typeof boeschungAktiv === 'function') ? boeschungAktiv() : null;
   const vizAn = !!((document.getElementById('toggle-viz') || {}).checked);
+  const aushubAn = viewMode() === 'aushub';
   const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(outer), boeAn ? Math.max(0.5, ((terrainDgm && terrainDgm.step) || 2) / 4) : undefined);
   const pos = geo.attributes.position;
   const newPositions = new Float32Array(pos.count * 3);
-  const farben = (boeAn && !vizAn) ? new Float32Array(pos.count * 3) : null;
+  // Abgesetzte Farben gibt es nur im Erdbau. Im Massenmodell und in der Widmung liegt das
+  // geböschte Gelände im üblichen Stil und in seiner Widmungsfarbe (Vorgabe Ozan, 12.10.2026).
+  const farben = (boeAn && aushubAn) ? new Float32Array(pos.count * 3) : null;
   const urFn = boeAn ? liveHeightFn : null;
   // „Gelände neu" ist dunkelgrün, das unveränderte Urgelände bleibt grau.
   // In der Visualisierung liegt keine beige Gartenfläche mehr darüber (siehe rebuild) —
@@ -14183,7 +14186,6 @@ function buildTerrain(heightFn, holeFps) {
   // sich über die Beleuchtung und das Orthofoto, nicht über die Farbe (Vorgabe Ozan, 12.10.2026).
   // In der Aushub-Ansicht ist die geböschte Fläche hellgelb und stark durchscheinend —
   // sie gehört zum Erdbau, nicht zur Geländedarstellung (Vorgabe Ozan, 12.10.2026).
-  const aushubAn = viewMode() === 'aushub';
   const GR = aushubAn ? [0.970, 0.930, 0.780] : [0.102, 0.231, 0.141];
   const GY = [0.102, 0.102, 0.122];
   for (let i = 0; i < pos.count; i++) {
@@ -22170,6 +22172,9 @@ function rebuild() {
     const band0 = zuschneiden(masterFootprintsGlobal[0], 0);
     const pieceOffset = zOffset + dzPiece;
     const baseLevel = (band0 && band0.length >= 3 ? lowestTerrainUnder(heightFn, band0) : baseLevelGlobal - zOffset) + pieceOffset;
+    // Ober- und unterirdisch werden an der Geländeoberfläche NACH Fertigstellung geteilt
+    // (OIB-RL 2023) — mit aktiver Böschung ist das das geböschte Gelände, sonst das Urgelände.
+    const kubFn = gelaendeNachBoeschung(heightFn, baseLevel);
     const masterFootprints = computeMasterFootprints(baseLevel, pieceOffset);
     if (!masterFootprints.length) return;
     const hideFloorsAboveSelected = f => selPieceIdx === pieceIdx && f > selFloorIdx;
@@ -22446,7 +22451,7 @@ function rebuild() {
     if (modelMode !== 'envelope') {
       floorFootprints.forEach((ffp, f) => {
         const yBottom = ebeneY(f), yTop = ebeneY(f + 1);
-        const belowFrac = floorBelowFrac(ffp, yBottom, yTop, heightFn);
+        const belowFrac = floorBelowFrac(ffp, yBottom, yTop, kubFn);
         const area = fpArea(ffp), floorVol = area * (yTop - yBottom);
         totals.volumeBelow += floorVol * belowFrac;
         totals.volumeAbove += floorVol * (1 - belowFrac);
@@ -22592,7 +22597,7 @@ function rebuild() {
       for (let lvl = 0; lvl < ugCount; lvl++) {
         const A = polygonArea(t.fp);
         const yU0 = t.baseY - (lvl + 1) * ugHeight, yU1 = t.baseY - lvl * ugHeight;
-        const bf = floorBelowFrac(t.fp, yU0, yU1, heightFn);
+        const bf = floorBelowFrac(t.fp, yU0, yU1, kubFn);
         totals.volumeBelow += A * ugHeight * bf; totals.volumeAbove += A * ugHeight * (1 - bf);
         totals.ugTerraceArea = (totals.ugTerraceArea || 0) + A;
         window.kubaturNachweisRows.push({ piece: pieceIdx, floor: -1 - lvl, label: (ugCount === 1 ? 'UG' : `UG${lvl + 1}`) + ` (Stufe +${fmtNum(t.f * floorH, 2)} m)`, yBottom: t.baseY - (lvl + 1) * ugHeight, yTop: t.baseY - lvl * ugHeight,
@@ -22644,7 +22649,7 @@ function rebuild() {
           currentPieceInfo[iP].firstY = r.info.ridgeY;
         }
       }
-      const bfD = floorBelowFrac(topFp, eaveY, eaveY + Math.max(0.5, r.info.pitch > 0 ? 1 : 0.5), heightFn);
+      const bfD = floorBelowFrac(topFp, eaveY, eaveY + Math.max(0.5, r.info.pitch > 0 ? 1 : 0.5), kubFn);
       totals.volumeAbove += r.info.volume * (1 - bfD);
       totals.volumeBelow += r.info.volume * bfD;
       roofInfos.push(r.info);
@@ -22658,10 +22663,10 @@ function rebuild() {
       const yU0 = baseLevel - (lvl + 1) * ugHeight, yU1 = baseLevel - lvl * ugHeight;
       const aUg = polygonArea(groundFootprint), vUg = aUg * ugHeight;
       // auch hier: der tatsächliche Geländeverlauf entscheidet, nicht der Name „UG"
-      const bfUg = floorBelowFrac(groundFootprint, yU0, yU1, heightFn);
+      const bfUg = floorBelowFrac(groundFootprint, yU0, yU1, kubFn);
       totals.volumeBelow += vUg * bfUg;
       totals.volumeAbove += vUg * (1 - bfUg);
-      { const g = geschossZaehlt(groundFootprint, yU0, yU1, heightFn);
+      { const g = geschossZaehlt(groundFootprint, yU0, yU1, kubFn);
         if (g.zaehlt) { totals.dichteFlaeche += aUg * g.anteil;
           (window.__bgfZeilen = window.__bgfZeilen || []).push({ piece: pieceIdx, floor: -1 - lvl,
             flaeche: aUg, zaehlt: true, anteil: g.anteil, mass: g.mass, was: g.was, ug: true }); } }
@@ -27175,6 +27180,11 @@ function beginShotSession(mode, pxW, pxH, opts) {
   opts = opts || {};
   window.__exposeShot = true;          // im Exposé bleibt die Grundgrenze eine feine Linie
   const gst = mode === 'grundstueck';               // Grundstück ohne Bebauung, bebaubare Fläche rot
+  // Die Grundstücksseite zeigt den Bestand: Urgelände, nie die geplante Böschung
+  // (Vorgabe Ozan, 12.10.2026).
+  let boeAus = false;
+  { const tb = document.getElementById('toggle-boeschung');
+    if (gst && tb && tb.checked) { tb.checked = false; boeAus = true; } }
   const studio = mode === 'visualisierung' || gst;
   const vm = document.getElementById('view-mode'), savedMode = vm.value;
   const savedPiece = selectedPieceIdx, savedCustom = new Set(selectedCustomIds), savedEdge = selectedParcelEdgeIdx, savedApt = selectedApartmentIndex;
@@ -27244,6 +27254,7 @@ function beginShotSession(mode, pxW, pxH, opts) {
       else if (LOW_MEM) releaseShotRenderer();                   // Handy: Kontext samt Texturkopien sofort freigeben
       else { r.setSize(1, 1, false); r.renderLists.dispose(); }   // Puffer freigeben, Kontext behalten
       restore();
+      if (boeAus) { const tb = document.getElementById('toggle-boeschung'); if (tb) tb.checked = true; }
       if (gstMesh) { scene.remove(gstMesh); gstMesh.geometry.dispose(); gstMesh.material.dispose(); }
       if (gstHidden) gstHidden.forEach(([g, v]) => { g.visible = v; });
       if (gstDim != null && dimensionGroup) dimensionGroup.visible = gstDim;
@@ -27963,7 +27974,12 @@ function kxSmoothTopGeometry(pos) {
 }
 function renderKubaturExplosion(pxW, pxH) {
   const solids = window.kubaturSolids || [];
-  const hf = liveHeightFn || (() => 0);
+  // Zwei Modelle: geteilt wird am Gelände NACH Fertigstellung (OIB-RL 2023), das Urgelände
+  // liegt als Bestandsmodell darunter — es ist die rechtliche Bezugsfläche für den Erdbau
+  // (ÖNORM B 2114, Prismenverfahren). Ohne Böschung sind beide identisch.
+  const hf = (typeof liveFillHeightFn === 'function' && liveFillHeightFn) || liveHeightFn || (() => 0);
+  const urFn = liveHeightFn || hf;
+  const zweiModelle = urFn !== hf && typeof boeschungAktiv === 'function' && !!boeschungAktiv();
   if (!solids.length) return null;
   const areaSum = solids.reduce((s, k) => s + Math.abs(polygonArea(k.fp)), 0);
   const st = Math.max(0.5, Math.min(2, Math.sqrt(areaSum / 2500)));
@@ -27975,7 +27991,7 @@ function renderKubaturExplosion(pxW, pxH) {
   const mat = (color, opacity) => new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: opacity < 1, opacity, depthWrite: opacity >= 1, polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 2 });
   const lineMat = new THREE.LineBasicMaterial({ color: 0x3a3029, transparent: true, opacity: 0.55 });
   const hiddenMat = new THREE.LineDashedMaterial({ color: 0x3a3029, transparent: true, opacity: 0.45, dashSize: 0.55, gapSize: 0.4, depthFunc: THREE.GreaterDepth, depthWrite: false });
-  const above = new THREE.Group(), below = new THREE.Group(), plate = new THREE.Group();
+  const above = new THREE.Group(), below = new THREE.Group(), plate = new THREE.Group(), urplate = new THREE.Group();
   const addMesh = (grp, pos, m) => {
     if (!pos.length) return;
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
@@ -28017,8 +28033,21 @@ function renderKubaturExplosion(pxW, pxH) {
     plate.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x5d6b4f, transparent: true, opacity: 0.8 })));
     if (fpl.length) { const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fpl, 3));
       const fl = new THREE.LineSegments(fg, new THREE.LineDashedMaterial({ color: 0x2a2420, dashSize: 0.8, gapSize: 0.5 })); fl.computeLineDistances(); plate.add(fl); }
+    // Bestandsmodell: das Urgelände als zweite, blasse Fläche mit strichliertem Umriss
+    if (zweiModelle) {
+      const up = kxSolidPositions(parcelPoints, null, p => urFn(p[0], p[1]) - 0.2, p => urFn(p[0], p[1]), pst);
+      const ug = new THREE.BufferGeometry(); ug.setAttribute('position', new THREE.Float32BufferAttribute(up, 3)); ug.computeVertexNormals();
+      const um = new THREE.Mesh(ug, mat(0xa9a296, 0.3)); um.renderOrder = 1; urplate.add(um);
+      const uo = [];
+      parcelPoints.forEach((a, i) => { const b = parcelPoints[(i + 1) % parcelPoints.length], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 1.5));
+        for (let j = 0; j < n; j++) { const p = [a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n], q = [a[0] + (b[0] - a[0]) * (j + 1) / n, a[1] + (b[1] - a[1]) * (j + 1) / n];
+          uo.push(p[0], urFn(p[0], p[1]) + 0.03, p[1], q[0], urFn(q[0], q[1]) + 0.03, q[1]); } });
+      const ulg = new THREE.BufferGeometry(); ulg.setAttribute('position', new THREE.Float32BufferAttribute(uo, 3));
+      const ul = new THREE.LineSegments(ulg, new THREE.LineDashedMaterial({ color: 0x6b645a, dashSize: 0.9, gapSize: 0.6, transparent: true, opacity: 0.8 }));
+      ul.computeLineDistances(); urplate.add(ul);
+    }
   }
-  scene.add(above, below, plate);
+  scene.add(above, below, plate, urplate);
   const bbA = new THREE.Box3().setFromObject(above), bbB = new THREE.Box3().setFromObject(below);
   const hasA = !bbA.isEmpty(), hasB = !bbB.isEmpty();
   const yLo = hasB ? bbB.min.y : bbA.min.y, yHi = hasA ? bbA.max.y : bbB.max.y;
@@ -28054,7 +28083,8 @@ function renderKubaturExplosion(pxW, pxH) {
     a.forEach(o => { const at = o.geometry.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < at.count; i++) { v.fromBufferAttribute(at, i).applyMatrix4(o.matrixWorld); const p = toPx(v); if (!best || p[0] > best[0]) best = p; } });
     const mid = toPx(b.getCenter(new THREE.Vector3())); return best ? [best[0] - (best[0] - mid[0]) * 0.25, mid[1]] : mid; };
   const copy = document.createElement('canvas'); copy.width = pxW; copy.height = pxH; copy.getContext('2d').drawImage(canvas, 0, 0); // vor dem Context-Verlust sichern
-  const out = { canvas: copy, above: hasA ? anchorOf(above) : null, below: hasB ? anchorOf(below) : null, plate: anchorOf(plate) };
+  const out = { canvas: copy, above: hasA ? anchorOf(above) : null, below: hasB ? anchorOf(below) : null,
+    plate: anchorOf(plate), ur: zweiModelle ? anchorOf(urplate) : null, zwei: zweiModelle };
   r.dispose(); if (r.forceContextLoss) r.forceContextLoss();
   scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   return out;
@@ -28073,11 +28103,13 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   }
   const isEnvelope = rows.some(r => r.envelope);
   const sumAbove = rows.reduce((s, r) => s + r.volAbove, 0), sumBelow = rows.reduce((s, r) => s + r.volBelow, 0);
+  const boeAn = !!(liveMetrics && ((liveMetrics.boeAbtrag || 0) > 0.5 || (liveMetrics.boeAuftrag || 0) > 0.5));
   y = dxPara(ctx, 'Der Baukörper wird an der Geländeoberfläche nach Fertigstellung geteilt: darüber oberirdische, darunter unterirdische Kubatur (OIB-RL 2023). Volumen nach ÖNORM B 1800 als Grundrissfläche × Höhe.'
-    + (isEnvelope ? ' Im Maximalhüllkörper wird in gleich hohe Ebenen zerlegt.' : ''), pad, y + 8, cw * 0.8, 23, 38, EX.lead, 3) + 26;
+    + (boeAn ? ' Die Zeichnung zeigt beide Geländemodelle: das Gelände nach Fertigstellung als Teilungsfläche und darunter das Urgelände als Bestand — es ist der gesetzliche Bezugspunkt für jede Geländeveränderung.' : '')
+    + (isEnvelope ? ' Im Maximalhüllkörper wird in gleich hohe Ebenen zerlegt.' : ''), pad, y + 8, cw * 0.8, 23, 38, EX.lead, 4) + 26;
   const pieceIds = [...new Set(rows.map(r => r.piece))];
   const rowH = Math.max(34, Math.min(50, 560 / (rows.length + 1)));
-  const tableH = 40 + rows.length * rowH + 90;
+  const tableH = 40 + rows.length * rowH + 90 + (boeAn ? 300 : 0);   // Platz für die Erdbaumassen
   const imgH = Math.max(560, Math.min(landscape ? H * 0.55 : 1100, bottom - y - tableH - 40));
   const imgW = Math.round(cw * 0.64), labX = pad + imgW + 50;
   const ex = cachedExposeCapture('kubex:' + imgW + 'x' + Math.round(imgH), () => { try { return renderKubaturExplosion(imgW, Math.round(imgH)); } catch (e) { console.warn('Kubatur-Explosion', e); return null; } });
@@ -28097,10 +28129,17 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   };
   label(ex && ex.above, y + imgH * 0.2, 'Oberirdisch', `${fmtNum(sumAbove)} m³`, `${pct(sumAbove)} % · über Gelände`, exBelowColor(0.08));
   label(ex && ex.below, y + imgH * 0.7, 'Unterirdisch', `${fmtNum(sumBelow)} m³`, `${pct(sumBelow)} % · unter Gelände`, exBelowColor(1));
-  const lyP = y + imgH * 0.46;
+  const lyP = y + imgH * 0.44;
+  const zwei = !!(ex && ex.zwei);
   if (ex && ex.plate) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.plate[0], y + ex.plate[1]); ctx.lineTo(labX - 10, lyP - 6); ctx.stroke(); ctx.setLineDash([]); }
-  exText(ctx, 'Grundstück / Gelände', labX, lyP, 600, 21, EX.ink);
-  exText(ctx, 'Schnittlinie strichliert', labX, lyP + 30, 400, 19, EX.muted);
+  exText(ctx, zwei ? 'Gelände neu — nach Fertigstellung' : 'Grundstück / Gelände', labX, lyP, 600, 21, EX.ink);
+  exText(ctx, 'Teilungsfläche, Schnittlinie strichliert', labX, lyP + 30, 400, 19, EX.muted);
+  if (zwei) {
+    const lyU = lyP + 74;
+    if (ex.ur) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.ur[0], y + ex.ur[1]); ctx.lineTo(labX - 10, lyU - 6); ctx.stroke(); ctx.setLineDash([]); }
+    exText(ctx, 'Urgelände — Bestand', labX, lyU, 600, 21, EX.ink);
+    exText(ctx, 'Bezugsfläche für den Erdbau', labX, lyU + 30, 400, 19, EX.muted);
+  }
   y += imgH + 44;
   // Tabelle
   const cols = [['Baukörper', 0.13, 'left'], ['Geschoß', 0.11, 'left'], ['A [m²]', 0.12, 'right'], ['h [m]', 0.09, 'right'], ['V [m³]', 0.13, 'right'], ['erdber.', 0.12, 'right'], ['V oberird.', 0.15, 'right'], ['V unterird.', 0.15, 'right']];
@@ -28120,6 +28159,15 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   const sv = ['Summe', `${rows.length} ${isEnvelope ? 'Ebenen' : 'Geschoße'}`, fmtNum(rows.reduce((s, r) => s + r.area, 0)), '', fmtNum(tot), '', fmtNum(sumAbove), fmtNum(sumBelow)];
   sv.forEach((v, i) => tx(i, v, y, 700, 24, EX.ink));
   y += 44;
+  // Zweites Modell: die Geländeveränderung gegenüber dem Urgelände
+  if (boeAn) {
+    const ab = liveMetrics.boeAbtrag || 0, au = liveMetrics.boeAuftrag || 0, bg = liveMetrics.aushub || 0;
+    y = exSection(ctx, 'Geländeveränderung gegenüber dem Urgelände', pad, y + 10) + 10;
+    y = dxKV(ctx, [['Abtrag (Böschung)', fmtNum(Math.round(ab)), 'm³'], ['Auftrag (Böschung)', fmtNum(Math.round(au)), 'm³'],
+                   ['Aushub Baugrube', fmtNum(Math.round(bg)), 'm³'], ['Differenz ab − auf', fmtNum(Math.round(ab - au)), 'm³']], pad, y, cw, 4, 118) + 18;
+    y = dxPara(ctx, 'Massen aus der Differenz von Urgeländemodell und Endmodell über ein 0,5-m-Raster (Prismenverfahren nach ÖNORM B 2114). Vor Baubeginn ist das Urgelände gemeinsam aufzumessen und zu dokumentieren; Abgrabungen und Aufschüttungen sind je nach Landesbauordnung ab rund 1,00 bis 1,50 m anzeige- oder bewilligungspflichtig. Die Werte hier sind eine Vorbemessung aus dem Geländemodell, kein Aufmaß.',
+      pad, y, cw * 0.86, 21, 34, EX.muted, 4) + 14;
+  }
   dxCaption(ctx, `Entspricht den Werten auf „Auf einen Blick“ und der Baumassendichte-Berechnung${pieceIds.length > 1 ? ` · ${pieceIds.length} Baukörper` : ''}.`, pad, y);
   drawExposeFooter(ctx, W, H, pad, pageNum, totalPages);
   return P.canvas;
@@ -38464,7 +38512,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.15';
+  const VERSION = 'v3.16';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
