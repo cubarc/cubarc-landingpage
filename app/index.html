@@ -14152,6 +14152,9 @@ function boeschungFn(hUr, zEG, grenze, grad) {
   return (x, z) => {
     const h0 = hUr(x, z);
     if (!isFinite(h0)) return h0;
+    // Gerührt wird nur im eigenen Grund. Außerhalb bleibt das Urgelände, wie es ist —
+    // sonst zieht der (vorzeichenlose) Randabstand auch die Nachbarschaft auf EG-Höhe.
+    if (!pointInPolygon([x, z], grenze)) return h0;
     const diff = zEG - h0;
     if (Math.abs(diff) < 1e-6) return h0;
     const d = weicherRandAbstand([x, z], grenze, rEcke);
@@ -23136,6 +23139,33 @@ function rebuild() {
       } catch (e) {}
     });
   }
+  // ---- Urgelände als durchscheinender Schleier über dem neuen Gelände ----------
+  // Vorgabe Ozan (12.10.2026): In der Visualisierung soll die Böschung sichtbar sein.
+  // Dafür liegt das Urgelände mit rund 20 % Deckkraft darüber — man sieht auf einen
+  // Blick, wo abgegraben und wo angeschüttet wurde.
+  if (boe && heightFn !== terrainFn) try {
+    const sh2 = new THREE.Shape(parcelPoints.map(p => new THREE.Vector2(p[0], p[1])));
+    (terrainHoleFps || []).forEach(fp => { if (fp && fp.length >= 3) sh2.holes.push(new THREE.Path(fp.map(p => new THREE.Vector2(p[0], p[1])))); });
+    const g2 = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh2));
+    const p2 = g2.attributes.position, A = new Float32Array(p2.count * 3);
+    for (let i = 0; i < p2.count; i++) {
+      const wx = p2.getX(i), wz = p2.getY(i);
+      A[i * 3] = wx; A[i * 3 + 1] = heightFn(wx, wz) + 0.02; A[i * 3 + 2] = wz;
+    }
+    g2.setAttribute('position', new THREE.Float32BufferAttribute(A, 3));
+    g2.computeVertexNormals();
+    const m2 = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({
+      color: showViz ? 0xbdbab3 : 0x8d8a84, roughness: 1, side: THREE.DoubleSide,
+      transparent: true, opacity: 0.2, depthWrite: false
+    }));
+    m2.renderOrder = 1; m2.raycast = () => {};
+    m2.userData.urgelaende = true;
+    terrainMesh.add(m2);
+    // dünne Kante, damit die Lage des Urgeländes auch im Gegenlicht ablesbar bleibt
+    const kante = new THREE.LineSegments(new THREE.EdgesGeometry(g2, 32),
+      new THREE.LineBasicMaterial({ color: 0x9a9aa2, transparent: true, opacity: 0.25, depthWrite: false }));
+    kante.renderOrder = 1; terrainMesh.add(kante);
+  } catch (e) { /* der Schleier ist nur Darstellung */ }
   if (dgmActive() && document.getElementById('toggle-contours').checked && viewMode() !== 'aushub') { const cl = buildContourLines(showViz); if (cl) terrainMesh.add(cl); }
   // Umgebung (Nachbargrundstücke, -häuser, Höhenlinien der Umgebung, Sockel, Bäume) liegt auf
   // Ebene 2: nur im 3D-Fenster sichtbar — die 2D-Ansichten und das Exposé zeigen nur das
@@ -34989,7 +35019,6 @@ function buildOrthoDrape(heightFn) {
   } else {
     (window.__terrainHoleFps || []).forEach(fp => { if (fp && fp.length >= 3) holeFps.push(...aufRect(fp)); });
   }
-  if (false) (window.__terrainHoleFps || []).forEach(fp => { if (fp && fp.length >= 3) holeFps.push(...aufRect(fp)); });
   if (!holeFps.length) {                       // Rückfall, falls die Geländelöcher fehlen
     (currentPieceInfo || []).forEach(pi => { if (pi.footprint && pi.footprint.length >= 3) holeFps.push(...aufRect(pi.footprint)); });
     if (!holeFps.length) (window.__maxBodies || []).forEach(mb => { if (mb.body && mb.body.S0) holeFps.push(...aufRect(mb.body.S0)); });
@@ -38603,7 +38632,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.09';
+  const VERSION = 'v3.10';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
