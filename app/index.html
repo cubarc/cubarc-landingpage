@@ -4289,7 +4289,7 @@ window.KUBATUR_ABO_SERVER = 'probe';
       
     </div>
     <div class="mp-sec">Wohnungen</div>
-    <div class="segmented viz-seg" data-target="eh-modus" style="margin-bottom:8px;"><button type="button" data-v="gleich">Gleich groß</button><button type="button" data-v="mix">Wohnungsmix</button></div>
+    <div class="segmented viz-seg" data-target="eh-modus" style="margin-bottom:8px;"><button type="button" data-v="gleich">Gleich groß</button><button type="button" data-v="mix">Wohnungsmix</button><button type="button" data-v="reihe">Reihenhaus</button></div>
     <input type="hidden" id="eh-modus" value="gleich">
     <div id="eh-gleich">
       <div class="segmented viz-seg" data-target="eh-nach" style="margin-bottom:8px;"><button type="button" data-v="anzahl">Nach Stückzahl</button><button type="button" data-v="flaeche">Nach Größe</button></div>
@@ -4306,6 +4306,14 @@ window.KUBATUR_ABO_SERVER = 'probe';
       </div>
       <div class="eh-gesch" id="eh-geschosse"></div>
       <div class="note">Das Geschoß wird in gleich große Wohnungen geteilt. Ist der Baukörper tief, entstehen zwei Wohnungsreihen.</div>
+    </div>
+    <div id="eh-reihe" style="display:none;">
+      <div class="group" id="eh-haeuser-row">
+        <label>Häuser <input type="number" class="eh-nr" id="eh-haeuser-nr" min="2" max="24" step="1" value="4" aria-label="Anzahl der Häuser"></label>
+        <input type="range" id="eh-haeuser" min="2" max="24" step="1" value="4">
+        <span class="val" id="v-eh-haeuser" hidden></span>
+      </div>
+      <div class="note">Der Baukörper wird quer in gleich große Häuser geteilt. Ein Haus ist EINE Einheit über alle Geschoße — die Fläche addiert sich, die Farbe bleibt in jedem Geschoß dieselbe.</div>
     </div>
     <div id="mix-custom" style="display:none;">
       <table class="mix-table"><thead><tr><th>Typ</th><th>Größe m²</th><th>Anzahl</th><th></th></tr></thead><tbody id="mix-rows"></tbody></table>
@@ -17322,6 +17330,7 @@ const WOHNUNG_MIN = 45;
 // Varianten gerechnet werden müßten.
 // ============================================================================
 const EH_MIN = 20;          // kleiner wird keine Einheit ausgewiesen
+const EH_REIHE_MIN = 28;    // kleiner wird kein Reihenhaus ausgewiesen (Grundfläche je Haus)
 const EH_2REIHIG = 13.0;    // ab dieser Gebäudetiefe zwei Wohnungsreihen
 const EH_PROFIL = 160;      // Stützstellen der Flächenkurve je Band
 
@@ -17377,13 +17386,78 @@ function einheitenCfg(f) {
   const eigen = (f != null && c.proGeschoss && c.proGeschoss[f] != null) ? +c.proGeschoss[f] : null;
   const nachAnzahl = !!c.nachAnzahl;
   return {
-    modus: c.modus === 'mix' ? 'mix' : 'gleich',
+    modus: c.modus === 'mix' ? 'mix' : c.modus === 'reihe' ? 'reihe' : 'gleich',
     anzahl: nachAnzahl ? Math.max(1, Math.round(eigen != null ? eigen : (c.anzahl || 1))) : 0,
     flaeche: Math.max(20, nachAnzahl ? (c.flaeche || 75) : (eigen != null ? eigen : (c.flaeche || 75))),
     mix: (typeof aptMix !== 'undefined' && aptMix && Array.isArray(aptMix.rows)) ? aptMix.rows : []
   };
 }
 
+// ---- Reihenhausanlage ---------------------------------------------------------
+// Ein Haus ist der senkrechte Streifen über alle Geschoße — eine Einheit, kein
+// Stapel von Wohnungen. Deshalb gibt das Erdgeschoß die Teilung vor und jedes
+// weitere Geschoß wird an genau denselben Stellen geschnitten; springt ein oberes
+// Geschoß zurück, wird das Haus dort eben schmäler oder endet.
+let reihenCache = { key: '', wert: null };
+function reihenSchnitte(egFp, n) {
+  const key = n + '|' + egFp.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(';');
+  if (reihenCache.key === key && reihenCache.wert) return reihenCache.wert;
+  const C = ClipperLib;
+  const [ux, uy] = longestEdgeDir(egFp);
+  const vx = -uy, vy = ux, o = polygonCentroid(egFp);
+  const toUV = p => [(p[0] - o[0]) * ux + (p[1] - o[1]) * uy, (p[0] - o[0]) * vx + (p[1] - o[1]) * vy];
+  const toW = (a, b) => [o[0] + a * ux + b * vx, o[1] + a * uy + b * vy];
+  let U0 = Infinity, U1 = -Infinity, V0 = Infinity, V1 = -Infinity;
+  egFp.forEach(p => { const q = toUV(p); U0 = Math.min(U0, q[0]); U1 = Math.max(U1, q[0]); V0 = Math.min(V0, q[1]); V1 = Math.max(V1, q[1]); });
+  const pfad = pl => legalToPath(signedArea(pl) < 0 ? pl.slice().reverse() : pl);
+  const egP = [pfad(egFp)];
+  const flaeche = a1 => {
+    if (!(a1 - U0 > 1e-4)) return 0;
+    const r = [toW(U0, V0 - 1), toW(a1, V0 - 1), toW(a1, V1 + 1), toW(U0, V1 + 1)];
+    return legalBoolean(C.ClipType.ctIntersection, egP, [pfad(r)], C.PolyFillType.pftNonZero)
+      .reduce((q, p) => q + Math.abs(C.Clipper.Area(p)) / (LEGAL_SC * LEGAL_SC), 0);
+  };
+  const A = flaeche(U1) || 1;
+  const xs = [], ys = [];
+  for (let k = 0; k <= EH_PROFIL; k++) { const x = U0 + (U1 - U0) * k / EH_PROFIL; xs.push(x); ys.push(k === 0 ? 0 : flaeche(x)); }
+  const bei = ziel => {
+    if (ziel >= A) return U1;
+    let k = 1; while (k < ys.length && ys[k] < ziel) k++;
+    const y0 = ys[k - 1], y1 = ys[k], t = y1 > y0 ? (ziel - y0) / (y1 - y0) : 0;
+    return xs[k - 1] + (xs[k] - xs[k - 1]) * t;
+  };
+  const grenzen = [U0];
+  for (let i = 1; i < n; i++) grenzen.push(bei(A * i / n));
+  grenzen.push(U1);
+  const wert = { toW, grenzen, V0: V0 - 1, V1: V1 + 1 };
+  reihenCache = { key, wert };
+  return wert;
+}
+function reihenZonen(fp, egFp, n) {
+  const out = [];
+  if (typeof ClipperLib === 'undefined' || !fp || fp.length < 3) return out;
+  const ref = (egFp && egFp.length >= 3) ? egFp : fp;
+  const A0 = Math.abs(polygonArea(ref));
+  const haeuser = Math.max(1, Math.min(n || 1, Math.floor(A0 / EH_REIHE_MIN) || 1));
+  const S = reihenSchnitte(ref, haeuser);
+  const C = ClipperLib;
+  const pfad = pl => legalToPath(signedArea(pl) < 0 ? pl.slice().reverse() : pl);
+  const fpP = [pfad(fp)], hohl = (fp.holes || []).map(pfad);
+  for (let i = 0; i < haeuser; i++) {
+    const a0 = S.grenzen[i], a1 = S.grenzen[i + 1];
+    if (!(a1 - a0 > 1e-4)) continue;
+    const r = [S.toW(a0, S.V0), S.toW(a1, S.V0), S.toW(a1, S.V1), S.toW(a0, S.V1)];
+    let res = legalBoolean(C.ClipType.ctIntersection, fpP, [pfad(r)], C.PolyFillType.pftNonZero);
+    if (hohl.length && res.length) res = legalBoolean(C.ClipType.ctDifference, res, hohl, C.PolyFillType.pftNonZero);
+    res.map(p => { const q = legalFromPath(p); if (signedArea(q) < 0) q.reverse(); return q; })
+      .filter(q => q.length >= 3)
+      .map(q => ({ fp: q, area: polygonArea(q) }))
+      .filter(q => q.area >= 4)
+      .sort((x, y) => y.area - x.area)
+      .forEach(t => out.push({ fp: t.fp, area: t.area, haus: i }));
+  }
+  return out;
+}
 // Teilt ein Geschoß in Wohnungen. Liefert [{ fp, area, nr }] in Weltkoordinaten.
 function einheitenZonen(fp, coreRef, cfg) {
   const out = [];
@@ -17607,12 +17681,21 @@ function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, 
   const group = new THREE.Group();
   const units = [];
   if (!footprint || footprint.length < 3) return { group, units };
+  const cfg = einheitenCfg(gInfo ? gInfo.f : null);
+  const reihe = cfg.modus === 'reihe';
   let zonen = [];
-  try { zonen = einheitenZonen(footprint, coreRef || {}, einheitenCfg(gInfo ? gInfo.f : null)); } catch (e) { zonen = []; }
+  try {
+    zonen = reihe ? reihenZonen(footprint, gInfo && gInfo.egFp, cfg.anzahl)
+                  : einheitenZonen(footprint, coreRef || {}, cfg);
+  } catch (e) { zonen = []; }
   // Die Farbnummer läuft über ALLE Geschosse durch — jedes Top eine eigene Farbe.
+  // Beim Reihenhaus ist das Haus die Einheit: dieselbe Nummer, dieselbe Farbe in
+  // jedem Geschoß, und die Geschoßscheiben werden später zu einer Einheit addiert.
   zonen.forEach(z => {
-    const nr = (window.__ehFarbLauf = (window.__ehFarbLauf || 0) + 1) - 1;
-    units.push({ type: 'wohnung', area: z.area, footprint: z.fp, rooms: unitRooms(z.area), zonNr: z.nr, farbNr: nr });
+    const nr = reihe ? z.haus : (window.__ehFarbLauf = (window.__ehFarbLauf || 0) + 1) - 1;
+    const u = { type: 'wohnung', area: z.area, footprint: z.fp, rooms: unitRooms(z.area), zonNr: z.nr, farbNr: nr };
+    if (reihe) { u.reihenhaus = true; u.hausIdx = z.haus; }
+    units.push(u);
   });
   if (showZoning && units.length) {
     const g = (gInfo && gInfo.hoehe > 0)
@@ -22830,7 +22913,7 @@ function rebuild() {
           const planTop = f === floors - 1 || (highlightActive && selPieceIdx === pieceIdx && f === selFloorIdx);
           const yPlan = showApartments ? ebeneY(f + 1) + 0.03 : ebeneY(f) + 0.04;
           const layout = buildApartmentLayout(fp, yPlan, false, showApartments && showZoning, coreRef, seededRandom(pieceIdx * 10000 + f + 500 + 0),
-            { f, floors, baseY: ebeneY(f), hoehe: ebeneY(f + 1) - ebeneY(f) });
+            { f, floors, baseY: ebeneY(f), hoehe: ebeneY(f + 1) - ebeneY(f), egFp: floorFootprints[0] });
           if (f === 0) (window.__floorLayouts = window.__floorLayouts || []).push({ piece: pieceIdx, type: coreRef.planType, units: layout.units.map(u => ({ type: u.type, area: Math.round(u.area), fp: u.footprint })) });
           // Fensterzonen für die Fassade: nur wenn die Visualisierung sie braucht
           if (showViz) try {
@@ -23755,7 +23838,7 @@ function resetPieceOverridesKeepHeight() { pieceOverrides = pieceOverrides.map(o
   document.getElementById(id).addEventListener('input', resetPieceOverridesKeepHeight)
 );
 
-['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ', 'eh-anzahl', 'eh-flaeche', 'toggle-boeschung', 'boeschung-winkel',
+['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ', 'eh-anzahl', 'eh-flaeche', 'eh-haeuser', 'toggle-boeschung', 'boeschung-winkel',
  'building-gap', 'num-parts', 'split-angle',
  'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass', 'toggle-earthwork',
  'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'toggle-ortho', 'ortho-opacity'].forEach(id =>
@@ -23854,7 +23937,7 @@ document.querySelectorAll('.val').forEach(span => {
 });
 
 // ---- Datei/Bearbeiten: Undo/Redo, Speichern/Laden, PNG-Export ----
-const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'toggle-boeschung', 'boeschung-winkel', 'eh-modus', 'eh-nach', 'eh-anzahl', 'eh-flaeche', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
+const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'toggle-boeschung', 'boeschung-winkel', 'eh-modus', 'eh-nach', 'eh-anzahl', 'eh-flaeche', 'eh-haeuser', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
   'building-gap', 'num-parts', 'split-angle', 'toggle-eigen', 'light-intensity', 'camera-fov-mm', 'model-mode', 'view-mode',
   'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass',
   'toggle-earthwork', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'tree-seed', 'tree-style', 'toggle-ortho', 'ortho-opacity', 'nb-default-floors', 'site-preset', 'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-theme',
@@ -24869,19 +24952,22 @@ function setVizValue(id, v) {
 // ---- Wohnungsmix: Eingabetabelle, Neu generieren, Varianten ----
 function renderUnitMix() {
   const mm = document.getElementById('eh-modus'); if (!mm) return;
-  const mix = mm.value === 'mix';
-  ehCfg.modus = mix ? 'mix' : 'gleich';
+  const mix = mm.value === 'mix', reihe = mm.value === 'reihe';
+  ehCfg.modus = mix ? 'mix' : reihe ? 'reihe' : 'gleich';
   aptMix.mode = mix ? 'custom' : 'auto';   // die Kennzahlen lesen diesen Schalter weiter
   const nach = (document.getElementById('eh-nach') || {}).value || 'anzahl';
   ehCfg.nachAnzahl = nach === 'anzahl';
   ehCfg.anzahl = Math.max(1, parseInt((document.getElementById('eh-anzahl') || {}).value || '4', 10));
   ehCfg.flaeche = Math.max(25, parseFloat((document.getElementById('eh-flaeche') || {}).value || '75'));
+  // Beim Reihenhaus zählt die Anzahl der Häuser, nicht die Wohnungen je Geschoß
+  if (reihe) { ehCfg.nachAnzahl = true; ehCfg.anzahl = Math.max(2, parseInt((document.getElementById('eh-haeuser') || {}).value || '4', 10)); }
   const zeig = (id, an) => { const e = document.getElementById(id); if (!e) return; const w = an ? '' : 'none'; if (e.style.display !== w) e.style.display = w; };
-  zeig('eh-gleich', !mix); zeig('mix-custom', mix);
-  zeig('eh-anzahl-row', !mix && ehCfg.nachAnzahl); zeig('eh-flaeche-row', !mix && !ehCfg.nachAnzahl);
+  zeig('eh-gleich', !mix && !reihe); zeig('mix-custom', mix); zeig('eh-reihe', reihe);
+  zeig('eh-anzahl-row', !mix && !reihe && ehCfg.nachAnzahl); zeig('eh-flaeche-row', !mix && !reihe && !ehCfg.nachAnzahl);
   const setzNr = (id, v) => { const e = document.getElementById(id); if (e && document.activeElement !== e && e.value !== String(v)) e.value = v; };
-  setzNr('eh-anzahl-nr', ehCfg.anzahl);
+  setzNr('eh-anzahl-nr', reihe ? Math.max(1, parseInt((document.getElementById('eh-anzahl') || {}).value || '4', 10)) : ehCfg.anzahl);
   setzNr('eh-flaeche-nr', Math.round(ehCfg.flaeche));
+  if (reihe) setzNr('eh-haeuser-nr', ehCfg.anzahl);
   renderGeschossVorgaben();
   const tb = document.getElementById('mix-rows');
   tb.innerHTML = aptMix.rows.map((r, i) => `<tr data-i="${i}">
@@ -24894,7 +24980,7 @@ function renderUnitMix() {
 function renderGeschossVorgaben() {
   const el = document.getElementById('eh-geschosse'); if (!el) return;
   const n = Math.max(0, window.__ehGeschosse || 0);
-  if (!n || ehCfg.modus === 'mix') { if (el.innerHTML) el.innerHTML = ''; return; }
+  if (!n || ehCfg.modus === 'mix' || ehCfg.modus === 'reihe') { if (el.innerHTML) el.innerHTML = ''; return; }
   const einh = ehCfg.nachAnzahl ? 'Stück' : 'm²';
   const vorg = ehCfg.nachAnzahl ? ehCfg.anzahl : Math.round(ehCfg.flaeche);
   let html = '<div class="eh-gesch-k">Je Geschoß abweichend (' + einh + ')</div>';
@@ -24918,7 +25004,7 @@ function renderUnitMixIst(units) {
 // ---- Zahlenfelder: Regler und Feld zeigen denselben Wert ------------------------
 let ehNrTimer = null;
 const ehSpaeter = () => { clearTimeout(ehNrTimer); ehNrTimer = setTimeout(() => { rebuild(); pushHistory(); }, 260); };
-[['eh-anzahl-nr', 'eh-anzahl', 'anzahl'], ['eh-flaeche-nr', 'eh-flaeche', 'flaeche']].forEach(([nr, rg, feld]) => {
+[['eh-anzahl-nr', 'eh-anzahl', 'anzahl'], ['eh-flaeche-nr', 'eh-flaeche', 'flaeche'], ['eh-haeuser-nr', 'eh-haeuser', 'anzahl']].forEach(([nr, rg, feld]) => {
   const e = document.getElementById(nr); if (!e) return;
   e.addEventListener('input', () => {
     const v = parseFloat(e.value);
@@ -24930,12 +25016,15 @@ const ehSpaeter = () => { clearTimeout(ehNrTimer); ehNrTimer = setTimeout(() => 
   });
 });
 // Der Regler schreibt in das Zahlenfeld zurück
-[['eh-anzahl', 'eh-anzahl-nr', 'anzahl'], ['eh-flaeche', 'eh-flaeche-nr', 'flaeche']].forEach(([rg, nr, feld]) => {
+[['eh-anzahl', 'eh-anzahl-nr', 'anzahl'], ['eh-flaeche', 'eh-flaeche-nr', 'flaeche'], ['eh-haeuser', 'eh-haeuser-nr', 'anzahl']].forEach(([rg, nr, feld]) => {
   const r = document.getElementById(rg); if (!r) return;
   r.addEventListener('input', () => {
     ehCfg[feld] = parseFloat(r.value);
     const e = document.getElementById(nr);
     if (e && document.activeElement !== e) e.value = r.value;
+    // Der allgemeine Neuaufbau hängt an einem früher gesetzten Zuhörer und liefe noch mit
+    // dem alten Wert — deshalb hier ein eigener, verzögerter Neuaufbau.
+    ehSpaeter();
   });
 });
 // ---- Vorgabe je Geschoß ----------------------------------------------------------
@@ -38512,7 +38601,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.16';
+  const VERSION = 'v3.17';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
