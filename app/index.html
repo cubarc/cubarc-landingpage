@@ -4110,6 +4110,12 @@ window.KUBATUR_ABO_SERVER = 'probe';
       <label>Hangrichtung (Gefälle) <span class="val" id="v-aspect">0°</span></label>
       <input type="range" id="aspect" min="0" max="359" step="1" value="0">
     </div>
+    <label class="ios-toggle-row" title="Das Urgelände wird von der Grundstückskante zur Unterkante des Erdgeschoßes geböscht."><span>Geländeböschung</span><input type="checkbox" id="toggle-boeschung" class="ios-toggle"></label>
+    <div class="group" id="boeschung-row" style="display:none;">
+      <label>Böschungswinkel <span class="val" id="v-boeschung">45°</span></label>
+      <input type="range" id="boeschung-winkel" min="1" max="89" step="1" value="45">
+      <div class="note">Von der Grundstückskante im eingestellten Winkel bis auf die Unterkante EG, danach waagrecht zum Baukörper. Reicht der Abstand nicht, endet die Böschung an der Wand.</div>
+    </div>
     <div class="mp-sec">Bauordnung</div>
     <div class="group">
       <select id="bundesland" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:10px; font-family:inherit; font-size:13px; background:var(--panel); color:var(--ink);">
@@ -4742,7 +4748,7 @@ window.KUBATUR_ABO_SERVER = 'probe';
       <button id="toggle-2d" title="2D-Ansichten ein/aus">2D</button>
       <span class="nav-sep"></span>
       <button id="toggle-kpi" class="active" title="Wichtigste Kennzahlen oben ein/aus"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="7.5" height="5" rx="1.5"/><rect x="13.5" y="5" width="7.5" height="5" rx="1.5"/><path d="M5 15h14M5 18.5h9" opacity=".55"/></svg></button>
-      <button id="toggle-stats" title="Kennzahlen ein/aus"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="5" y2="12"/><line x1="12" y1="19" x2="12" y2="7"/><line x1="19" y1="19" x2="19" y2="14"/></svg></button>
+      <button id="toggle-stats" hidden style="display:none !important;" aria-hidden="true" tabindex="-1"></button>
     </div>
 
     <div class="stats-overlay hidden" id="stats-overlay">
@@ -4768,7 +4774,8 @@ window.KUBATUR_ABO_SERVER = 'probe';
         <div class="stat-row limit"><span class="k">Kubaturmasse gesamt</span><span class="v" id="s-vol-total">–</span></div>
         <div class="stat-row"><span class="k">Geländesprung im Baufeld</span><span class="v" id="s-terraindiff">–</span></div>
         <div class="stat-row"><span class="k">Bezugspunkt Sockel</span><span class="v" id="s-baselevel">–</span></div>
-        <div class="stat-row"><span class="k">Aushub (Erdmaterial entfernt)</span><span class="v" id="s-aushub">–</span></div>
+        <div class="stat-row"><span class="k">Geländeaushub (Baugrube)</span><span class="v" id="s-aushub">–</span></div>
+        <div class="stat-row"><span class="k">Geländeböschung (Abtrag / Auftrag)</span><span class="v" id="s-boeschung">–</span></div>
         <span id="s-auffuellung" hidden></span>
 
         <div class="stat-row"><span class="k">Einheiten / Bruttofläche</span><span class="v" id="s-wohnungen">–</span></div>
@@ -14085,6 +14092,53 @@ function terrainHeightFn(slopePct, aspectDeg) {
   return (x, y) => -grade * (x * dx + y * dy);
 }
 
+// ============================================================================
+// GELÄNDEBÖSCHUNG (ab v3.08, Vorgabe Ozan 12.10.2026)
+// ----------------------------------------------------------------------------
+// Das Urgelände wird von der Grundstückskante aus zur Unterkante des Erdgeschoßes
+// geböscht: erst im eingestellten Winkel (Standard 45°), dann waagrecht weiter zum
+// Baukörper. Reicht der Abstand für den Winkel nicht aus, endet die Böschung dort,
+// wo sie ankommt — also auf der Wandfläche.
+//
+// In einer Formel: An der Grundstückskante (Abstand 0) bleibt das Urgelände, nach
+// innen nähert sich die Fläche mit tan(Winkel) je Meter der EG-Höhe an und bleibt
+// dort stehen, sobald sie sie erreicht hat. Genau das ergibt Böschung + Ebene.
+function boeschungAktiv() {
+  const t = document.getElementById('toggle-boeschung');
+  if (!t || !t.checked) return null;
+  const w = parseFloat((document.getElementById('boeschung-winkel') || {}).value || '45');
+  return { winkel: Math.max(1, Math.min(89, isFinite(w) ? w : 45)) };
+}
+function boeschungFn(hUr, zEG, grenze, grad) {
+  const t = Math.tan(Math.max(1, Math.min(89, grad)) * Math.PI / 180);
+  return (x, z) => {
+    const h0 = hUr(x, z);
+    if (!isFinite(h0)) return h0;
+    const diff = zEG - h0;
+    if (Math.abs(diff) < 1e-6) return h0;
+    const d = Math.max(0, distPointToPolygon([x, z], grenze));
+    return h0 + Math.sign(diff) * Math.min(Math.abs(diff), t * d);
+  };
+}
+// Kubatur der Böschung: zwischen Grundstücksgrenze und Baukörper über ein 0,5-m-Raster
+// integriert. Abtrag und Auftrag werden getrennt ausgewiesen.
+function boeschungKubatur(hUr, hBoe, grenze, loecher) {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  grenze.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+  if (!isFinite(x0)) return { abtrag: 0, auftrag: 0 };
+  const h = 0.5, zelle = h * h;
+  let abtrag = 0, auftrag = 0;
+  for (let x = x0 + h / 2; x < x1; x += h) for (let z = z0 + h / 2; z < z1; z += h) {
+    const p = [x, z];
+    if (!pointInPolygon(p, grenze)) continue;
+    if ((loecher || []).some(fp => fp && fp.length >= 3 && pointInPolygon(p, fp))) continue;
+    const a = hUr(x, z), b = hBoe(x, z);
+    if (!isFinite(a) || !isFinite(b)) continue;
+    if (a > b) abtrag += (a - b) * zelle; else auftrag += (b - a) * zelle;
+  }
+  return { abtrag, auftrag };
+}
+
 function buildTerrain(heightFn, holeFps) {
   // outer shape is the actual parcel boundary — no flat field extending beyond it
   const outer = new THREE.Shape(parcelPoints.map(p => new THREE.Vector2(p[0], p[1])));
@@ -18013,7 +18067,7 @@ function buildCutFillSolid(poly, heightFn, flatLevel, terrainIsTop, color) {
   // Ohne Lichtberechnung: die Böschungsflächen der Baugrube wurden sonst je nach
   // Ausrichtung unterschiedlich dunkel — das sah nach Schmutz aus, nicht nach Aushub.
   const mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.66, side: THREE.DoubleSide,
+    color, transparent: true, opacity: 0.33, side: THREE.DoubleSide,   // halb so deckend wie bisher (Vorgabe Ozan, 12.10.2026)
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
   });
   const mesh = new THREE.Mesh(geo, mat);
@@ -21101,6 +21155,14 @@ function updateEconomicsUI() {
         : kpi(dichteRegel().kurz.replace(' max.', '') + ' Ist / Soll', dichteWert(m.gfzActual) + ' / ' + dichteWert(m.gfzAllowed), gfzCls)) +
       kpi('Geschosse', String(m.floors)) +
       kpi('Einheiten', m.units == null ? '–' : String(m.units)) +
+      (m.unitArea ? kpi('Wohnnutzfläche', fmtNum(m.unitArea) + ' m²') : '') +
+      (m.units ? kpi('Ø Wohnung', fmtNum(m.unitArea / m.units) + ' m²') : '') +
+      (m.volume ? kpi('Kubatur', fmtNum(m.volume) + ' m³') : '') +
+      (m.bebaut ? kpi('Bebaute Fläche', fmtNum(m.bebaut) + ' m²') : '') +
+      (m.hoehe ? kpi('Gebäudehöhe', fmtNum(m.hoehe, 2) + ' m') : '') +
+      (m.stallsRequired != null ? kpi('Stellplätze Ist / Soll', m.stalls + ' / ' + m.stallsRequired, stallCls) : '') +
+      (m.aushub ? kpi('Geländeaushub', fmtNum(m.aushub) + ' m³') : '') +
+      (m.boeAbtrag || m.boeAuftrag ? kpi('Böschung ab / auf', fmtNum(m.boeAbtrag || 0) + ' / ' + fmtNum(m.boeAuftrag || 0) + ' m³') : '') +
 
       (e ? kpi('Marge', fmtNum(e.margin * 100, 1) + ' %', e.margin >= e.target ? 'good' : (e.margin < 0 ? 'bad' : 'warn'), 'econ') : '');
     updateEconomicsUI._prev = next;
@@ -21606,6 +21668,9 @@ function rebuild() {
   setzWert('v-floorh', floorH.toFixed(1) + ' m');
   setzWert('v-maxh', maxH.toFixed(0) + ' m');
   setzWert('v-slope', slopePct.toFixed(0) + ' %');
+  { const bt = document.getElementById('toggle-boeschung'), br = document.getElementById('boeschung-row');
+    if (bt && br) { br.style.display = bt.checked ? '' : 'none';
+      setzWert('v-boeschung', Math.round(parseFloat((document.getElementById('boeschung-winkel') || {}).value || '45')) + '\u00b0'); } }
   setzWert('v-aspect', aspectDeg.toFixed(0) + '°');
   if (dgmActive()) { setzWert('v-slope', 'Gelände'); setzWert('v-aspect', 'Gelände'); }
   setzWert('v-factor', factor.toFixed(2));
@@ -22921,9 +22986,15 @@ function rebuild() {
   }
   dimensionGroup.visible = document.getElementById('toggle-dimensions').checked;
 
-  // ---- Das Gelände bleibt das natürliche Gelände: Anschüttung und Abgrabung ums Gebäude
-  // sind vorerst nicht Teil des Modells.
-  const terrainFn = heightFn;
+  // ---- Gelände: ohne Böschung bleibt es das natürliche Gelände ----------------
+  const boe = boeschungAktiv();
+  const terrainFn = boe ? boeschungFn(heightFn, baseLevel, parcelPoints, boe.winkel) : heightFn;
+  if (boe) {
+    try {
+      const kub = boeschungKubatur(heightFn, terrainFn, parcelPoints, groundFootprints);
+      totals.boeAbtrag = kub.abtrag; totals.boeAuftrag = kub.auftrag;
+    } catch (e) { totals.boeAbtrag = 0; totals.boeAuftrag = 0; }
+  } else { totals.boeAbtrag = 0; totals.boeAuftrag = 0; }
   liveFillHeightFn = terrainFn;
   pendingEntrances.forEach(en => { try { buildingGroup.add(buildEntranceGroup(en, en.floorY, terrainFn)); } catch (e) {} });
   window.__terrainHoleFps = terrainHoleFps;   // dieselben Löcher bekommt auch das Orthofoto
@@ -23132,6 +23203,43 @@ function rebuild() {
   scene.add(markerGroup);
   scene.add(dimensionGroup);
   scene.add(floorLineGroup);
+  // ---- Ansicht „Aushub": die drei Körper beschriften (Vorgabe Ozan, 12.10.2026) ----
+  // Der Kubaturnachweis im Exposé lebt von diesen drei Zahlen: was für die Baugrube
+  // weggeht, was die Böschung bewegt, und worauf sich beides bezieht.
+  if (viewMode() === 'aushub') try {
+    const mitte = fp => { const c = polygonCentroid(fp); return c; };
+    const beschrifte = (txt, x, y, z) => {
+      const sp = makeTextSprite(txt, '#e8e6e2', 1.0, { bg: 'rgba(20,20,24,0.72)' });
+      if (!sp) return;
+      sp.position.set(x, y, z);
+      sp.userData.aushubLevel = true;
+      earthworkGroup.add(sp);
+    };
+    // Urgelände: an einer Grundstücksecke, auf Höhe des natürlichen Geländes
+    { const c = mitte(parcelPoints);
+      let fern = parcelPoints[0], d0 = -1;
+      parcelPoints.forEach(p => { const d = Math.hypot(p[0] - c[0], p[1] - c[1]); if (d > d0) { d0 = d; fern = p; } });
+      beschrifte('Urgelände', fern[0], heightFn(fern[0], fern[1]) + 1.2, fern[1]); }
+    // Geländeaushub (Baugrube)
+    if (groundFootprints.length && totals.aushub > 0.5) {
+      const c = mitte(groundFootprints[0]);
+      beschrifte('Geländeaushub  ' + Math.round(totals.aushub) + ' m³', c[0], baseLevel - 1.4, c[1]);
+    }
+    // Geländeböschung
+    if ((totals.boeAbtrag || 0) + (totals.boeAuftrag || 0) > 0.5) {
+      const c = mitte(parcelPoints);
+      const txt = 'Geländeböschung  ' + Math.round(totals.boeAbtrag || 0) + ' m³ Abtrag'
+        + ((totals.boeAuftrag || 0) > 0.5 ? ' · ' + Math.round(totals.boeAuftrag) + ' m³ Auftrag' : '');
+      // auf halbem Weg zwischen Baukörper und Grundstücksgrenze
+      let p = c;
+      if (groundFootprints.length) { const g = mitte(groundFootprints[0]);
+        let fern = parcelPoints[0], d0 = -1;
+        parcelPoints.forEach(q => { const d = Math.hypot(q[0] - g[0], q[1] - g[1]); if (d > d0) { d0 = d; fern = q; } });
+        p = [(g[0] + fern[0]) / 2, (g[1] + fern[1]) / 2]; }
+      beschrifte(txt, p[0], (typeof liveFillHeightFn === 'function' ? liveFillHeightFn(p[0], p[1]) : heightFn(p[0], p[1])) + 1.2, p[1]);
+    }
+  } catch (e) { /* Beschriftung ist nur Darstellung */ }
+
   scene.add(earthworkGroup);
   scene.add(parkingGroup);
   scene.add(apartmentGroup);
@@ -23246,6 +23354,10 @@ function rebuild() {
     hi.textContent = m === '0' ? 'Alle Geschosse haben den vollen Grundriss — am Hang stecken die unteren Geschosse hangseitig voll im Erdreich (Aushub, Stützwände, unbelichtete Flächen).'
       : totals.hangCut > 1 ? base + ` Aktuell: ca. ${fmtNum(Math.round(totals.hangCut / 10) * 10)} m³ Baukörper weniger im Hang.` : base + ' Aktuell kein Einschnitt nötig (Gelände zu flach bzw. Baukörper nicht tief genug im Hang).'; } }
   document.getElementById('s-aushub').textContent = totals.aushub.toFixed(0) + ' m³';
+  { const bl = document.getElementById('s-boeschung');
+    if (bl) bl.textContent = (totals.boeAbtrag || totals.boeAuftrag)
+      ? (totals.boeAbtrag || 0).toFixed(0) + ' / ' + (totals.boeAuftrag || 0).toFixed(0) + ' m³'
+      : '– (nicht aktiv)'; }
   document.getElementById('s-auffuellung').textContent = totals.auffuellung.toFixed(0) + ' m³';
   if (false) document.getElementById('s-stellplaetze').textContent = ugCount > 0
     ? totals.stalls + ' · ' + (totals.stalls - (totals.stallsFrei || 0)) + ' UG'
@@ -23464,6 +23576,8 @@ function rebuild() {
     tirol: isTirol, bmdActual: lotArea > 0 ? totals.volumeAbove / lotArea : 0, bmdAllowed: bmd,
     nfdActual: lotArea > 0 ? 0.8 * totals.bgf / lotArea : 0, nfdAllowed: nfd, bdActual: lotArea > 0 ? totals.area / lotArea : 0, bdAllowed: bdMax,
     volume: totals.volumeAbove + totals.volumeBelow,
+    bebaut: totals.area, hoehe: maxHeight, aushub: totals.aushub,
+    boeAbtrag: totals.boeAbtrag || 0, boeAuftrag: totals.boeAuftrag || 0,
   };
   updateEconomicsUI();
   if (typeof updateRangeFills === 'function') updateRangeFills();
@@ -23484,7 +23598,7 @@ function resetPieceOverridesKeepHeight() { pieceOverrides = pieceOverrides.map(o
   document.getElementById(id).addEventListener('input', resetPieceOverridesKeepHeight)
 );
 
-['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ', 'eh-anzahl', 'eh-flaeche',
+['setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle', 'hang-mode', 'haus-typ', 'eh-anzahl', 'eh-flaeche', 'toggle-boeschung', 'boeschung-winkel',
  'building-gap', 'num-parts', 'split-angle',
  'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass', 'toggle-earthwork',
  'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'toggle-ortho', 'ortho-opacity'].forEach(id =>
@@ -23579,7 +23693,7 @@ document.querySelectorAll('.val').forEach(span => {
 });
 
 // ---- Datei/Bearbeiten: Undo/Redo, Speichern/Laden, PNG-Export ----
-const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'eh-modus', 'eh-nach', 'eh-anzahl', 'eh-flaeche', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
+const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'toggle-boeschung', 'boeschung-winkel', 'eh-modus', 'eh-nach', 'eh-anzahl', 'eh-flaeche', 'setback', 'gfz', 'floorh', 'maxh', 'slope', 'aspect', 'factor', 'ug-count', 'ug-height', 'ug-hang', 'z-offset', 'north-angle',
   'building-gap', 'num-parts', 'split-angle', 'toggle-eigen', 'light-intensity', 'camera-fov-mm', 'model-mode', 'view-mode',
   'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass',
   'toggle-earthwork', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'tree-seed', 'tree-style', 'toggle-ortho', 'ortho-opacity', 'nb-default-floors', 'site-preset', 'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-theme',
@@ -26167,7 +26281,8 @@ const FULL_KZ_ROWS = [
   ['Geschosszahl (je Baukörper)', 's-floors'], ['Gebäudehöhe (je Baukörper)', 's-height'],
   ['Bruttogeschossfläche (gesamt)', 's-bgf'], ['Kubaturmasse oberirdisch', 's-vol-above'],
   ['Kubaturmasse unterirdisch', 's-vol-below'], ['Kubaturmasse gesamt', 's-vol-total'],
-  ['Aushub (Erdmaterial entfernt)', 's-aushub'],
+  ['Geländeaushub (Baugrube)', 's-aushub'],
+  ['Geländeböschung (Abtrag / Auftrag)', 's-boeschung'],
   ['Einheiten / Bruttofläche', 's-wohnungen'], ['Erschließung', 's-erschliessung'], ['Erschließungsanteil', 's-erschl-anteil'],
   ['Spielplatz-Pflicht', 's-spielplatz'],
 ];
@@ -26784,14 +26899,18 @@ async function buildExposeImpressumPage(pageNum, totalPages) {
   const satzText = 'Diese Kubaturstudie wurde mit cubarc erstellt, auf Basis amtlicher Daten zu Kataster, Gelände und Widmung.';
   // Wortmarke halb so groß wie bisher (Regelwerk 6.1: Zeichen, nicht Plakat)
   const LOGO_H = 75, KARTE_H = 230;
+  // Datenquellen und rechtlicher Hinweis sind Kleingedrucktes — sie stehen da,
+  // wo man sie sucht, und drängen sich nicht auf (Vorgabe Ozan, 12.10.2026).
+  const KL = 16, KL_Z = 24;
   const satzZeilen = exWrap(ctx, satzText, cw, 400, 24).length;
-  const rechtZeilen = exWrap(ctx, rechtText, cw, 400, 22).length;
+  const rechtZeilen = exWrap(ctx, rechtText, cw, 400, KL).length;
   let hoehe = LOGO_H + 46 + satzZeilen * 40 + 40;
   if (acc) hoehe += KARTE_H + 46;
-  if (q.length) hoehe += 30 + q.length * 36 + 40;
-  hoehe += 34 + rechtZeilen * 36;
+  if (q.length) hoehe += 24 + q.length * 26 + 30;
+  hoehe += 26 + rechtZeilen * KL_Z;
   const oben = DX.bodyTop, unten = H - DX.footLine - 40;
-  let y = Math.max(oben, oben + (unten - oben - hoehe) / 2);
+  // Der Block sitzt unten links, nicht in der Seitenmitte
+  let y = Math.max(oben, unten - hoehe);
 
   exDrawCubarc(ctx, pad, y, LOGO_H, EX.ink);
   y += LOGO_H + 46;
@@ -26811,17 +26930,17 @@ async function buildExposeImpressumPage(pageNum, totalPages) {
     y += KARTE_H + 46;
   }
   if (q.length) {
-    dxLabel(ctx, 'Datenquellen', pad, y, EX.muted, 17); y += 30;
-    ctx.fillStyle = EX.line; ctx.fillRect(pad, y - 14, cw, 1.5);
+    dxLabel(ctx, 'Datenquellen', pad, y, EX.muted, 14); y += 24;
+    ctx.fillStyle = EX.line; ctx.fillRect(pad, y - 12, cw, 1);
     q.forEach(([k, v]) => {
-      exText(ctx, k, pad, y + 18, 600, 21, EX.ink);
-      exText(ctx, v, pad + 260, y + 18, 400, 21, EX.muted);
-      y += 36;
+      exText(ctx, k, pad, y + 13, 600, KL, EX.muted);
+      exText(ctx, v, pad + 220, y + 13, 400, KL, EX.muted);
+      y += 26;
     });
-    y += 40;
+    y += 30;
   }
-  dxLabel(ctx, 'Rechtlicher Hinweis', pad, y, EX.muted, 17); y += 34;
-  dxPara(ctx, rechtText, pad, y, cw, 22, 36, EX.muted);
+  dxLabel(ctx, 'Rechtlicher Hinweis', pad, y, EX.muted, 14); y += 26;
+  dxPara(ctx, rechtText, pad, y, cw, KL, KL_Z, EX.muted);
   drawExposeFooter(ctx, W, H, pad, pageNum, totalPages);
   return P.canvas;
 }
@@ -28348,7 +28467,8 @@ async function buildExposePage1Jpeg(pageNum, totalPages) {
     ['Gebäudehöhe', (() => { const h = wert('s-height'), mx = parseFloat((document.getElementById('maxh') || {}).value);
       return h && mx > 0 ? h + ' von ' + fmtNum(mx, 0) + ' m' : h; })()],
     ['Kubatur gesamt', wert('s-vol-total')],
-    ['Aushub', wert('s-aushub')],
+    ['Geländeaushub', wert('s-aushub')],
+    ['Geländeböschung', wert('s-boeschung')],
     ['Erschließungsanteil', (wert('s-erschl-anteil').match(/[\d.,]+\s*%/) || [''])[0]],
   ].map(([l, v]) => [l, exSchreib(v)]);
   // Randlose Bildseite mit Verlauf (Regelwerk 7.1): das Bild reicht über die volle Breite,
@@ -35062,7 +35182,7 @@ document.getElementById('toggle-2d').addEventListener('click', () => {
     ['Grundstück & Dichte', ['s-lot', 's-foot', 's-bmd', 's-nfd', 's-bd', 's-floors-gfz', 's-buildinggap-actual']],
     ['Geschosse & Höhe', ['s-floors', 's-height', 's-floors-h', 's-floors-shadow', 's-flucht']],
     ['Flächen & Kubatur', ['s-bgf', 's-vol-above', 's-vol-below', 's-vol-total', 's-wohnungen', 's-erschliessung', 's-erschl-anteil']],
-    ['Gelände', ['s-terraindiff', 's-baselevel', 's-aushub']],
+    ['Gelände', ['s-terraindiff', 's-baselevel', 's-aushub', 's-boeschung']],
     ['Untergeschoß & Nebenräume', ['s-stellplaetze', 's-stellplaetze-erforderlich', 's-keller', 's-fahrrad', 's-radraum', 's-muell', 's-moped']],
     ['Nachweise', ['s-oib-sum', 's-spielplatz', 's-spielplatz-flaeche']],
   ];
@@ -35609,7 +35729,7 @@ function northUpView() {
       <div class="rp-check"><div class="rp-ring" id="rp-ring"><i></i><b id="rp-ring-t">–</b></div><div><div class="rp-check-t" id="rp-check-h">Wird geprüft …</div><div class="rp-check-s" id="rp-check-s"></div></div></div>
       <div id="rp-todos"></div>
     </div>
-    <div class="rp-card"><div class="rp-h"><h3>Kennzahlen</h3><button class="rp-link" id="rp-stats" type="button">Alle anzeigen</button></div><div id="rp-kpi-slot"></div></div>
+    <div class="rp-card"><div class="rp-h"><h3>Kennzahlen</h3><button class="rp-link" id="rp-stats" type="button" hidden style="display:none;"></button></div><div id="rp-kpi-slot"></div></div>
     <div class="rp-card rp-econ" id="rp-econ"><div class="rp-h"><h3>Wirtschaftlichkeit</h3><button class="rp-link" id="rp-econ-edit" type="button">Annahmen</button></div><div id="rp-econ-slot"></div><button class="rp-more" id="rp-econ-all" type="button">Alle Kennzahlen zeigen</button><div id="rp-dash-slot"></div></div>
     <div class="rp-foot">Ersteinschätzung, keine Rechts- oder Steuerberatung. Alle Beträge netto.</div>`;
   bodyRow.appendChild(rp);
@@ -36506,7 +36626,7 @@ function northUpView() {
     wirtschaft: { t: 'Wirtschaftlichkeit', s: 'Marge, Gewinn, Erlös, Kosten' },
     flaechen: { t: 'Flächen & Kubatur', s: 'BGF, Nutzfläche, Baumasse', rows: [['Grundstücksfläche', 's-lot'], ['Bebaute Fläche', 's-foot'], ['Bruttogeschoßfläche', 's-bgf'], ['Wohnungen', 's-wohnungen'], ['Kubatur oberirdisch', 's-vol-above'], ['Kubatur gesamt', 's-vol-total']] },
     stellplaetze: { t: 'Stellplätze & Nebenräume', s: 'Garage, Keller, Fahrrad, Müll', rows: [['Stellplätze im UG', 's-stellplaetze'], ['Erforderlich', 's-stellplaetze-erforderlich'], ['Kellerabteile', 's-keller'], ['Fahrradabstellplätze', 's-fahrrad'], ['Müllraum', 's-muell'], ['Spielplatz', 's-spielplatz-flaeche']] },
-    gelaende: { t: 'Gelände & Aushub', s: 'Hang, Sockel, Erdbewegung', rows: [['Geländesprung', 's-terraindiff'], ['Bezugspunkt Sockel', 's-baselevel'], ['Aushub', 's-aushub'], ['Erschließung', 's-erschliessung'], ['Erschließungsanteil', 's-erschl-anteil']] },
+    gelaende: { t: 'Gelände & Aushub', s: 'Hang, Sockel, Erdbewegung', rows: [['Geländesprung', 's-terraindiff'], ['Bezugspunkt Sockel', 's-baselevel'], ['Geländeaushub', 's-aushub'], ['Geländeböschung', 's-boeschung']] },
     bauordnung: { t: 'Bauordnung', s: 'Dichte, Höhe, Abstand im Soll-Ist', rows: [['Geschoßzahl', 's-floors'], ['Gebäudehöhe', 's-height'], ['Geschosse nach Höhe', 's-floors-h'], ['Geschosse nach Lichtabstand', 's-floors-shadow'], ['OIB-Prüfung', 's-oib-sum']] },
     notiz: { t: 'Notiz', s: 'Freitext zum Projekt', notiz: true }
   };
@@ -38219,7 +38339,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.07';
+  const VERSION = 'v3.08';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
