@@ -13821,7 +13821,9 @@ function applySceneMood(showViz) {
   // instead) and in light mode for every other view. Dark mode's other views keep the
   // near-black void unchanged.
   const PARCEL_GREEN = 0x92a082; // -30% saturation from the light-mode base tone
-  if (terrainMesh) terrainMesh.material.color.set(ownParcelColor(showViz));
+  // Bei aktiver Böschung trägt das Gelände eigene Scheitelfarben (Urgelände / Gelände neu);
+  // die Grundstücksfarbe würde sie überlagern, deshalb bleibt das Material dann weiß.
+  if (terrainMesh) terrainMesh.material.color.set(terrainMesh.material.vertexColors ? 0xffffff : ownParcelColor(showViz));
   const bg = document.getElementById('viewport-bg');
   if (bg) bg.style.opacity = '1';
   const vp = document.querySelector('.viewport');
@@ -14197,7 +14199,11 @@ function buildTerrain(heightFn, holeFps) {
   const farben = boeAn ? new Float32Array(pos.count * 3) : null;
   const urFn = boeAn ? liveHeightFn : null;
   // „Gelände neu" ist dunkelgrün, das unveränderte Urgelände bleibt grau.
-  const GR = [0.102, 0.231, 0.141], GY = [0.102, 0.102, 0.122];
+  // In der Visualisierung liegt keine beige Gartenfläche mehr darueber (siehe rebuild) —
+  // deshalb traegt das Gelände dort selbst die hellen Töne: Urgelände beige, „Gelände neu" grün.
+  const vizAn = !!((document.getElementById('toggle-viz') || {}).checked);
+  const GR = vizAn ? [0.310, 0.420, 0.290] : [0.102, 0.231, 0.141];
+  const GY = vizAn ? [0.910, 0.882, 0.839] : [0.102, 0.102, 0.122];
   for (let i = 0; i < pos.count; i++) {
     const wx = pos.getX(i), wz = pos.getY(i);
     const h = heightFn(wx, wz);
@@ -23183,8 +23189,13 @@ function rebuild() {
   // Boden und Decke bleiben, wie sie sind.
   if (showViz) {
     finishVizAccumulator(vizAcc, vizGroup);
-    const garden = buildGardenLayer(heightFn, groundFootprints, seededRandom(4242), false); // Bäume entfernt
-    vizGroup.add(garden);
+    // Die beige Gartenfläche liegt flach auf dem Urgelände und verdeckt die Böschung
+    // vollständig — bei aktiver Böschung entfällt sie, das Gelände selbst zeigt dann
+    // Urgelände und „Gelände neu" (Vorgabe Ozan, 12.10.2026).
+    if (!boe) {
+      const garden = buildGardenLayer(heightFn, groundFootprints, seededRandom(4242), false); // Bäume entfernt
+      vizGroup.add(garden);
+    }
   }
 
   // In der Visualisierung leuchtet die Grundstücksgrenze orange — sie liegt dabei über
@@ -38610,7 +38621,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.11';
+  const VERSION = 'v3.12';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
