@@ -14133,6 +14133,14 @@ function boeschungFn(hUr, zEG, grenze, grad) {
 }
 // Kubatur der Böschung: zwischen Grundstücksgrenze und Baukörper über ein 0,5-m-Raster
 // integriert. Abtrag und Auftrag werden getrennt ausgewiesen.
+// Das Gelände, wie es nach Fertigstellung dasteht: mit Böschung das geböschte,
+// sonst das Urgelände. Die Fassade plant danach — eine Wand, vor der abgegraben
+// wird, steht frei und bekommt Fenster (OIB-RL 2023: Gelände nach Fertigstellung).
+function gelaendeNachBoeschung(hUr, zEG) {
+  const b = (typeof boeschungAktiv === 'function') ? boeschungAktiv() : null;
+  if (!b) return hUr;
+  try { return boeschungFn(hUr, zEG, parcelPoints, b.winkel); } catch (e) { return hUr; }
+}
 function boeschungKubatur(hUr, hBoe, grenze, loecher) {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   grenze.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
@@ -22881,7 +22889,7 @@ function rebuild() {
         liveVizArgsTmp.push({ fp, baseY: ebeneY(f), floorH: ebeneY(f + 1) - ebeneY(f), f, lowerFp: floorFootprints[f - 1] || null, upperFp: floorFootprints[f + 1] || null, pieceIdx, top: f === floorFootprints.length - 1, entryPt: vizOpts.entryPt || null, entryF: vizOpts.entryF || 0, planUnits: planUnitsF });
         vizOpts.planUnits = planUnitsF;
         if (showViz) {
-          buildVizFloor(vizAcc, fp, ebeneY(f), ebeneY(f + 1) - ebeneY(f), f, floorFootprints[f - 1] || null, floorFootprints[f + 1] || null, heightFn, pieceIdx, vizOpts);
+          buildVizFloor(vizAcc, fp, ebeneY(f), ebeneY(f + 1) - ebeneY(f), f, floorFootprints[f - 1] || null, floorFootprints[f + 1] || null, gelaendeNachBoeschung(heightFn, baseLevel), pieceIdx, vizOpts);
         }
       });
     }
@@ -28765,7 +28773,7 @@ function newExposeCanvas() {
 // ============================================================================
 function vecFacadeAcc() {
   const acc = newVizAccumulator(); acc.facade = [];
-  const opts = vizOptions(), hf = liveHeightFn || (() => 0);
+  const opts = vizOptions(), hf = (typeof liveFillHeightFn === 'function' && liveFillHeightFn) || liveHeightFn || (() => 0);
   (liveVizArgs || []).forEach(a => {
     opts.entryPt = a.entryPt; opts.entryF = a.entryF; opts.planUnits = a.planUnits;
     try { buildVizFloor(acc, a.fp, a.baseY, a.floorH, a.f, a.lowerFp, a.upperFp, hf, a.pieceIdx, opts); } catch (e) { /* nur Darstellung */ }
@@ -38456,7 +38464,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.14';
+  const VERSION = 'v3.15';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
