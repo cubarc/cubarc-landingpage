@@ -23139,40 +23139,13 @@ function rebuild() {
       } catch (e) {}
     });
   }
-  // ---- Urgelände als durchscheinender Schleier über dem neuen Gelände ----------
-  // Vorgabe Ozan (12.10.2026): In der Visualisierung soll die Böschung sichtbar sein.
-  // Dafür liegt das Urgelände mit rund 20 % Deckkraft darüber — man sieht auf einen
-  // Blick, wo abgegraben und wo angeschüttet wurde.
-  if (boe && heightFn !== terrainFn) try {
-    const sh2 = new THREE.Shape(parcelPoints.map(p => new THREE.Vector2(p[0], p[1])));
-    (terrainHoleFps || []).forEach(fp => { if (fp && fp.length >= 3) sh2.holes.push(new THREE.Path(fp.map(p => new THREE.Vector2(p[0], p[1])))); });
-    const g2 = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh2));
-    const p2 = g2.attributes.position, A = new Float32Array(p2.count * 3);
-    for (let i = 0; i < p2.count; i++) {
-      const wx = p2.getX(i), wz = p2.getY(i);
-      A[i * 3] = wx; A[i * 3 + 1] = heightFn(wx, wz) + 0.02; A[i * 3 + 2] = wz;
-    }
-    g2.setAttribute('position', new THREE.Float32BufferAttribute(A, 3));
-    g2.computeVertexNormals();
-    const m2 = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({
-      color: showViz ? 0xbdbab3 : 0x8d8a84, roughness: 1, side: THREE.DoubleSide,
-      transparent: true, opacity: 0.2, depthWrite: false
-    }));
-    m2.renderOrder = 1; m2.raycast = () => {};
-    m2.userData.urgelaende = true;
-    terrainMesh.add(m2);
-    // dünne Kante, damit die Lage des Urgeländes auch im Gegenlicht ablesbar bleibt
-    const kante = new THREE.LineSegments(new THREE.EdgesGeometry(g2, 32),
-      new THREE.LineBasicMaterial({ color: 0x9a9aa2, transparent: true, opacity: 0.25, depthWrite: false }));
-    kante.renderOrder = 1; terrainMesh.add(kante);
-  } catch (e) { /* der Schleier ist nur Darstellung */ }
   if (dgmActive() && document.getElementById('toggle-contours').checked && viewMode() !== 'aushub') { const cl = buildContourLines(showViz); if (cl) terrainMesh.add(cl); }
   // Umgebung (Nachbargrundstücke, -häuser, Höhenlinien der Umgebung, Sockel, Bäume) liegt auf
   // Ebene 2: nur im 3D-Fenster sichtbar — die 2D-Ansichten und das Exposé zeigen nur das
   // eigene Grundstück und das Projekt
   const toSiteLayer = o => { if (o) o.traverse(c => c.layers.set(SITE_LAYER)); return o; };
   if (dgmActive() && document.getElementById('toggle-contours-site').checked && viewMode() !== 'aushub') { const cs = toSiteLayer(buildSiteContours(showViz)); if (cs) terrainMesh.add(cs); }
-  { const sg = toSiteLayer(buildSiteGround(heightFn, showViz)); if (sg) terrainMesh.add(sg); }
+  { const sg = toSiteLayer(buildSiteGround(terrainFn, showViz)); if (sg) terrainMesh.add(sg); }
   { const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz)); if (nb) terrainMesh.add(nb); }
   { const pl = toSiteLayer(buildSitePlinth(heightFn, showViz)); if (pl) terrainMesh.add(pl); }
   applyGroundGlass(showViz);
@@ -23791,8 +23764,8 @@ const LAYER_VIEW_PRESETS = {
   huellkoerper: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': true, 'toggle-parcelline': true, 'toggle-minsetback': true, 'toggle-earthwork': false, 'toggle-parking': true, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   widmung: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   aushub: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': true, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
-  einheiten: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false, 'toggle-trees': false, 'toggle-ortho': false, 'toggle-neighbours': false, 'toggle-nb-volumes': false, 'toggle-contours': false, 'toggle-contours-site': false },
-  visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
+  einheiten: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false },
+  visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false, 'toggle-ortho': true, 'ortho-opacity': 25 },
   schnitt: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false },
 };
 
@@ -23801,7 +23774,12 @@ function applyViewPreset(mode) {
   if (!(mode === 'massenmodell' || mode === 'massenmodell2')) { selectedPieceIdx = null; selectedFloorIdx = null; }
   const preset = LAYER_VIEW_PRESETS[mode];
   if (!preset) return;
-  Object.entries(preset).forEach(([id, val]) => { document.getElementById(id).checked = val; });
+  // Eine Voreinstellung kann auch einen Zahlenwert setzen (z. B. die Deckkraft des
+  // Orthofotos) — dann wird value gesetzt, nicht checked.
+  Object.entries(preset).forEach(([id, val]) => {
+    const e = document.getElementById(id); if (!e) return;
+    if (e.type === 'checkbox') e.checked = !!val; else e.value = val;
+  });
   // Geschossmodell/Maximalhüllkörper ist kein eigener Umschalter mehr, sondern einfach
   // eine weitere Ansicht in derselben Liste
   // Maximalhüllkörper UND Flächenwidmung zeigen den Hüllkörper (rot transparent) statt der Geschosse
@@ -38632,7 +38610,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.10';
+  const VERSION = 'v3.11';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
