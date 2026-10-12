@@ -4759,9 +4759,9 @@ window.KUBATUR_ABO_SERVER = 'probe';
         <div class="stat-row limit"><span class="k">Geschosszahl (je Baukörper)</span><span class="v" id="s-floors">–</span></div>
         <div class="stat-row limit"><span class="k">Gebäudehöhe (je Baukörper)</span><span class="v" id="s-height">–</span></div>
         <div class="stat-row"><span class="k">Bruttogeschossfläche (gesamt)</span><span class="v" id="s-bgf">–</span></div>
-        <div class="stat-row"><span class="k">Kubaturmasse oberirdisch</span><span class="v" id="s-vol-above">–</span></div>
-        <div class="stat-row"><span class="k">Kubaturmasse unterirdisch</span><span class="v" id="s-vol-below">–</span></div>
-        <div class="stat-row limit"><span class="k">Kubaturmasse gesamt</span><span class="v" id="s-vol-total">–</span></div>
+        <div class="stat-row"><span class="k">Baumasse (oberirdisch)</span><span class="v" id="s-vol-above">–</span></div>
+        <div class="stat-row"><span class="k">unter Gelände</span><span class="v" id="s-vol-below">–</span></div>
+        <div class="stat-row limit"><span class="k">Bruttorauminhalt (BRI)</span><span class="v" id="s-vol-total">–</span></div>
         <div class="stat-row"><span class="k">Geländesprung im Baufeld</span><span class="v" id="s-terraindiff">–</span></div>
         <div class="stat-row"><span class="k">Bezugspunkt Sockel</span><span class="v" id="s-baselevel">–</span></div>
         <div class="stat-row"><span class="k">Geländeaushub (Baugrube)</span><span class="v" id="s-aushub">–</span></div>
@@ -13720,7 +13720,7 @@ function ownLift(c, k) { return new THREE.Color(c).lerp(new THREE.Color(0xffffff
 //            'bmd' = Baumasse/Grundstück, 'keine' = das Land kennt keine Dichtezahl)
 //   faktor:  Vorarlberg zählt dieselbe Verhältniszahl mal 100
 const DICHTE_BL = {
-  tirol:      { rechnet: 'bmd',   kurz: 'BMD max.',    lang: 'Baumassendichte (BMD)',    quelle: '§ 61 TROG 2022 — Baumassen-, Bebauungs- und Nutzflächendichte statt einer Geschoßflächenzahl' },
+  tirol:      { rechnet: 'bmd',   kurz: 'BMD max.',    lang: 'Baumassendichte (BMD)',    quelle: '§ 61 TROG 2022 — Baumasse (umschlossener Raum oberhalb der maßgeblichen Erdoberfläche) zur Bauplatzfläche; maßgeblich ist das veränderte Gelände, ab dem Böschungsfuß gekappt mit 33 Grad. Verkehrsflächen nach § 2 Abs. 23 TBO 2022 zählen nicht zur Bauplatzfläche.' },
   wien:       { rechnet: 'keine', kurz: 'Bauklasse',   lang: 'keine Dichtekennzahl',     quelle: 'BO für Wien: Bauklasse, Gebäudehöhe und bebaute Fläche statt einer Dichtezahl (§ 75 ff.)' },
   noe:        { rechnet: 'gfz',   kurz: 'GFZ max.',    lang: 'Geschoßflächenzahl (GFZ)', quelle: '§ 4 Z 17 NÖ BO 2014 — Grundrissflächen aller oberirdischen Geschoße zur Bauplatzfläche' },
   ooe:        { rechnet: 'gfz',   kurz: 'GFZ max.',    lang: 'Geschoßflächenzahl (GFZ)', quelle: 'Oö. ROG 1994 — Gesamtgeschoßfläche zur Bauplatzfläche; Näheres im Bebauungsplan' },
@@ -14148,6 +14148,54 @@ function gelaendeNachBoeschung(hUr, zEG) {
   const b = (typeof boeschungAktiv === 'function') ? boeschungAktiv() : null;
   if (!b) return hUr;
   try { return boeschungFn(hUr, zEG, parcelPoints, b.winkel); } catch (e) { return hUr; }
+}
+// ============================================================================
+// Kubatur — zwei Rechnungen, die nicht verwechselt werden dürfen
+// ----------------------------------------------------------------------------
+// ÖNORM B 1800 · Bruttorauminhalt (BRI): der ganze Baukörper, von der Unterfläche
+//   der konstruktiven Bauwerkssohle bis zur Oberfläche der Dachhaut. Das Gelände
+//   spielt dabei KEINE Rolle — der Keller zählt voll mit. Gerechnet wird je Ebene
+//   Grundrissfläche × Höhe; beim untersten Geschoß kommt die Dicke der Bauwerks-
+//   sohle dazu (BRI_SOHLE).
+// TROG 2022 § 61 Abs. 3 · Baumasse: nur der Raum, den das Gebäude OBERHALB der
+//   Erdoberfläche umschließt. Maßgeblich ist das Gelände NACH der Veränderung,
+//   wenn durch oder im Hinblick auf die Bauführung verändert wurde. Steigt das
+//   veränderte Gelände ab dem Böschungsfuß steiler als 33 Grad, zählt stattdessen
+//   der Schnitt einer 33-Grad-Linie mit der Außenhaut — eine Anschüttung kann ein
+//   Gebäude also nicht unterirdisch rechnen. Baumassendichte = Baumasse / Bauplatz.
+// Die Bauordnungen der übrigen Länder stellen ebenfalls auf das Gelände nach
+//   Fertigstellung ab; die 33-Grad-Kappung ist eine Tiroler Besonderheit und wird
+//   nur dort angewandt.
+// ============================================================================
+const BRI_SOHLE = 0.30;        // m — Bauwerkssohle, ÖNORM B 1800
+const TROG_KAPP_GRAD = 33;     // TROG 2022 § 61 Abs. 3
+// nächstgelegener Punkt auf dem Rand eines Polygons (Böschungsfuß)
+function randPunktNaechster(p, ring) {
+  let best = null, bd = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+    let t = L2 > 0 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const q = [a[0] + dx * t, a[1] + dz * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best;
+}
+// Die für die Baumasse maßgebliche Erdoberfläche.
+function baumasseGelaende(hUr, hNeu, grenze, kappen) {
+  if (hNeu === hUr) return hUr;
+  if (!kappen || !grenze || grenze.length < 3) return hNeu;
+  const t = Math.tan(TROG_KAPP_GRAD * Math.PI / 180);
+  return (x, z) => {
+    const n = hNeu(x, z), u = hUr(x, z);
+    if (!(n > u + 1e-6)) return n;                  // Abtrag oder unverändert
+    // Die Anschüttung beginnt an der Grundgrenze (dort liegt das Urgelände) — von
+    // diesem Böschungsfuß aus wird die 33-Grad-Linie angelegt.
+    const f = randPunktNaechster([x, z], grenze);
+    if (!f) return n;
+    return Math.min(n, hUr(f[0], f[1]) + t * Math.hypot(x - f[0], z - f[1]));
+  };
 }
 function boeschungKubatur(hUr, hBoe, grenze, loecher) {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -21354,7 +21402,7 @@ function updateEconomicsUI() {
       kpi('Einheiten', m.units == null ? '–' : String(m.units)) +
       (m.unitArea ? kpi('Wohnnutzfläche', fmtNum(m.unitArea) + ' m²') : '') +
       (m.units ? kpi('Ø Wohnung', fmtNum(m.unitArea / m.units) + ' m²') : '') +
-      (m.volume ? kpi('Kubatur', fmtNum(m.volume) + ' m³') : '') +
+      (m.volume ? kpi('Kubatur (BRI)', fmtNum(m.volume) + ' m³') : '') +
       (m.bebaut ? kpi('Bebaute Fläche', fmtNum(m.bebaut) + ' m²') : '') +
       (m.hoehe ? kpi('Gebäudehöhe', fmtNum(m.hoehe, 2) + ' m') : '') +
       (m.stallsRequired != null ? kpi('Stellplätze Ist / Soll', m.stalls + ' / ' + m.stallsRequired, stallCls) : '') +
@@ -21990,6 +22038,9 @@ function rebuild() {
       if (!best || polygonArea(best.fp) < 60 || best.d > 6.0) return null;   // kein „Zwerg-Penthouse“ mitten auf dem Dach
       best.fp.staffel = best.d; return best;
     };
+    // dieselbe maßgebliche Erdoberfläche wie in der endgültigen Rechnung — sonst plant
+    // die Vorbemessung gegen das Urgelände und die BMD stimmt am Ende nicht mehr
+    const massFn = baumasseGelaende(heightFn, gelaendeNachBoeschung(heightFn, base), parcelPoints, isTirol);
     for (let f = 0; f < floorsMax; f++) {
       const floorTopY = base + (f + 1) * floorH;
       const edgeDistances = parcelPoints.map((p1, i) => {
@@ -22002,7 +22053,7 @@ function rebuild() {
       if (a < 6 || a > prevA + 1e-6) break;
       // Tirol: Baumassendichte / Nutzflächendichte begrenzen die Geschosszahl
       // oberirdische Baumasse: nur der Teil des Geschosses über dem Gelände (wie in den Kennzahlen)
-      const yB = base + f * floorH, aboveH = floorH * (1 - floorBelowFrac(fp, yB, yB + floorH, heightFn));
+      const yB = base + f * floorH, aboveH = floorH * (1 - floorBelowFrac(fp, yB, yB + floorH, massFn));
       // Rest bis zur Soll-Dichte (in m² BGF dieses Geschosses)
       let room = targetBgf - cumBgf;
       if (isTirol && f > 0) {
@@ -22255,9 +22306,9 @@ function rebuild() {
     const band0 = zuschneiden(masterFootprintsGlobal[0], 0);
     const pieceOffset = zOffset + dzPiece;
     const baseLevel = (band0 && band0.length >= 3 ? lowestTerrainUnder(heightFn, band0) : baseLevelGlobal - zOffset) + pieceOffset;
-    // Ober- und unterirdisch werden an der Geländeoberfläche NACH Fertigstellung geteilt
-    // (OIB-RL 2023) — mit aktiver Böschung ist das das geböschte Gelände, sonst das Urgelände.
-    const kubFn = gelaendeNachBoeschung(heightFn, baseLevel);
+    // Die Baumasse wird an der maßgeblichen Erdoberfläche geteilt: dem Gelände nach
+    // Fertigstellung, in Tirol gekappt durch die 33-Grad-Linie des TROG (§ 61 Abs. 3).
+    const kubFn = baumasseGelaende(heightFn, gelaendeNachBoeschung(heightFn, baseLevel), parcelPoints, isTirol);
     const masterFootprints = computeMasterFootprints(baseLevel, pieceOffset);
     if (!masterFootprints.length) return;
     const hideFloorsAboveSelected = f => selPieceIdx === pieceIdx && f > selFloorIdx;
@@ -22760,6 +22811,23 @@ function rebuild() {
       });
       window.kubaturSolids.push({ piece: pieceIdx, fp: groundFootprint, holes: null, y0: baseLevel - (lvl + 1) * ugHeight, top: baseLevel - lvl * ugHeight, ug: true });
     }
+    // ÖNORM B 1800: der Bruttorauminhalt reicht bis zur UNTERFLÄCHE der konstruktiven
+    // Bauwerkssohle — beim untersten Geschoß zählt deren Dicke mit. Sie steht als eigene
+    // Zeile im Nachweis, damit die Herkunft des Wertes sichtbar bleibt. (Streifenfunda-
+    // mente, Rollierung und Sauberkeitsschicht liegen laut Norm außerhalb.)
+    if (modelMode !== 'envelope' && groundFootprint && groundFootprint.length >= 3) {
+      const ySo1 = baseLevel - ugCount * ugHeight, ySo0 = ySo1 - BRI_SOHLE;
+      const aSo = polygonArea(groundFootprint), vSo = aSo * BRI_SOHLE;
+      const bfSo = floorBelowFrac(groundFootprint, ySo0, ySo1, kubFn);
+      totals.volumeBelow += vSo * bfSo;
+      totals.volumeAbove += vSo * (1 - bfSo);
+      window.kubaturNachweisRows.push({
+        piece: pieceIdx, floor: -100, label: 'Bauwerkssohle', yBottom: ySo0, yTop: ySo1,
+        floorH: BRI_SOHLE, area: aSo, volume: vSo, belowFrac: bfSo,
+        volBelow: vSo * bfSo, volAbove: vSo * (1 - bfSo), staffelung: false, sohle: true,
+      });
+      window.kubaturSolids.push({ piece: pieceIdx, fp: groundFootprint, holes: null, y0: ySo0, top: ySo1, ug: true });
+    }
 
     // floor slabs, dashed floor lines, shadow-point markers — EG (first floor above UG),
     // OG (all floors in between), DG (topmost floor), each with its own earth tone.
@@ -22794,13 +22862,14 @@ function rebuild() {
       const envTopPlane = { A: gPlane.A, B: gPlane.B, C: gPlane.C + maxH };
       const envAbsCap = Math.min(topAbsY != null ? topAbsY : Infinity, bmdEnvCapH != null ? baseLevel + bmdEnvCapH : Infinity);
       const envTopY = Math.min(envAbsCap, Math.max(baseLevel + 0.1, ...envFp0.map(p => planeZ(envTopPlane, p))));
-      const body = buildMaxBody(envFp0, baseLevel, envAbsCap, roofEnvs, showViz ? 0xffffff : 0xf5f5f3, heightFn, envTopPlane);
+      // Der Hüllkörper teilt sich an derselben maßgeblichen Erdoberfläche wie die Geschoßbauten
+      const body = buildMaxBody(envFp0, baseLevel, envAbsCap, roofEnvs, showViz ? 0xffffff : 0xf5f5f3, kubFn, envTopPlane);
       buildingGroup.add(body.group);
       currentMaxBodies.push(body.group);
       (window.__maxBodies = window.__maxBodies || []).push({ body, footprintAt, baseLevel });
       totals.volumeAbove += body.above;
       totals.volumeBelow += body.below;
-      window.kubaturNachweisRows.push(...envelopeKubaturRows(pieceIdx, body.S0, body.H, baseLevel, envTopY - baseLevel, heightFn));
+      window.kubaturNachweisRows.push(...envelopeKubaturRows(pieceIdx, body.S0, body.H, baseLevel, envTopY - baseLevel, kubFn));
       if (body.S0 && body.H) window.kubaturSolids.push({ piece: pieceIdx, fp: body.S0, holes: null, y0: baseLevel, top: body.H });
       // 2D-Fenster/Exposé zeigen auch hier die Massenmodell-Darstellung: der Hüllkörper wird
       // in Geschosse geschnitten (Umriss je Geschoss = zulässige Fläche an der Geschossdecke)
@@ -26577,8 +26646,8 @@ const FULL_KZ_ROWS = [
   ['Abstand zwischen Gebäuden (Ist)', 's-buildinggap-actual'], ['Geschosse nach GFZ', 's-floors-gfz'],
   ['Geschosse nach Höhenlimit', 's-floors-h'], ['Geschosse nach Lichtabstand', 's-floors-shadow'],
   ['Geschosszahl (je Baukörper)', 's-floors'], ['Gebäudehöhe (je Baukörper)', 's-height'],
-  ['Bruttogeschossfläche (gesamt)', 's-bgf'], ['Kubaturmasse oberirdisch', 's-vol-above'],
-  ['Kubaturmasse unterirdisch', 's-vol-below'], ['Kubaturmasse gesamt', 's-vol-total'],
+  ['Bruttogeschossfläche (gesamt)', 's-bgf'], ['Baumasse (oberirdisch)', 's-vol-above'],
+  ['unter Gelände', 's-vol-below'], ['Bruttorauminhalt (BRI)', 's-vol-total'],
   ['Geländeaushub (Baugrube)', 's-aushub'],
   ['Geländeböschung (Abtrag / Auftrag)', 's-boeschung'],
   ['Einheiten / Bruttofläche', 's-wohnungen'], ['Erschließung', 's-erschliessung'], ['Erschließungsanteil', 's-erschl-anteil'],
@@ -27470,7 +27539,7 @@ async function buildExposeSummaryPage(pageNum, totalPages) {
   const num = t => fmtNum(parseFloat(String(t).split(' (')[0].replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0);
   const va = num(g('s-vol-above')) + ' m³', vb = num(g('s-vol-below')) + ' m³';
   const ph = landscape ? 190 : 220;
-  dxPull(ctx, pad, y, cw, ph, ['Kubatur gesamt', fmtNum(m.volume) + ' m³'], [['oberirdisch', va], ['unterirdisch', vb]]);
+  dxPull(ctx, pad, y, cw, ph, ['Bruttorauminhalt (BRI)', fmtNum(m.volume) + ' m³'], [['Baumasse', va], ['unter Gelände', vb]]);
   y += ph + gap;
   // Bilder: Weißmodell + Kubatur-Explosion
   const kpiRows = 2, kpiH = kpiRows * 124;
@@ -27481,7 +27550,7 @@ async function buildExposeSummaryPage(pageNum, totalPages) {
   dxImage(ctx, vis, pad, y, iw, imgH, 'summary', 1.55);
   const ex = cachedExposeCapture('kubex:sum', () => { try { return renderKubaturExplosion(1000, 900); } catch (err) { return null; } });
   dxImage(ctx, ex && ex.canvas, pad + iw + gap, y, iw, imgH, null, 1.0);
-  dxCaption(ctx, 'Kubatur: oberirdisch hell, unterirdisch braun', pad + iw + gap + 36, y + imgH - 30);
+  dxCaption(ctx, 'Baumasse hell, unter Gelände braun', pad + iw + gap + 36, y + imgH - 30);
   y += imgH + gap + 10;
   // Kennzahlen
   const items = [
@@ -27766,13 +27835,13 @@ async function buildExposeAushubPage(pageNum, totalPages) {
   return P.canvas;
 }
 
-// ---- Seite: Kubaturnachweis — je Geschoß Grundrissfläche, Höhe, Rauminhalt (V = A · h nach
-// ÖNORM B 1800) und der Anteil ober-/unterirdisch nach OIB-RL 2023 (>50 % der Außenwandfläche
-// unter der Geländeoberfläche nach Fertigstellung = unterirdisches Geschoß). Statt pauschal auf
-// 0 % oder 100 % zu runden, wird der Anteil hier flächengewichtet über ein Raster im Grundriss
-// bestimmt (siehe floorBelowFrac) — Grundlage sind dieselben Zeilen, aus denen auch die Kacheln
-// "Kubaturmasse oberirdisch/unterirdisch" und die BMD gespeist werden, die Summe unten muss also
-// exakt mit diesen Werten übereinstimmen (das ist der eigentliche Nachweis).
+// ---- Seite: Kubaturnachweis — je Geschoß Grundrissfläche, Höhe und Bruttorauminhalt
+// (V = A · h nach ÖNORM B 1800, beim untersten Geschoß zuzüglich der Bauwerkssohle), dazu der
+// Anteil, der oberhalb der maßgeblichen Erdoberfläche liegt und damit zur Baumasse zählt
+// (§ 61 Abs. 3 TROG 2022). Statt pauschal auf 0 % oder 100 % zu runden, wird dieser Anteil
+// flächengewichtet über ein Raster im Grundriss bestimmt (siehe floorBelowFrac) — Grundlage
+// sind dieselben Zeilen, aus denen auch die Kacheln und die BMD gespeist werden, die Summe
+// unten muss also exakt mit diesen Werten übereinstimmen (das ist der eigentliche Nachweis).
 // ---- Seite: Lage & Umgebung — Symbolbilder von Pexels (API-Schlüssel des Nutzers, nur im
 // Browser gespeichert). Bilder sind ausdrücklich als Symbolbilder gekennzeichnet, mit Fotograf. ----
 const pexelsMem = { key: null, cache: {}, status: null };
@@ -28193,12 +28262,16 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   const isEnvelope = rows.some(r => r.envelope);
   const sumAbove = rows.reduce((s, r) => s + r.volAbove, 0), sumBelow = rows.reduce((s, r) => s + r.volBelow, 0);
   const boeAn = !!(liveMetrics && ((liveMetrics.boeAbtrag || 0) > 0.5 || (liveMetrics.boeAuftrag || 0) > 0.5));
-  y = dxPara(ctx, 'Der Baukörper wird an der Geländeoberfläche nach Fertigstellung geteilt: darüber oberirdische, darunter unterirdische Kubatur (OIB-RL 2023). Volumen nach ÖNORM B 1800 als Grundrissfläche × Höhe.'
-    + (boeAn ? ' Die Zeichnung zeigt beide Geländemodelle: das Gelände nach Fertigstellung als Teilungsfläche und darunter das Urgelände als Bestand — es ist der gesetzliche Bezugspunkt für jede Geländeveränderung.' : '')
-    + (isEnvelope ? ' Im Maximalhüllkörper wird in gleich hohe Ebenen zerlegt.' : ''), pad, y + 8, cw * 0.8, 23, 38, EX.lead, 4) + 26;
+  const istTirol = (document.getElementById('bundesland') || {}).value === 'tirol';
+  y = dxPara(ctx, 'Zwei Rechnungen, die auseinanderzuhalten sind. Der Bruttorauminhalt nach ÖNORM B 1800 ist der ganze Baukörper — von der Unterfläche der konstruktiven Bauwerkssohle bis zur Oberfläche der Dachhaut, Untergeschoße eingeschlossen; das Gelände spielt dabei keine Rolle. Die Baumasse ist nur der Raum, den das Gebäude oberhalb der Erdoberfläche umschließt; sie allein geht in die Baumassendichte ein.'
+    + (istTirol
+      ? ' Maßgeblich ist nach § 61 Abs. 3 TROG 2022 das Gelände nach der Veränderung, wenn durch oder im Hinblick auf die Bauführung verändert wurde — steigt es ab dem Böschungsfuß steiler als 33 Grad, zählt stattdessen der Schnitt der 33-Grad-Linie. Eine Anschüttung kann ein Gebäude damit nicht unterirdisch rechnen.'
+      : ' Maßgeblich ist das Gelände nach Fertigstellung; die 33-Grad-Kappung des Tiroler Raumordnungsgesetzes wird hier nicht angewandt.')
+    + (boeAn ? ' Die Zeichnung zeigt beide Geländemodelle: die maßgebliche Erdoberfläche als Teilungsfläche und darunter das Urgelände als Bestand.' : '')
+    + (isEnvelope ? ' Im Maximalhüllkörper wird in gleich hohe Ebenen zerlegt.' : ''), pad, y + 8, cw * 0.8, 23, 38, EX.lead, 7) + 26;
   const pieceIds = [...new Set(rows.map(r => r.piece))];
   const rowH = Math.max(34, Math.min(50, 560 / (rows.length + 1)));
-  const tableH = 40 + rows.length * rowH + 90 + (boeAn ? 300 : 0);   // Platz für die Erdbaumassen
+  const tableH = 40 + rows.length * rowH + 90 + 134 + (boeAn ? 300 : 0);   // Kennwerte + Erdbaumassen
   const imgH = Math.max(560, Math.min(landscape ? H * 0.55 : 1100, bottom - y - tableH - 40));
   const imgW = Math.round(cw * 0.64), labX = pad + imgW + 50;
   const ex = cachedExposeCapture('kubex:' + imgW + 'x' + Math.round(imgH), () => { try { return renderKubaturExplosion(imgW, Math.round(imgH)); } catch (e) { console.warn('Kubatur-Explosion', e); return null; } });
@@ -28216,13 +28289,13 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
     ctx.save(); ctx.font = `300 64px ${EX_FONT}`; ctx.letterSpacing = '-2px'; ctx.fillStyle = EX.ink; ctx.fillText(value, labX, ly + 46); ctx.restore();
     exText(ctx, sub, labX, ly + 86, 400, 20, EX.muted);
   };
-  label(ex && ex.above, y + imgH * 0.2, 'Oberirdisch', `${fmtNum(sumAbove)} m³`, `${pct(sumAbove)} % · über Gelände`, exBelowColor(0.08));
-  label(ex && ex.below, y + imgH * 0.7, 'Unterirdisch', `${fmtNum(sumBelow)} m³`, `${pct(sumBelow)} % · unter Gelände`, exBelowColor(1));
+  label(ex && ex.above, y + imgH * 0.2, 'Baumasse · oberirdisch', `${fmtNum(sumAbove)} m³`, `${pct(sumAbove)} % des BRI · über der maßgeblichen Erdoberfläche`, exBelowColor(0.08));
+  label(ex && ex.below, y + imgH * 0.7, 'Unter Gelände', `${fmtNum(sumBelow)} m³`, `${pct(sumBelow)} % des BRI · zählt nicht zur Baumasse`, exBelowColor(1));
   const lyP = y + imgH * 0.44;
   const zwei = !!(ex && ex.zwei);
   if (ex && ex.plate) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.plate[0], y + ex.plate[1]); ctx.lineTo(labX - 10, lyP - 6); ctx.stroke(); ctx.setLineDash([]); }
-  exText(ctx, zwei ? 'Gelände neu — nach Fertigstellung' : 'Grundstück / Gelände', labX, lyP, 600, 21, EX.ink);
-  exText(ctx, 'Teilungsfläche, Schnittlinie strichliert', labX, lyP + 30, 400, 19, EX.muted);
+  exText(ctx, zwei ? 'Maßgebliche Erdoberfläche' : 'Grundstück / Gelände', labX, lyP, 600, 21, EX.ink);
+  exText(ctx, zwei ? 'Gelände nach Fertigstellung, Schnittlinie strichliert' : 'Teilungsfläche, Schnittlinie strichliert', labX, lyP + 30, 400, 19, EX.muted);
   if (zwei) {
     const lyU = lyP + 74;
     if (ex.ur) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.ur[0], y + ex.ur[1]); ctx.lineTo(labX - 10, lyU - 6); ctx.stroke(); ctx.setLineDash([]); }
@@ -28231,7 +28304,7 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   }
   y += imgH + 44;
   // Tabelle
-  const cols = [['Baukörper', 0.13, 'left'], ['Geschoß', 0.11, 'left'], ['A [m²]', 0.12, 'right'], ['h [m]', 0.09, 'right'], ['V [m³]', 0.13, 'right'], ['erdber.', 0.12, 'right'], ['V oberird.', 0.15, 'right'], ['V unterird.', 0.15, 'right']];
+  const cols = [['Baukörper', 0.13, 'left'], ['Geschoß', 0.11, 'left'], ['A [m²]', 0.12, 'right'], ['h [m]', 0.09, 'right'], ['BRI [m³]', 0.13, 'right'], ['erdber.', 0.12, 'right'], ['Baumasse', 0.15, 'right'], ['unter Gelände', 0.15, 'right']];
   let cx = pad; const colX = cols.map(([, f]) => { const x = cx; cx += f * cw; return x; });
   const tx = (i, t, yy, wgt, sz, col) => exText(ctx, t, cols[i][2] === 'right' ? colX[i] + cols[i][1] * cw - 12 : colX[i] + 12, yy, wgt, sz, col, cols[i][2]);
   cols.forEach((c, i) => { ctx.save(); ctx.font = `600 16px ${EX_FONT}`; ctx.letterSpacing = '0.08em'; ctx.fillStyle = EX.muted; ctx.textAlign = c[2]; ctx.fillText(c[0].toUpperCase(), c[2] === 'right' ? colX[i] + c[1] * cw - 12 : colX[i] + 12, y); ctx.restore(); });
@@ -28245,9 +28318,19 @@ async function buildExposeKubaturPage(pageNum, totalPages) {
   });
   y += rows.length * rowH + 8;
   ctx.fillStyle = EX.line; ctx.fillRect(pad, y, cw, 2); y += 42;
-  const sv = ['Summe', `${rows.length} ${isEnvelope ? 'Ebenen' : 'Geschoße'}`, fmtNum(rows.reduce((s, r) => s + r.area, 0)), '', fmtNum(tot), '', fmtNum(sumAbove), fmtNum(sumBelow)];
+  const nGes = rows.filter(r => !r.sohle).length;
+  const sv = ['Summe', `${nGes} ${isEnvelope ? 'Ebenen' : 'Geschoße'}`, fmtNum(rows.reduce((s, r) => s + r.area, 0)), '', fmtNum(tot), '', fmtNum(sumAbove), fmtNum(sumBelow)];
   sv.forEach((v, i) => tx(i, v, y, 700, 24, EX.ink));
   y += 44;
+  // Die beiden Ergebnisse noch einmal als Kennwerte — damit klar ist, welche Zahl wofür gilt
+  {
+    const lot = (liveMetrics && liveMetrics.lotArea) || 0;
+    const kv = [['Bruttorauminhalt (B 1800)', fmtNum(Math.round(tot)), 'm³'],
+                ['Baumasse (oberirdisch)', fmtNum(Math.round(sumAbove)), 'm³'],
+                ['Bauplatzfläche', fmtNum(Math.round(lot)), 'm²']];
+    if (lot > 0) kv.push([istTirol ? 'Baumassendichte (BMD)' : 'Baumasse / Bauplatzfläche', fmtNum(sumAbove / lot, 2), '']);
+    y = dxKV(ctx, kv, pad, y, cw, 4, 118) + 16;
+  }
   // Zweites Modell: die Geländeveränderung gegenüber dem Urgelände
   if (boeAn) {
     const ab = liveMetrics.boeAbtrag || 0, au = liveMetrics.boeAuftrag || 0, bg = liveMetrics.aushub || 0;
@@ -36943,7 +37026,7 @@ function northUpView() {
     machbarkeit: { t: 'Machbarkeit', s: 'Prüfpunkte mit Sofort-Korrektur' },
     kennzahlen: { t: 'Kennzahlen', s: 'BGF, GFZ, Geschosse, Einheiten' },
     wirtschaft: { t: 'Wirtschaftlichkeit', s: 'Marge, Gewinn, Erlös, Kosten' },
-    flaechen: { t: 'Flächen & Kubatur', s: 'BGF, Nutzfläche, Baumasse', rows: [['Grundstücksfläche', 's-lot'], ['Bebaute Fläche', 's-foot'], ['Bruttogeschoßfläche', 's-bgf'], ['Wohnungen', 's-wohnungen'], ['Kubatur oberirdisch', 's-vol-above'], ['Kubatur gesamt', 's-vol-total']] },
+    flaechen: { t: 'Flächen & Kubatur', s: 'BGF, Nutzfläche, Baumasse', rows: [['Grundstücksfläche', 's-lot'], ['Bebaute Fläche', 's-foot'], ['Bruttogeschoßfläche', 's-bgf'], ['Wohnungen', 's-wohnungen'], ['Baumasse (oberirdisch)', 's-vol-above'], ['Bruttorauminhalt (BRI)', 's-vol-total']] },
     stellplaetze: { t: 'Stellplätze & Nebenräume', s: 'Garage, Keller, Fahrrad, Müll', rows: [['Stellplätze im UG', 's-stellplaetze'], ['Erforderlich', 's-stellplaetze-erforderlich'], ['Kellerabteile', 's-keller'], ['Fahrradabstellplätze', 's-fahrrad'], ['Müllraum', 's-muell'], ['Spielplatz', 's-spielplatz-flaeche']] },
     gelaende: { t: 'Gelände & Aushub', s: 'Hang, Sockel, Erdbewegung', rows: [['Geländesprung', 's-terraindiff'], ['Bezugspunkt Sockel', 's-baselevel'], ['Geländeaushub', 's-aushub'], ['Geländeböschung', 's-boeschung']] },
     bauordnung: { t: 'Bauordnung', s: 'Dichte, Höhe, Abstand im Soll-Ist', rows: [['Geschoßzahl', 's-floors'], ['Gebäudehöhe', 's-height'], ['Geschosse nach Höhe', 's-floors-h'], ['Geschosse nach Lichtabstand', 's-floors-shadow'], ['OIB-Prüfung', 's-oib-sum']] },
@@ -38601,7 +38684,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.17';
+  const VERSION = 'v3.18';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
