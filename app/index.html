@@ -4311,9 +4311,11 @@ window.KUBATUR_ABO_SERVER = 'probe';
     <div class="group">
       <label>Einbindung in den Hang</label>
       <select id="hang-mode" style="width:100%;">
-        <option value="1" selected>gestaffelt — max. 1 Geschoss eingebunden</option>
-        <option value="2">gestaffelt — max. 2 Geschosse eingebunden</option>
-        <option value="0">nicht gestaffelt — Geschosse voll in den Hang</option>
+        <option value="0">keine Staffelung — Geschoße voll in den Hang</option>
+        <option value="1" selected>gestaffelt — höchstens 1 Geschoß eingebunden</option>
+        <option value="2">gestaffelt — höchstens 2 Geschoße eingebunden</option>
+        <option value="3">gestaffelt — höchstens 3 Geschoße eingebunden</option>
+        <option value="4">gestaffelt — höchstens 4 Geschoße eingebunden</option>
       </select>
       <div class="note" id="hang-info" style="display:none"></div>
     </div>
@@ -19641,12 +19643,13 @@ function vizTerrassenRing(acc, fp, baseY, floorH, opts, f, oben) {
   let ring = null;
   try { ring = legalLargest(cpOffset([cpPoly(fp)], tiefe)); } catch (e) { ring = null; }
   if (!ring || ring.length < 3) return;
-  // Die auskragende Platte ist zugleich der Boden der Terrasse im Geschoß darüber. Beim
-  // obersten Geschoß liegt darüber nichts mehr — dort ist sie reines Vordach und entsteht
-  // nur, wenn „mit Vordach" gewählt ist; dann dünner als eine Geschoßdecke.
-  // (Vorgabe Ozan, 13.10.2026)
-  if (!oben) vizSlab(acc, ring, topY - t, topY);
-  else if (opts.vordach) vizSlab(acc, ring, topY - 0.18, topY);
+  // Die Terrassenplatte liegt auf der Höhe des eigenen Geschoßbodens — jedes Geschoß
+  // bekommt seine eigene. „Mit Vordach" setzt zusätzlich in JEDEM Geschoß eine dünne
+  // Platte an die Geschoßdecke über derselben Terrasse; „ohne Vordach" gibt es nirgends
+  // eine Platte über einer Terrasse. (Vorgabe Ozan, 13.10.2026)
+  void oben;
+  vizSlab(acc, ring, baseY - t, baseY);
+  if (opts.vordach) vizSlab(acc, ring, topY - 0.18, topY);
   if (f > 0) {
     const y = baseY, rh = 1.0;
     edgesOf(ring).forEach(e => {
@@ -20723,6 +20726,11 @@ function drawPlanVector(ctx, f, M, opt) {
         const nrZ = u.farbNr != null ? u.farbNr : (u.zonNr != null ? u.zonNr : i);
         ctx.fillStyle = einheitFarbe(nrZ, dunkelZ, true);
         path(u.footprint, true); ctx.fill();
+        // feine Trennlinie, damit zwei benachbarte Einheiten auch bei ähnlichen Tönen
+        // klar auseinandergehen (Vorgabe Ozan, 13.10.2026)
+        ctx.strokeStyle = dunkelZ ? 'rgba(236,234,228,0.38)' : 'rgba(60,58,54,0.34)';
+        ctx.lineWidth = 0.7; ctx.lineJoin = 'round';
+        path(u.footprint, true); ctx.stroke();
         ctx.restore();
       });
     }
@@ -22745,7 +22753,11 @@ function rebuild() {
           } catch (e) { return false; }
         };
       } catch (e) { protect = []; }
-      const hs = hangStaffelung(floorFootprints, baseLevel, floorH, heightFn, hangEmbed, protect, validate, hangAxis);
+      // Wird geböscht, liegt an der Wand kein Erdreich mehr — dann darf die Staffelung
+      // auch nicht mehr vom Urgelände ausgehen, sonst fehlen dem Baukörper Teile, die in
+      // Wirklichkeit frei stehen. (Vorgabe Ozan, 13.10.2026)
+      const hangGelaende = gelaendeNachBoeschung(heightFn, baseLevel);
+      const hs = hangStaffelung(floorFootprints, baseLevel, floorH, hangGelaende, hangEmbed, protect, validate, hangAxis);
       if (hs.cut > 1) hangRefFp = floorFootprints[0];
       if (hs.cut > 1) { floorFootprints = hs.fps; totals.hangCut = (totals.hangCut || 0) + hs.cut * floorH; hangSteps = true; }
     }
@@ -23867,7 +23879,7 @@ function rebuild() {
   document.getElementById('s-vol-total').textContent = (totals.volumeAbove + totals.volumeBelow).toFixed(0) + ' m³';
   document.getElementById('s-terraindiff').textContent = (Math.max(...terrainHeights) - Math.min(...terrainHeights)).toFixed(1) + ' m';
   document.getElementById('s-baselevel').textContent = baseLevel.toFixed(1) + ' m ü. Bezugsniveau';
-  { const hi = document.getElementById('hang-info'); if (hi) { const base = 'Hangseitig endet jedes Geschoss dort, wo das Gelände seine Decke erreicht (Rückwand voll erdberührt). Was tiefer im Hang läge, wird nicht gebaut — der Baukörper staffelt sich mit dem Hang.';
+  { const hi = document.getElementById('hang-info'); if (hi) { const base = 'Hangseitig endet jedes Geschoß dort, wo das Gelände seine Decke erreicht (Rückwand voll erdberührt). Was tiefer im Hang läge, wird nicht gebaut — der Baukörper staffelt sich mit dem Hang. Bei aktiver Geländeböschung zählt dafür das projektierte Gelände, nicht das Urgelände — abgeböschte Bereiche bleiben also gebaut.';
     const m = (document.getElementById('hang-mode') || {}).value;
     hi.textContent = m === '0' ? 'Alle Geschosse haben den vollen Grundriss — am Hang stecken die unteren Geschosse hangseitig voll im Erdreich (Aushub, Stützwände, unbelichtete Flächen).'
       : totals.hangCut > 1 ? base + ` Aktuell: ca. ${fmtNum(Math.round(totals.hangCut / 10) * 10)} m³ Baukörper weniger im Hang.` : base + ' Aktuell kein Einschnitt nötig (Gelände zu flach bzw. Baukörper nicht tief genug im Hang).'; } }
@@ -39262,7 +39274,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.24';
+  const VERSION = 'v3.25';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
