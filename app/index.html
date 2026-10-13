@@ -19490,6 +19490,7 @@ function vizOptions() {
     seed: parseInt((g('viz-seed') && g('viz-seed').value) || '1', 10) || 1,
     irregular: Math.max(0, Math.min(1, (parseFloat(g('viz-irregular') && g('viz-irregular').value) || 0) / 100)),
     terrassen: !g('viz-terrassen') || g('viz-terrassen').value !== 'nein',
+    vordach: !!g('viz-terrassen') && g('viz-terrassen').value === 'dach',
     balkonLang: true,
   };
 }
@@ -19631,7 +19632,7 @@ function vizTerrassenBelag(acc, fp, upperFp, y) {
 }
 // Umlaufende Terrassenplatte: der Grundriss nach außen versetzt, als Platte unter der
 // Geschoßdecke; darauf ein Glasgeländer entlang der Außenkante.
-function vizTerrassenRing(acc, fp, baseY, floorH, opts, f) {
+function vizTerrassenRing(acc, fp, baseY, floorH, opts, f, oben) {
   if (typeof ClipperLib === 'undefined' || !fp || fp.length < 3) return;
   const tiefe = Math.max(0.9, Math.min(3.0, opts.loggiaDepth || 1.5));
   const t = Math.max(0.12, Math.min(0.5, opts.slabThickness || 0.2));
@@ -19639,7 +19640,12 @@ function vizTerrassenRing(acc, fp, baseY, floorH, opts, f) {
   let ring = null;
   try { ring = legalLargest(cpOffset([cpPoly(fp)], tiefe)); } catch (e) { ring = null; }
   if (!ring || ring.length < 3) return;
-  vizSlab(acc, ring, topY - t, topY);
+  // Die auskragende Platte ist zugleich der Boden der Terrasse im Geschoß darüber. Beim
+  // obersten Geschoß liegt darüber nichts mehr — dort ist sie reines Vordach und entsteht
+  // nur, wenn „mit Vordach" gewählt ist; dann dünner als eine Geschoßdecke.
+  // (Vorgabe Ozan, 13.10.2026)
+  if (!oben) vizSlab(acc, ring, topY - t, topY);
+  else if (opts.vordach) vizSlab(acc, ring, topY - 0.18, topY);
   if (f > 0) {
     const y = baseY, rh = 1.0;
     edgesOf(ring).forEach(e => {
@@ -20338,7 +20344,7 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
   // Terrasse: eine umlaufende, auskragende Platte je Geschoß — dieselbe Figur wie der
   // frühere Rundum-Balkon, nur ohne Rücksprung. Sie ist zugleich das Vordach über dem
   // Eingang. Die alte beige Terrassenfläche entfällt ersatzlos (Vorgabe Ozan, 13.10.2026).
-  if (opts.terrassen) vizTerrassenRing(acc, outerFp, baseY, floorH, opts, f);
+  if (opts.terrassen) vizTerrassenRing(acc, outerFp, baseY, floorH, opts, f, !upperFp);
   void vizTerrassenBelag; void vizTerraceRailings;
   buildVizCap(acc, outerFp, baseY + floorH);
 }
@@ -20714,7 +20720,7 @@ function drawPlanVector(ctx, f, M, opt) {
         if (!u.footprint || u.footprint.length < 3) return;
         ctx.save();
         const nrZ = u.farbNr != null ? u.farbNr : (u.zonNr != null ? u.zonNr : i);
-        ctx.fillStyle = einheitFarbe(nrZ, dunkelZ, window.__ehWahlNr == null || window.__ehWahlNr === nrZ);
+        ctx.fillStyle = einheitFarbe(nrZ, dunkelZ, true);
         path(u.footprint, true); ctx.fill();
         ctx.restore();
       });
@@ -27038,10 +27044,11 @@ function dxTop(ctx, W, kicker, title, beta) {
     ctx.fillStyle = EX.muted; ctx.fillText(t, kx, DX.kickY);
     kx += ctx.measureText(t).width + 18; ctx.restore();
   }
-  exKicker(ctx, kicker, kx, DX.kickY);
-  let rechts = W - DX.pad;
-  if (beta) rechts -= exBetaZeichen(ctx, rechts, DX.kickY) + 12;
-  exText(ctx, title, rechts, DX.kickY, 500, 20, EX.muted, 'right');
+  // Das BETA-Abzeichen steht unmittelbar hinter der Rubrik, nicht am rechten Rand —
+  // es gehört zur Seite, nicht zum Projekttitel. (Vorgabe Ozan, 13.10.2026)
+  const kw = exKicker(ctx, kicker, kx, DX.kickY);
+  if (beta) exBetaZeichen(ctx, kx + kw + 14, DX.kickY, true);
+  exText(ctx, title, W - DX.pad, DX.kickY, 500, 20, EX.muted, 'right');
 }
 // Kopf im Magazin-Stil: oben Rubrik (gesperrt, Akzentfarbe) + Projekttitel rechts,
 // darunter die Rubrik groß als Editorial-Überschrift (leicht/fett)
@@ -27057,13 +27064,13 @@ function drawExposePageHeadingRaw(ctx, W, kicker, title, headline, beta) {
   return DX.bodyTop;
 }
 // kleines Abzeichen mit abgerundeten Ecken, rechts über dem Projekttitel
-function exBetaZeichen(ctx, rechtsX, mittelY) {
+function exBetaZeichen(ctx, ankerX, mittelY, linksbuendig) {
   ctx.save();
   ctx.font = `700 15px ${EX_FONT}`; ctx.letterSpacing = '0.16em';
   const t = 'BETA';
   const tw = ctx.measureText(t).width;
   const padX = 11, h = 26, w = tw + padX * 2;
-  const x = rechtsX - w, y = mittelY - h / 2 - 5;
+  const x = linksbuendig ? ankerX : ankerX - w, y = mittelY - h / 2 - 5;
   const r = h / 2;
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
@@ -27393,7 +27400,11 @@ function exText(ctx, text, x, y, weight, size, color, align) {
 function exKicker(ctx, text, x, y) {
   // Rubriken in kleiner Schrift: im hellen und im orangen Thema die dunklere Orange-Variante
   ctx.font = `700 22px ${EX_FONT}`; ctx.fillStyle = EX.accentText || EX.accent; ctx.letterSpacing = '0.24em';
-  ctx.fillText(exSchreib(text).toUpperCase(), x, y); ctx.letterSpacing = '0px';
+  const t = exSchreib(text).toUpperCase();
+  ctx.fillText(t, x, y);
+  const w = ctx.measureText(t).width;
+  ctx.letterSpacing = '0px';
+  return w;
 }
 // Abschnittsüberschrift: Versalien mit Sperrung, dahinter eine feine Linie bis zum Rand
 function exSection(ctx, text, x, y) {
@@ -39112,7 +39123,7 @@ function sprSetzen(code, still) {
     ['band', 'Bandfenster'], ['raumhoch', 'Raumhohe Fenster'], ['loch', 'Lochfassade'], ['glas', 'Glasfassade'],
     ['mix', 'Gemischte Fenster']]);
   bauen('wahl-terrasse', 'viz-terrassen', 'Terrassen', [
-    ['ja', 'Mit Terrasse'], ['nein', 'Ohne Terrasse']]);
+    ['ja', 'Terrasse ohne Vordach'], ['dach', 'Terrasse mit Vordach'], ['nein', 'Ohne Terrasse']]);
   // Terrassen laufen über dasselbe Neuaufbauen wie die übrigen Fassadenwerte
   { const t = document.getElementById('viz-terrassen');
     if (t) t.addEventListener('input', () => { if (typeof rebuild === 'function') rebuild(); }); }
@@ -39252,7 +39263,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.22';
+  const VERSION = 'v3.23';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
