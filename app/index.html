@@ -2716,9 +2716,6 @@
   @media (max-width: 720px) { .hm-main { padding: 18px 16px 60px; } .hm-bar { padding: 0 14px; gap: 8px; height: 58px; } .hm-such, .hm-brand small { display: none; } .hm-hello h1 { font-size: 24px; } .hm-more { opacity: 1; } }
 
 
-#syn-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1;
-  transition: opacity .4s ease; }
-:root[data-theme="light"] #syn-bg { opacity: 0 !important; }
 /* ===== Fußzeile: Übersicht (voll) und Anmeldung (schlank) ===== */
 .cb-fuss { position: relative; z-index: 1; margin-top: 10px; padding: 32px 28px calc(26px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel-solid) 72%, transparent); }
@@ -23567,11 +23564,8 @@ function rebuild() {
     sun.target.position.set(cx, 0, cz); if (!sun.target.parent) scene.add(sun.target); }
   { const tr = toSiteLayer(buildTreeLayer(terrainFn, showViz)); if (tr) terrainMesh.add(tr); }
   if (viewMode() === 'widmung' && !showViz) { const wd = toSiteLayer(buildWidmungDrape(heightFn)); if (wd) terrainMesh.add(wd); }
-  // Im Massenmodell liegt die Widmung nur angedeutet darunter (20 %) — zur Orientierung,
-  // ohne das weiße Modell zu stören. Gleiche eine Fläche wie oben, deshalb kein Flimmern.
-  else if (viewMode() === 'massenmodell' && !showViz && (widmungData || neighbourData)) {
-    const wd = toSiteLayer(buildWidmungDrape(heightFn, { leise: true })); if (wd) terrainMesh.add(wd);
-  }
+  // Im Massenmodell liegt keine Widmung mehr darunter — es zeigt dieselbe Zeichnung wie
+  // das Linienmodell. (Vorgabe Ozan, 13.10.2026)
   // Orthofoto nur in der Visualisierung — in den Arbeitsansichten (Massenmodell usw.) lag es als
   // unruhige Fleckenschicht über den Nachbargrundstücken
   if (viewMode() === 'visualisierung') { const od = toSiteLayer(buildOrthoDrape(terrainFn)); if (od) terrainMesh.add(od); }
@@ -24395,7 +24389,7 @@ function syncViewModeUI() {
   document.getElementById('geschosse-legend').style.display = 'none';
   { const le = document.getElementById('hint-legend-earth'), ll = document.getElementById('hint-legend-light');
     if (le) le.style.visibility = mode === 'aushub' ? 'visible' : 'hidden';
-    if (ll) ll.style.visibility = (mode === 'massenmodell' || mode === 'huellkoerper') ? 'visible' : 'hidden';
+    if (ll) ll.style.visibility = mode === 'huellkoerper' ? 'visible' : 'hidden';
     if (typeof layoutCornerHints === 'function') requestAnimationFrame(layoutCornerHints); }
   document.getElementById('viz-controls').style.display = 'block';
   if (typeof syncVizControls === 'function') syncVizControls();
@@ -34384,7 +34378,8 @@ function buildOwnParcelBlock(heightFn) {
 // damit Untergeschoße, Tiefgarage und Fundamente unter der Geländelinie sichtbar bleiben —
 // das Gebäude und die Nachbarhäuser bleiben voll deckend
 function applyGroundGlass(showViz) {
-  const on = !showViz && viewMode() === 'massenmodell';
+  const on = false;   // das Massenmodell ist jetzt die Linienzeichnung und setzt die Deckkraft selbst
+  void showViz;
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   const op = isLight ? 0.62 : 0.5;
   const setGlass = mat => { if (!mat) return; mat.transparent = on; mat.opacity = on ? op : 1; mat.depthWrite = !on; mat.needsUpdate = true; };
@@ -34459,7 +34454,12 @@ function buildV2Group(heightFn, opt) {
         const q = poly[i], r = poly[(i + 1) % poly.length];
         pts.push(q[0], z, q[1], r[0], z, r[1]);
       }
-      gr.add(v2Kante(pts, V2F('ink'), 0.42, false));
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const li = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: V2F('ink'),
+        dashSize: 0.22, gapSize: 0.22, transparent: true, opacity: 0.4, depthWrite: false }));
+      li.computeLineDistances(); li.raycast = () => {}; li.renderOrder = 5;
+      gr.add(li);
     });
     if (gr.children.length) g.add(gr);
   }
@@ -39372,7 +39372,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.26';
+  const VERSION = 'v3.27';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -39531,119 +39531,7 @@ function sprSetzen(code, still) {
 })();
 </script>
 <script>
-// ===== Synapsen im Hintergrund (CI-Referenz) ===========================================
-// Zweites Markenelement neben dem Logo, 1:1 nach claude/ci-design.md: Linien
-// rgb(240,183,119), Knoten und Impulse rgb(247,212,154), jeder 9. Knoten größer,
-// Desktop 70 Punkte bei 150 px Reichweite, Handy 38 bei 105 px, alpha 0,5, 7 Impulse.
-// Fünf Anordnungen (gestreut, steigend, Raster, Ring, sammelnd) lösen einander in einer
-// endlosen, sehr langsamen Schleife ab — es bewegt sich immer, aber nie auffällig.
-// Nur auf dunklem Grund und nicht in der Visualisierung. (Vorgabe Ozan, 13.10.2026)
-(() => {
-  'use strict';
-  const SCHMAL = window.innerWidth < 700;
-  const O = { n: SCHMAL ? 38 : 70, reach: SCHMAL ? 105 : 150,
-              line: '240,183,119', dot: '247,212,154', alpha: 0.5, pulses: 7, seed: 11 };
-  const N = O.n;
-  const rnd = (q => () => (q = (q * 16807) % 2147483647) / 2147483647)(O.seed);
-  // Anordnungen in 0…1-Koordinaten
-  const F = [[], [], [], [], []];
-  const spalten = Math.ceil(Math.sqrt(N * 1.6)), zeilen = Math.ceil(N / spalten);
-  for (let i = 0; i < N; i++) {
-    F[0].push([rnd(), rnd()]);                                                      // gestreut
-    F[1].push([0.08 + 0.84 * ((i * 0.618) % 1), (i / N + rnd() * 0.15) % 1]);       // steigend
-    F[2].push([(0.5 + i % spalten) / spalten + (rnd() - 0.5) * 0.03,
-               (0.5 + Math.floor(i / spalten)) / zeilen + (rnd() - 0.5) * 0.03]);   // Raster
-    const a = i / N * Math.PI * 2, r = 0.28 + (i % 3) * 0.07;
-    F[3].push([0.5 + Math.cos(a) * r * 0.75, 0.5 + Math.sin(a) * r]);               // Ring
-    const b = rnd() * Math.PI * 2, q2 = 0.06 + rnd() * 0.18;
-    F[4].push([0.5 + Math.cos(b) * q2, 0.5 + Math.sin(b) * q2]);                    // sammelnd
-  }
-  const ph = Array.from({ length: N }, () => [rnd() * 6.3, rnd() * 6.3, 0.6 + rnd() * 0.8]);
-  const impulse = Array.from({ length: O.pulses }, () => ({ a: 0, b: 1, t: rnd(), v: 0.0025 + rnd() * 0.003 }));
-  const pos = Array.from({ length: N }, () => [0, 0]);
-  let cv = null, ctx = null, w = 0, h = 0, dpr = 1, form = 0, formZiel = 0, an = true;
-
-  function anlegen() {
-    const vp = document.querySelector('.viewport');
-    if (!vp || document.getElementById('syn-bg')) return !!document.getElementById('syn-bg');
-    cv = document.createElement('canvas'); cv.id = 'syn-bg';
-    // Über die Hintergrundfläche des Fensters, aber unter das 3D-Bild.
-    const host = document.getElementById('canvas-host');
-    if (host && host.parentElement === vp) vp.insertBefore(cv, host); else vp.insertBefore(cv, vp.firstChild);
-    ctx = cv.getContext('2d');
-    messen();
-    try { new ResizeObserver(messen).observe(vp); } catch (e) {}
-    return true;
-  }
-  function messen() {
-    if (!cv) return;
-    const r = cv.parentElement.getBoundingClientRect();
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = r.width; h = r.height;
-    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-  }
-  // alle 34 s die nächste Anordnung, der Übergang läuft weich über rund vier Sekunden
-  const TAKT = 34000;
-  function takt(zeit) {
-    requestAnimationFrame(takt);
-    if (!cv && !anlegen()) return;
-    if (!an || !w || !h) return;
-    formZiel = Math.floor(zeit / TAKT) % 5;
-    let d = formZiel - form;
-    if (d > 2.5) d -= 5; else if (d < -2.5) d += 5;      // über die Runde, nie rückwärts springen
-    form = (form + d * 0.004 + 5) % 5;
-    const fa = Math.floor(form), fb = (fa + 1) % 5, t = form - fa;
-    const tt = t * t * (3 - 2 * t);
-    const drift = Math.min(w, h) * 0.025;
-    const steigen = (zeit * 0.00002) % 1;
-    for (let i = 0; i < N; i++) {
-      const A = F[fa][i], B = F[fb][i];
-      let x = A[0] + (B[0] - A[0]) * tt, y = A[1] + (B[1] - A[1]) * tt;
-      if (fa === 1 || fb === 1) { const kf = fa === 1 ? 1 - tt : tt; y = (y - steigen * kf + 1) % 1; }
-      const p = ph[i];
-      pos[i][0] = x * w + Math.sin(zeit * 0.00021 * p[2] + p[0]) * drift;
-      pos[i][1] = y * h + Math.cos(zeit * 0.00017 * p[2] + p[1]) * drift;
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-    const R = O.reach, R2 = R * R;
-    ctx.lineWidth = 1;
-    const nah = [];
-    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
-      const dx = pos[i][0] - pos[j][0], dy = pos[i][1] - pos[j][1], d2 = dx * dx + dy * dy;
-      if (d2 > R2) continue;
-      const a = (1 - Math.sqrt(d2) / R) * 0.42 * O.alpha;
-      ctx.strokeStyle = 'rgba(' + O.line + ',' + a.toFixed(3) + ')';
-      ctx.beginPath(); ctx.moveTo(pos[i][0], pos[i][1]); ctx.lineTo(pos[j][0], pos[j][1]); ctx.stroke();
-      if (a > 0.08 * O.alpha) nah.push([i, j]);
-    }
-    for (let i = 0; i < N; i++) {
-      const gross = i % 9 === 0;
-      ctx.fillStyle = 'rgba(' + O.dot + ',' + ((gross ? 0.75 : 0.45) * O.alpha).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(pos[i][0], pos[i][1], gross ? 2.1 : 1.3, 0, 7); ctx.fill();
-    }
-    if (nah.length) impulse.forEach((pu, k) => {
-      pu.t += pu.v;
-      if (pu.t >= 1 || pu.b >= N) { const e = nah[(k * 7 + Math.floor(zeit / 900)) % nah.length]; pu.a = e[0]; pu.b = e[1]; pu.t = 0; }
-      const A = pos[pu.a], B = pos[pu.b];
-      if (!A || !B) return;
-      const x = A[0] + (B[0] - A[0]) * pu.t, y = A[1] + (B[1] - A[1]) * pu.t;
-      const schein = Math.sin(pu.t * Math.PI);
-      ctx.fillStyle = 'rgba(' + O.dot + ',' + (0.9 * schein * O.alpha).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(' + O.line + ',' + (0.18 * schein * O.alpha).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
-    });
-  }
-  // Nur auf dunklem Grund, und in der Visualisierung hat das Netz nichts verloren.
-  setInterval(() => {
-    const hell = document.documentElement.getAttribute('data-theme') === 'light';
-    const viz = (() => { try { return viewMode() === 'visualisierung'; } catch (e) { return false; } })();
-    an = !hell && !viz;
-    if (cv) { cv.style.opacity = an ? '1' : '0'; if (!an) { try { ctx.clearRect(0, 0, w, h); } catch (e) {} } }
-  }, 400);
-  requestAnimationFrame(takt);
-})();
+// Synapsen im Hintergrund: auf Wunsch wieder entfernt (Ozan, 13.10.2026).
 </script>
 </body>
 </html>
