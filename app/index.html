@@ -604,7 +604,8 @@
   .viewport.quad-views #compass-widget, .viewport.quad-views .hint { display: none !important; }
   .viewport.quad-no3d .panel-2d.quad .view-2d { background: color-mix(in srgb, var(--p2d-bg) 100%, transparent); }
   .viewport.quad-no3d .nav-bar > *:not(#toggle-2d) { opacity: .35; pointer-events: none; }
-  @media (max-width: 640px) { .p2d-layout { display: none; } }
+  /* Umschalter seitlich/vier Fenster abgeschaltet — es gibt nur noch die vier Fenster */
+  .p2d-layout { display: none !important; }
   /* 2D-Ansichten: eigener, ruhiger Hintergrund, der zum 3D-Fenster hin weich ausläuft
      (wie der Bildübergang am Projektmappen-Deckblatt); Ein-/Ausblenden als sanfte Überblendung */
   .panel-2d { --p2d-bg: rgba(19,19,23,0.96); display: grid; opacity: 0; visibility: hidden; transition: opacity .5s ease, visibility 0s linear .5s; }
@@ -2262,11 +2263,23 @@
   }
 
   /* Projektmappe: Ladeanzeige im CI — groß beim Öffnen, dezent als Leiste beim Aktualisieren */
-  .xp-loader { --xl-bg: #f3ece1; --xl-ink: #2a211a; --xl-muted: #8a7866; --xl-acc: #9a6a3f; --xl-track: rgba(42,33,26,0.12);
+  /* Helle Mappe: dasselbe Papierweiß wie die Seiten, Akzent im CI-Ton — kein Beige. */
+  .xp-loader { --xl-bg: #f7f6f3; --xl-ink: #26231f; --xl-muted: #8d877d; --xl-acc: #c98a5c; --xl-track: rgba(38,35,31,0.10);
     position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .45s ease, visibility 0s linear .45s; }
   .expose-page[data-xtheme="dunkel"] .xp-loader { --xl-bg: #0e0e11; --xl-ink: #f1efe9; --xl-muted: #99958c; --xl-acc: #c9a876; --xl-track: rgba(255,255,255,0.12); }
   .xp-loader.on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
   .xp-loader.full { background: var(--xl-bg); pointer-events: auto; }
+  /* Hinweis während des Reglerziehens — mittig im Fenster, verschwindet beim Loslassen */
+  .regler-laedt { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.96);
+    z-index: 90; display: none; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px; letter-spacing: .01em; pointer-events: none;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.26); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    opacity: 0; transition: opacity .16s ease, transform .16s ease; }
+  .regler-laedt.an { display: flex; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .rl-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line);
+    border-top-color: var(--accent); animation: rlSpin .7s linear infinite; }
+  @keyframes rlSpin { to { transform: rotate(360deg); } }
   .xpl-card { display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(340px, 70%); color: var(--xl-ink); font-family: var(--f-body, inherit); }
   .xpl-mark { width: 54px; height: 54px; fill: none; stroke: var(--xl-acc); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .xpl-hex { stroke-dasharray: 150; stroke-dashoffset: 150; animation: xplDraw 2.4s cubic-bezier(.6,0,.3,1) infinite; }
@@ -4561,7 +4574,7 @@ window.KUBATUR_ABO_SERVER = 'probe';
       <div class="wahl-zeile" id="wahl-fenster"></div>
       <div class="wahl-zeile" id="wahl-balkon"></div>
       <div class="wahl-zeile" id="wahl-terrasse"></div>
-      <div id="viz-loggia-row" style="display:none;"><div class="viz-lbl viz-lbl-row">Tiefe des Rücksprungs <span class="val" id="v-viz-loggia">0,0 m</span></div><input type="range" id="viz-loggia-depth" min="0" max="5" step="0.1" value="0"><input type="hidden" id="viz-slab" value="0.2"><span id="v-viz-slab" style="display:none;"></span></div>
+      <div id="viz-loggia-row" style="display:none;"><div class="viz-lbl viz-lbl-row">Auskragung der Terrasse <span class="val" id="v-viz-loggia">0,0 m</span></div><input type="range" id="viz-loggia-depth" min="0.6" max="3" step="0.1" value="1.2"><input type="hidden" id="viz-slab" value="0.2"><span id="v-viz-slab" style="display:none;"></span></div>
       <input type="hidden" id="viz-terrassen" value="ja">
       <div class="viz-lbl viz-lbl-row">Unregelmäßigkeit der Fenster <span class="val" id="v-viz-irregular">0 %</span></div>
       <input type="range" id="viz-irregular" min="0" max="100" step="5" value="0">
@@ -14123,10 +14136,35 @@ function weicherRandAbstand(p, ring, r) {
   }
   return d === Infinity ? 0 : Math.max(0, d);
 }
+// Die Böschung läuft von der Grundgrenze nach innen. Der reine Randabstand hat an
+// einspringenden Ecken einen Knick (der „Speichenfächer" der Mittelachse) — deshalb wird
+// zusätzlich die nach innen versetzte Grundgrenze (Böschungsfuß) herangezogen und der
+// Verlauf zwischen beiden Kurven normiert. Der Versatz wird mit runden Ecken gerechnet,
+// damit die Fußlinie überall gerundet ist und die Fläche weich bleibt.
+// (Vorschlag Ozan, 13.10.2026 — „Grundgrenzlinie nach innen verlegt".)
+function boeFussRing(grenze, breite) {
+  if (typeof ClipperLib === 'undefined' || !(breite > 0.3)) return null;
+  try {
+    const C = ClipperLib, co = new C.ClipperOffset(3, 0.01 * LEGAL_SC);
+    co.AddPaths([legalToPath(grenze)], C.JoinType.jtRound, C.EndType.etClosedPolygon);
+    const o = new C.Paths(); co.Execute(o, -breite * LEGAL_SC);
+    const r = legalLargest(o);
+    return (r && r.length >= 3) ? r : null;
+  } catch (e) { return null; }
+}
 function boeschungFn(hUr, zEG, grenze, grad) {
   const t = Math.tan(Math.max(1, Math.min(89, grad)) * Math.PI / 180);
   const rEcke = 2.0;                     // Rundung an den Grundstücksecken
   const rKnick = Math.max(0.5, 1.6 / Math.max(0.4, t));   // Rundung am Böschungskopf
+  // größter Höhenunterschied im Grund — daraus die größte vorkommende Böschungsbreite
+  let maxDiff = 0;
+  try {
+    const c = polygonCentroid(grenze);
+    const proben = grenze.concat([c]).concat(grenze.map(p => [(p[0] + c[0]) / 2, (p[1] + c[1]) / 2]));
+    proben.forEach(p => { const h = hUr(p[0], p[1]); if (isFinite(h)) maxDiff = Math.max(maxDiff, Math.abs(zEG - h)); });
+  } catch (e) { maxDiff = 0; }
+  const breite = Math.min(60, maxDiff / Math.max(0.05, t));
+  const fuss = boeFussRing(grenze, breite);
   return (x, z) => {
     const h0 = hUr(x, z);
     if (!isFinite(h0)) return h0;
@@ -14135,7 +14173,19 @@ function boeschungFn(hUr, zEG, grenze, grad) {
     if (!pointInPolygon([x, z], grenze)) return h0;
     const diff = zEG - h0;
     if (Math.abs(diff) < 1e-6) return h0;
-    const d = weicherRandAbstand([x, z], grenze, rEcke);
+    let d;
+    if (fuss) {
+      // normierte Lage zwischen Grundgrenze und Fußlinie; innerhalb der Fußlinie voll
+      const dA = weicherRandAbstand([x, z], grenze, rEcke);
+      if (pointInPolygon([x, z], fuss)) d = breite;
+      else {
+        const dB = weicherRandAbstand([x, z], fuss, rEcke);
+        const sum = dA + dB;
+        d = sum > 1e-6 ? breite * (dA / sum) : dA;
+      }
+    } else {
+      d = weicherRandAbstand([x, z], grenze, rEcke);
+    }
     const w = Math.max(0, weichMin(Math.abs(diff), t * d, rKnick));
     return h0 + Math.sign(diff) * w;
   };
@@ -14230,7 +14280,7 @@ function buildTerrain(heightFn, holeFps) {
   const boeAn = (typeof boeschungAktiv === 'function') ? boeschungAktiv() : null;
   const vizAn = !!((document.getElementById('toggle-viz') || {}).checked);
   const aushubAn = viewMode() === 'aushub';
-  const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(outer), boeAn ? Math.max(0.5, ((terrainDgm && terrainDgm.step) || 2) / 4) : undefined);
+  const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(outer), boeAn ? Math.max(0.35, ((terrainDgm && terrainDgm.step) || 2) / 6) : undefined);
   const pos = geo.attributes.position;
   const newPositions = new Float32Array(pos.count * 3);
   // Abgesetzte Farben gibt es nur im Erdbau. Im Massenmodell und in der Widmung liegt das
@@ -19490,6 +19540,28 @@ function vizTerrassenBelag(acc, fp, upperFp, y) {
     } catch (e) {}
   });
 }
+// Umlaufende Terrassenplatte: der Grundriss nach außen versetzt, als Platte unter der
+// Geschoßdecke; darauf ein Glasgeländer entlang der Außenkante.
+function vizTerrassenRing(acc, fp, baseY, floorH, opts, f) {
+  if (typeof ClipperLib === 'undefined' || !fp || fp.length < 3) return;
+  const tiefe = Math.max(0.9, Math.min(3.0, opts.loggiaDepth || 1.5));
+  const t = Math.max(0.12, Math.min(0.5, opts.slabThickness || 0.2));
+  const topY = baseY + floorH;
+  let ring = null;
+  try { ring = legalLargest(cpOffset([cpPoly(fp)], tiefe)); } catch (e) { ring = null; }
+  if (!ring || ring.length < 3) return;
+  vizSlab(acc, ring, topY - t, topY);
+  if (f > 0) {
+    const y = baseY, rh = 1.0;
+    edgesOf(ring).forEach(e => {
+      if (e.len < 0.05) return;
+      const a = e.p1, b = e.p2;
+      acc.rail.push((() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([
+        a[0], y, a[1], b[0], y, b[1], b[0], y + rh, b[1], a[0], y, a[1], b[0], y + rh, b[1], a[0], y + rh, a[1]], 3)); return g; })());
+      acc.railLines.push(a[0], y + rh, a[1], b[0], y + rh, b[1]);
+    });
+  }
+}
 function vizTerraceRailings(acc, fp, upperFp, y) {
   if (typeof ClipperLib === 'undefined' || !upperFp || upperFp.length < 3) return;
   const C = ClipperLib, T = C.ClipType, F = C.PolyFillType.pftNonZero;
@@ -20026,12 +20098,20 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
           pointInPolygon([cx + nx * (balDepth + 0.3), cz + nz * (balDepth + 0.3)], parcelPoints);
         if (distPointToPolygon([cx, cz], parcelPoints) < 0.6) return;
         if (wantBalcony) {
+          // Ein Balkon darf nie über die Fassadenkante hinausstehen: die Breite wird auf den
+          // Platz begrenzt, der links und rechts der Achse auf DIESER Kante noch da ist.
+          // Dazu eine Längenvariation je Balkon — das gibt Bewegung in die Fassade, und über
+          // „Neu generieren" lässt sie sich neu würfeln. (Vorgabe Ozan, 13.10.2026)
+          const platz = 2 * Math.min(u - 0.25, edge.len - u - 0.25);
+          const bRng = seededRandom(hashInt(opts.seed, pieceIdx, dirKey, f, ax.k, 771));
+          const bW = Math.min(balW * (0.62 + bRng() * 0.38), platz);
+          if (bW < 2.2) return;                       // zu wenig Platz — lieber kein Balkon
           // Balkontür bodentief, Sturz auf 2,20 m — in den Plänen durchwegs 218/220
           // (Hinterkaiser), 200/220 (Kirchbichl, Wörgl) oder 172/208 (Mieming)
           const w = Math.max(winW, 1.8);
           if (wt !== 'glas' && wt !== 'keine') holes.push({ u0: u - w / 2, u1: u + w / 2, h0: 0.03, h1: Math.max(head, 2.2), transom: true, keep: true });
-          vizBalcony(acc, cx, cz, nx, nz, rotY, baseY, balW, balDepth);
-          acc.balconies.push({ cx, cz, nx, nz, rotY, baseY, topY: baseY + floorH, width: balW, depth: balDepth, f, piece: pieceIdx });
+          vizBalcony(acc, cx, cz, nx, nz, rotY, baseY, bW, balDepth);
+          acc.balconies.push({ cx, cz, nx, nz, rotY, baseY, topY: baseY + floorH, width: bW, depth: balDepth, f, piece: pieceIdx });
           doorUs.push(u);
         } else if (wt !== 'band' && wt !== 'glas' && wt !== 'keine') {
           // Unregelmäßigkeit: je Geschoss versetzte Reihe, je Fenster Breite/Höhe/Lage
@@ -20148,10 +20228,11 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
     return;
   }
   if (!upperFp && !opts.pitchedRoof) vizAttika(acc, outerFp, baseY + floorH, 0.35, 0.2);
-  if (upperFp && opts.terrassen) vizTerrassenBelag(acc, outerFp, upperFp, baseY + floorH);
-  // Kein zusätzliches Glasgeländer auf der Terrasse: die Brüstung des zurückspringenden
-  // Geschosses ist die Absturzsicherung — das Glas darüber las sich als milchige Fläche.
-  void vizTerraceRailings;
+  // Terrasse: eine umlaufende, auskragende Platte je Geschoß — dieselbe Figur wie der
+  // frühere Rundum-Balkon, nur ohne Rücksprung. Sie ist zugleich das Vordach über dem
+  // Eingang. Die alte beige Terrassenfläche entfällt ersatzlos (Vorgabe Ozan, 13.10.2026).
+  if (opts.terrassen) vizTerrassenRing(acc, outerFp, baseY, floorH, opts, f);
+  void vizTerrassenBelag; void vizTerraceRailings;
   buildVizCap(acc, outerFp, baseY + floorH);
 }
 // ============================================================================
@@ -23915,7 +23996,7 @@ function resetPieceOverridesKeepHeight() { pieceOverrides = pieceOverrides.map(o
  'building-gap', 'num-parts', 'split-angle',
  'toggle-building', 'toggle-shadow', 'toggle-parcelline', 'toggle-minsetback', 'toggle-lightlines', 'toggle-compass', 'toggle-earthwork',
  'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'toggle-ortho', 'ortho-opacity'].forEach(id =>
-  document.getElementById(id).addEventListener('input', rebuild)
+  document.getElementById(id).addEventListener('input', () => rebuild())
 );
 // ---- Ansicht: 3 preset combinations replace individually toggleable layers ----
 const LAYER_VIEW_PRESETS = {
@@ -23926,7 +24007,7 @@ const LAYER_VIEW_PRESETS = {
   kubatur: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   aushub: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': true, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': false, 'toggle-floor-colors': false },
   einheiten: { 'toggle-building': false, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': false, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': true, 'toggle-viz': false, 'toggle-floor-colors': false },
-  visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false, 'toggle-ortho': true, 'ortho-opacity': 25 },
+  visualisierung: { 'toggle-building': true, 'toggle-shadow': false, 'toggle-lightlines': false, 'toggle-parcelline': true, 'toggle-minsetback': false, 'toggle-earthwork': false, 'toggle-parking': false, 'toggle-apartments': false, 'toggle-viz': true, 'toggle-floor-colors': false, 'toggle-ortho': true, 'ortho-opacity': 35 },
 };
 
 function applyViewPreset(mode) {
@@ -24185,7 +24266,7 @@ function applyBauweise() {
 }
 document.getElementById('bauweise').addEventListener('change', applyBauweise);
 document.getElementById('top-abs').addEventListener('change', () => { rebuild(); pushHistory(); });
-['bmd', 'nfd', 'bd'].forEach(id => { document.getElementById(id).addEventListener('input', rebuild); document.getElementById(id).addEventListener('change', () => pushHistory()); });
+['bmd', 'nfd', 'bd'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
 // § 6 TBO: Mindestabstand aus der eigenen Widmung — Gewerbe-/Industrie-, Kern-, Mischgebiet und
 // Freiland 0,4 × Wandhöhe, mind. 3 m; übriges Bauland 0,6 × Wandhöhe, mind. 4 m
 // Startwerte je Lage — aus veröffentlichten Tiroler Bebauungsplänen und den fachlichen
@@ -24970,7 +25051,7 @@ document.getElementById('variant-list').addEventListener('click', e => {
 renderVariantList();
 
 // ---- Visualisierung: Fenstertyp, Balkone, Neu generieren, Stände merken ----
-const VIZ_LABEL = { loch: 'Lochfassade', band: 'Bandfenster', raumhoch: 'Raumhoch', franz: 'Französische Fenster', klein: 'Kleine Fenster', hoch: 'Hochformat', doppel: 'Doppelfenster', versetzt: 'Versetzte Fenster', glas: 'Glasfassade', ohne: 'Ohne Fenster', keine: 'ohne Balkone', wenige: 'mit Balkonen', ruecksprung: 'Balkone rundum' };
+const VIZ_LABEL = { loch: 'Lochfassade', band: 'Bandfenster', raumhoch: 'Raumhoch', franz: 'Französische Fenster', klein: 'Kleine Fenster', hoch: 'Hochformat', doppel: 'Doppelfenster', versetzt: 'Versetzte Fenster', glas: 'Glasfassade', ohne: 'Ohne Fenster', keine: 'ohne Balkone', wenige: 'mit Balkonen', ruecksprung: 'Balkone rundum' };   // nicht mehr wählbar, nur noch für alte Projektstände
 function renderVizFloorColors() {
   const ir = document.getElementById('viz-irregular');
   if (ir) setzWert('v-viz-irregular', ir.value + ' %');
@@ -24990,14 +25071,17 @@ document.getElementById('viz-slab').addEventListener('change', () => pushHistory
       ? 'Eigener Entwurf: die automatische Kubatur ist aus. Mit „Baukörper hinzufügen" setzen Sie eigene Volumen, mit + und − die Geschosse.'
       : 'Automatische Kubatur wieder an.');
   }); }
-['toggle-courtyard', 'courtyard-depth'].forEach(id => { document.getElementById(id).addEventListener('input', rebuild); document.getElementById(id).addEventListener('change', () => pushHistory()); });
-['roof-pitch', 'roof-overhang'].forEach(id => { document.getElementById(id).addEventListener('input', rebuild); document.getElementById(id).addEventListener('change', () => pushHistory()); });
+['toggle-courtyard', 'courtyard-depth'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
+['roof-pitch', 'roof-overhang'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
 document.getElementById('viz-loggia-depth').addEventListener('change', () => pushHistory());
 document.getElementById('viz-irregular').addEventListener('change', () => pushHistory());
 function syncVizControls() {
   renderVizFloorColors();
   { const lr = document.getElementById('viz-loggia-row'), b = document.getElementById('viz-balconies');
-    if (lr && b) lr.style.display = b.value === 'ruecksprung' ? '' : 'none';
+    // Die Auskragung gilt jetzt auch für die umlaufende Terrassenplatte
+    { const te = document.getElementById('viz-terrassen');
+      const an = (b && b.value === 'ruecksprung') || !te || te.value !== 'nein';
+      if (lr) lr.style.display = an ? '' : 'none'; }
     const ld = document.getElementById('viz-loggia-depth'), lv = document.getElementById('v-viz-loggia');
     if (ld && lv) lv.textContent = parseFloat(ld.value).toFixed(1).replace('.', ',') + ' m';
     const sl = document.getElementById('viz-slab'), sv = document.getElementById('v-viz-slab');
@@ -25863,6 +25947,41 @@ document.getElementById('xs-sheet-backdrop').addEventListener('click', () => set
 })();
 
 initExposeContentPanel();
+// ---- Regler ziehen, ohne dass das Modell blockiert --------------------------------
+// Ein Neuaufbau kostet unter Last mehrere hundert Millisekunden. Kommt er bei jedem Pixel
+// der Reglerbewegung, lässt sich der Regler praktisch nicht mehr ziehen. Während des
+// Ziehens wird deshalb nicht gerechnet, sondern nur ein Hinweis gezeigt; neu gebaut wird
+// einmal, sobald der Regler losgelassen ist. (Vorgabe Ozan, 13.10.2026)
+var reglerZieht = false, reglerOffen = null;
+function reglerHinweis(an) {
+  let el = document.getElementById('regler-laedt');
+  if (!el && an) {
+    el = document.createElement('div'); el.id = 'regler-laedt'; el.className = 'regler-laedt';
+    el.innerHTML = '<span class="rl-ring"></span><span>Modell wird neu gerechnet …</span>';
+    document.body.appendChild(el);
+  }
+  if (el) el.classList.toggle('an', !!an);
+}
+{
+  const echterAufbau = rebuild;
+  rebuild = function () {
+    if (reglerZieht) { reglerOffen = echterAufbau; reglerHinweis(true); return; }
+    echterAufbau.apply(this, arguments);
+  };
+  const los = () => {
+    if (!reglerZieht) return;
+    reglerZieht = false; reglerHinweis(false);
+    const f = reglerOffen; reglerOffen = null;
+    if (f) requestAnimationFrame(() => f());
+  };
+  document.addEventListener('pointerdown', e => {
+    const r = e.target && e.target.closest && e.target.closest('input[type=range]');
+    if (r) { reglerZieht = true; reglerOffen = null; }
+  }, true);
+  ['pointerup', 'pointercancel'].forEach(ev => document.addEventListener(ev, los, true));
+  // Tastaturbedienung bleibt unverändert: dort kommt kein pointerdown
+  window.addEventListener('blur', los);
+}
 document.getElementById('topbar-expose').addEventListener('click', openExpose);
 ECON_IDS.forEach(id => document.getElementById(id).addEventListener('input', updateEconomicsUI));
 document.getElementById('econ-category').addEventListener('change', () => { applyBaukostenKatalog(); updateEconomicsUI(); updateRangeFills(); });
@@ -28213,7 +28332,10 @@ function buildKubaturGruppen(modus) {
       if (strichliert) ln.computeLineDistances();
       grp.add(ln);
     };
-    platte(neuFn, GELAENDE_NEU_FARBE, 0.6, 0.35, plate, false, 0x33603a);
+    // ÖNORM B 1800 kennt kein Gelände — dort bleibt nur eine strichlierte Umrisslinie
+    // zur Orientierung, ohne Fläche, ohne Urgelände, ohne Beschriftung.
+    if (modus === 'b1800') platte(neuFn, GELAENDE_NEU_FARBE, 0, 0.02, plate, true, 0x5c7a60);
+    else platte(neuFn, GELAENDE_NEU_FARBE, 0.6, 0.35, plate, false, 0x33603a);
     // Schnittlinie des Baukörpers mit dem Gelände
     const fpl = [];
     solids.forEach(k => {
@@ -28223,10 +28345,10 @@ function buildKubaturGruppen(modus) {
           const cross = r => { const t = neuFn(r[0], r[1]); return t > k.y0 + 0.01 && t < k.topFn(r) - 0.01; };
           if (cross(p) || cross(q)) fpl.push(p[0], neuFn(p[0], p[1]) + 0.05, p[1], q[0], neuFn(q[0], q[1]) + 0.05, q[1]); } });
     });
-    if (fpl.length) { const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fpl, 3));
+    if (fpl.length && modus !== 'b1800') { const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fpl, 3));
       const fl = new THREE.LineSegments(fg, new THREE.LineDashedMaterial({ color: 0x2a2420, dashSize: 0.8, gapSize: 0.5 })); fl.computeLineDistances(); plate.add(fl); }
-    // Das Urgelände liegt immer im Bild — ohne Böschung deckungsgleich, dann nur als Umriss
-    if (zwei) platte(urFn, GELAENDE_UR_FARBE, 0.34, 0.2, urplate, true, 0x6e7a68);
+    // Das Urgelände gehört zur Baumasse-Rechnung; auf der ÖNORM-Seite hat es nichts verloren
+    if (zwei && modus !== 'b1800') platte(urFn, GELAENDE_UR_FARBE, 0.34, 0.2, urplate, true, 0x6e7a68);
   }
   const bbA = new THREE.Box3().setFromObject(above), bbB = new THREE.Box3().setFromObject(below);
   const hasA = !bbA.isEmpty(), hasB = !bbB.isEmpty();
@@ -28310,7 +28432,7 @@ async function buildExposeKubaturPage(pageNum, totalPages, teil) {
   y = dxPara(ctx, trog
     ? 'Die Baumasse ist der Raum, den das Gebäude oberhalb der Erdoberfläche umschließt — begrenzt durch die Außenhaut, untergeordnete Bauteile bleiben außer Betracht. Sie allein geht in die Baumassendichte ein. ' + geltText
       + ' Die Zeichnung zeigt beide Geländemodelle: das projektierte Gelände in kräftigem Grün, das Urgelände als Bestand gedeckt und strichliert umrandet.'
-    : 'Der Bruttorauminhalt nach ÖNORM B 1800 ist der ganze Baukörper — von der Unterfläche der konstruktiven Bauwerkssohle bis zur Oberfläche der Dachhaut, Untergeschoße eingeschlossen. Gerechnet wird Ebene für Ebene als Grundrissfläche × Höhe; die Höhe ist der lotrechte Abstand der Fußbodenoberflächen, beim untersten Geschoß zuzüglich der Dicke der Bauwerkssohle. Das Gelände spielt dabei keine Rolle — es liegt in der Zeichnung nur zur Orientierung, in denselben beiden Grüntönen wie auf der Seite davor.'
+    : 'Der Bruttorauminhalt nach ÖNORM B 1800 ist der ganze Baukörper — von der Unterfläche der konstruktiven Bauwerkssohle bis zur Oberfläche der Dachhaut, Untergeschoße eingeschlossen. Gerechnet wird Ebene für Ebene als Grundrissfläche × Höhe; die Höhe ist der lotrechte Abstand der Fußbodenoberflächen, beim untersten Geschoß zuzüglich der Dicke der Bauwerkssohle. Das Gelände spielt dabei keine Rolle; in der Zeichnung steht nur die Grundgrenze als feine Strichlinie zur Orientierung.'
       + (isEnvelope ? ' Im Maximalhüllkörper wird in gleich hohe Ebenen zerlegt.' : ''), pad, y + 8, cw * 0.8, 23, 38, EX.lead, 7) + 26;
   const pieceIds = [...new Set(rows.map(r => r.piece))];
   const rowH = Math.max(34, Math.min(50, 560 / (rows.length + 1)));
@@ -28339,20 +28461,23 @@ async function buildExposeKubaturPage(pageNum, totalPages, teil) {
   } else {
     label(ex && ex.ganz, y + imgH * 0.2, 'Bruttorauminhalt (BRI)', `${fmtNum(tot)} m³`, `${rows.filter(r => !r.sohle).length} Ebenen + Sohle · ohne Geländebezug`, exBelowColor(0.08));
   }
-  // Beide Geländemodelle bekommen ihre Beschriftung — auf beiden Seiten, in denselben Farben
-  const lyP = y + imgH * (trog ? 0.46 : 0.62);
+  // Die Geländemodelle gehören zur Baumasse-Rechnung — nur dort bekommen sie eine Legende.
+  // Auf der ÖNORM-Seite bleibt die Grundgrenze eine stumme Strichlinie.
   const zwei = !!(ex && ex.zwei);
-  const farbfeld = (hex, yy) => { ctx.fillStyle = hex; exRoundRect(ctx, labX, yy - 16, 18, 18, 5); ctx.fill(); };
-  if (ex && ex.plate) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.plate[0], y + ex.plate[1]); ctx.lineTo(labX - 10, lyP - 6); ctx.stroke(); ctx.setLineDash([]); }
-  farbfeld(GELAENDE_NEU_HEX, lyP);
-  exText(ctx, zwei ? 'Projektiertes Gelände' : 'Gelände (unverändert)', labX + 30, lyP, 600, 21, EX.ink);
-  exText(ctx, zwei ? (trog ? 'maßgebliche Erdoberfläche' : 'nach Fertigstellung') : 'unverändert', labX + 30, lyP + 28, 360, 19, EX.muted);
-  {
-    const lyU = lyP + 72;
-    if (zwei && ex.ur) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.ur[0], y + ex.ur[1]); ctx.lineTo(labX - 10, lyU - 6); ctx.stroke(); ctx.setLineDash([]); }
-    farbfeld(GELAENDE_UR_HEX, lyU);
-    exText(ctx, 'Urgelände — Bestand', labX + 30, lyU, 600, 21, EX.ink);
-    exText(ctx, zwei ? 'Bezugsfläche für den Erdbau' : 'deckungsgleich', labX + 30, lyU + 28, 360, 19, EX.muted);
+  if (trog) {
+    const lyP = y + imgH * 0.46;
+    const farbfeld = (hex, yy) => { ctx.fillStyle = hex; exRoundRect(ctx, labX, yy - 16, 18, 18, 5); ctx.fill(); };
+    if (ex && ex.plate) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.plate[0], y + ex.plate[1]); ctx.lineTo(labX - 10, lyP - 6); ctx.stroke(); ctx.setLineDash([]); }
+    farbfeld(GELAENDE_NEU_HEX, lyP);
+    exText(ctx, zwei ? 'Projektiertes Gelände' : 'Gelände (unverändert)', labX + 30, lyP, 600, 21, EX.ink);
+    exText(ctx, zwei ? 'maßgebliche Erdoberfläche' : 'unverändert', labX + 30, lyP + 28, 360, 19, EX.muted);
+    if (zwei) {
+      const lyU = lyP + 72;
+      if (ex.ur) { ctx.strokeStyle = EX.muted; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(pad + ex.ur[0], y + ex.ur[1]); ctx.lineTo(labX - 10, lyU - 6); ctx.stroke(); ctx.setLineDash([]); }
+      farbfeld(GELAENDE_UR_HEX, lyU);
+      exText(ctx, 'Urgelände — Bestand', labX + 30, lyU, 600, 21, EX.ink);
+      exText(ctx, 'Bezugsfläche für den Erdbau', labX + 30, lyU + 28, 360, 19, EX.muted);
+    }
   }
   y += imgH + 44;
   // Tabelle
@@ -29198,33 +29323,123 @@ function hellerGrund() {
     return (((v >> 16 & 255) * 299 + (v >> 8 & 255) * 587 + (v & 255) * 114) / 1000) > 128;
   } catch (e) { return false; }
 }
-function zeichneUrgelaende(ctx, M, pts, beschriften) {
+// ============================================================================
+// Schriftregel für alle 2D-Pläne (Grundriss, Draufsicht, Ansicht, Schnitt)
+// ----------------------------------------------------------------------------
+// Eine Familie, drei Stufen, eine Skala — und keine Größe mehr einzeln im Code:
+//   klein  8,5 px / 400 — Hinweise am Plan: Urgelände, Gelände neu, Grundgrenze,
+//                          Mindestabstand, Lichtabstand
+//   normal 10 px / 500  — Höhenkoten, Maßzahlen, Raum- und Einheitennamen
+//   groß   12 px / 600  — Schnittbezeichnungen, Blattbeschriftungen
+// M.ts skaliert auf das Ziel: 1,0 im 2D-Fenster, 1,5 auf dem A4-Blatt der
+// Projektmappe. Mehr als 1,8 oder weniger als 0,85 gibt es nicht — Beschriftung
+// soll lesbar sein, nie dominant. (Vorgabe Ozan, 13.10.2026)
+// ============================================================================
+const PLAN_TXT = { klein: [8.5, 400], normal: [10, 500], gross: [12, 600] };
+function planTs(M) { return Math.max(0.85, Math.min(1.8, (M && M.ts) || 1)); }
+function planPx(M, stufe) { return (PLAN_TXT[stufe] || PLAN_TXT.normal)[0] * planTs(M); }
+function planFont(M, stufe) {
+  const t = PLAN_TXT[stufe] || PLAN_TXT.normal;
+  return t[1] + ' ' + (t[0] * planTs(M)).toFixed(1) + 'px ' + (typeof EX_FONT !== 'undefined' ? EX_FONT : 'sans-serif');
+}
+// Punkt eines Profils bei einer bestimmten Stelle s
+function profilBei(pts, s) {
+  let best = pts[0];
+  pts.forEach(g => { if (Math.abs(g[0] - s) < Math.abs(best[0] - s)) best = g; });
+  return best;
+}
+// Urgelände: in geschnittener Stärke, strichliert — hell auf dunklem Grund, auf Papier grau.
+// Die Beschriftung sitzt an der übergebenen Stelle (links vom Baukörper), damit sie nicht
+// mit „Gelände neu" zusammenklebt.
+function zeichneUrgelaende(ctx, M, pts, sText) {
   if (!pts || pts.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
-  ctx.lineWidth = 1.0; ctx.setLineDash([7, 4]);
+  const farbe = hellerGrund() ? '#6f6f76' : '#eceae4';
+  ctx.strokeStyle = farbe;
+  ctx.lineWidth = 1.5; ctx.setLineDash([8, 4]);
   ctx.beginPath();
   pts.forEach((g, i) => { const p = M.toPx(g); if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
   ctx.stroke(); ctx.setLineDash([]);
-  if (beschriften) {
-    const q = M.toPx(pts[Math.max(0, Math.round(pts.length * 0.08))]);
-    ctx.font = '400 9px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif';
-    ctx.fillStyle = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
-    ctx.textAlign = 'left';
-    ctx.fillText('Urgelände', q[0] + 3, q[1] - 4);
+  if (sText != null) {
+    const q = M.toPx(profilBei(pts, sText));
+    ctx.font = planFont(M, 'klein');
+    ctx.fillStyle = farbe;
+    ctx.textAlign = 'right';
+    ctx.fillText('Urgelände', q[0] - 4, q[1] - planPx(M, 'klein') * 0.5);
   }
   ctx.restore();
 }
-function beschrifteGelaendeNeu(ctx, M, pts) {
+// Projektiertes Gelände: dunkelgrün, in geschnittener Stärke. Beschriftung rechts.
+function zeichneGelaendeNeu(ctx, M, pts, sText) {
   if (!pts || pts.length < 2) return;
-  const q = M.toPx(pts[Math.max(0, Math.round(pts.length * 0.08))]);
   ctx.save();
-  ctx.font = '500 9px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif';
-  // Auf dunklem Grund (Bildschirm) ein helles Grün, auf Papier (Projektmappe) ein dunkles
-  ctx.fillStyle = hellerGrund() ? '#1a3b24' : '#5fa87a';
-  ctx.textAlign = 'left';
-  ctx.fillText('Gelände neu', q[0] + 3, q[1] + 11);
+  const farbe = hellerGrund() ? '#2a5636' : '#6fb585';
+  ctx.strokeStyle = farbe; ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  pts.forEach((g, i) => { const p = M.toPx(g); if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+  ctx.stroke();
+  if (sText != null) {
+    const q = M.toPx(profilBei(pts, sText));
+    ctx.font = planFont(M, 'klein');
+    ctx.fillStyle = farbe; ctx.textAlign = 'left';
+    ctx.fillText('Gelände neu', q[0] + 4, q[1] + planPx(M, 'klein') * 1.4);
+  }
   ctx.restore();
+}
+// ---- Senkrechte Marken in Ansicht und Schnitt --------------------------------------
+// Grundgrenze kräftig orange, Mindestabstand heller orange, Höhenfaktor grau — alle
+// strichliert, alle beschriftet, alle in der Schriftregel. (Vorgabe Ozan, 13.10.2026)
+const MARK_GRENZE = '#e08a4a', MARK_ABSTAND = '#edbd95';
+function vecMarkeSenkrecht(ctx, M, s, yLo, yHi, farbe, text, rechts, rang) {
+  const a = M.toPx([s, yLo]), b = M.toPx([s, yHi]);
+  ctx.save();
+  ctx.strokeStyle = farbe; ctx.lineWidth = 1.1; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  ctx.setLineDash([]);
+  if (text) {
+    ctx.font = planFont(M, 'klein'); ctx.fillStyle = farbe;
+    ctx.save();
+    // je Markenart eine eigene Spur, sonst kleben Grundgrenze und Mindestabstand aneinander
+    ctx.translate(b[0] + (rechts ? 1 : -1) * planPx(M, 'klein') * (0.5 + (rang || 0) * 1.15), b[1] + planPx(M, 'klein') * 1.6);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'left';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+// Stellen, an denen die Blicklinie einen Ring schneidet
+function vecRingSchnitte(ring, weltAt, s0, s1) {
+  const out = [];
+  if (!ring || ring.length < 3) return out;
+  const n = 300, ds = (s1 - s0) / n;
+  let drin = pointInPolygon(weltAt(s0), ring);
+  for (let i = 1; i <= n; i++) {
+    const s = s0 + ds * i, jetzt = pointInPolygon(weltAt(s), ring);
+    if (jetzt !== drin) out.push(s - ds / 2);
+    drin = jetzt;
+  }
+  return out;
+}
+// Grundgrenze, Mindestabstand und Höhenfaktor als senkrechte Marken
+function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, sBauLo, sBauHi) {
+  try {
+    const gs = vecRingSchnitte(parcelPoints, weltAt, sLo, sHi);
+    gs.forEach((s, i) => vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0));
+    if (typeof liveMinSetbackFp !== 'undefined' && liveMinSetbackFp && liveMinSetbackFp.length >= 3) {
+      const ms = vecRingSchnitte(liveMinSetbackFp, weltAt, sLo, sHi);
+      ms.forEach((s, i) => vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_ABSTAND, 'Mindestabstand', i >= ms.length / 2, 1));
+    }
+    // Höhenfaktor an den Gebäudekanten: der Lichtabstand, den diese Höhe verlangt
+    const f = parseFloat((document.getElementById('factor') || {}).value);
+    if (isFinite(f) && f > 0 && isFinite(sBauLo) && isFinite(sBauHi)) {
+      const H = Math.max(0, yHi - (liveBaseLevel || 0));
+      const txt = 'Höhenfaktor ' + fmtNum(f, 2) + ' · H = ' + fmtNum(f * H, 2) + ' m';
+      const grau = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
+      vecMarkeSenkrecht(ctx, M, sBauLo, yLo, yHi, grau, txt, false, 2);
+      vecMarkeSenkrecht(ctx, M, sBauHi, yLo, yHi, grau, txt, true, 2);
+    }
+  } catch (e) { /* Marken sind nur Darstellung */ }
 }
 
 function drawElevationVector(ctx, E, M) {
@@ -29287,9 +29502,17 @@ function drawElevationVector(ctx, E, M) {
     ctx.lineTo(gp[gp.length - 1][0], gp[gp.length - 1][1] + 4000); ctx.lineTo(gp[0][0], gp[0][1] + 4000); ctx.closePath();
     ctx.fillStyle = VP.ground || EX.bg; ctx.fill();
   }
-  ctx.beginPath(); gp.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
-  ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.6; ctx.stroke();
-  if (groundUr.length) { zeichneUrgelaende(ctx, M, groundUr, true); beschrifteGelaendeNeu(ctx, M, ground); }
+  if (GF.an) {
+    // projektiertes Gelände: dunkelgrün in geschnittener Stärke, Beschriftung rechts
+    zeichneGelaendeNeu(ctx, M, ground, E.sMax + 2.5);
+    zeichneUrgelaende(ctx, M, groundUr, E.sMin - 2.5);
+  } else {
+    ctx.beginPath(); gp.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  { const yLo = Math.min(...ground.map(g => g[1])) - 1.5, yHi = Math.max(E.yMax + 1.2, yLo + 3);
+    vecPlanMarken(ctx, M, sv => [E.r[0] * sv + E.d[0] * (E.tFront + 1), E.r[1] * sv + E.d[1] * (E.tFront + 1)],
+      gS0, gS1, yLo, yHi, E.sMin, E.sMax); }
   ctx.restore();
   return ground;
 }
@@ -29300,8 +29523,8 @@ function vecLevel(ctx, M, s, y, text, left) {
   const dir = left ? -1 : 1, L = 34;
   ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + dir * L, p[1]); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(p[0] + dir * 8, p[1]); ctx.lineTo(p[0] + dir * 4, p[1] - 6); ctx.lineTo(p[0] + dir * 12, p[1] - 6); ctx.closePath(); ctx.stroke();
-  ctx.font = exFont(400, 15); ctx.textAlign = left ? 'right' : 'left';
-  ctx.fillText(text, p[0] + dir * (L + 3), p[1] + 3.5);
+  ctx.font = planFont(M, 'normal'); ctx.textAlign = left ? 'right' : 'left';
+  ctx.fillText(text, p[0] + dir * (L + 3), p[1] + planPx(M, 'normal') * 0.35);
   ctx.restore();
 }
 function vecLevelText(y) { const v = y - (liveBaseLevel || 0); return (Math.abs(v) < 0.005 ? '±' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(2).replace('.', ','); }
@@ -29432,7 +29655,13 @@ function drawSectionVector(ctx, D, M) {
   let pen = false;
   D.ground.forEach((g, i) => { const p = gp[i]; if (inB(g)) { pen = false; return; } if (pen) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); pen = true; });
   ctx.stroke();
-  if (D.groundUr && D.groundUr.length) { zeichneUrgelaende(ctx, M, D.groundUr, true); beschrifteGelaendeNeu(ctx, M, D.ground); }
+  if (D.groundUr && D.groundUr.length) {
+    zeichneGelaendeNeu(ctx, M, D.ground, D.bHi - 2.5);
+    zeichneUrgelaende(ctx, M, D.groundUr, D.bLo + 2.5);
+  }
+  { const yLo = Math.min(...D.ground.map(g => g[1])) - 1.5, yHi = Math.max(D.yTop + 1.2, yLo + 3);
+    vecPlanMarken(ctx, M, sv => [D.L.c[0] + D.L.a[0] * sv, D.L.c[1] + D.L.a[1] * sv],
+      D.sLo, D.sHi, yLo, yHi, D.bLo + 8, D.bHi - 8); }
   void k;
   ctx.restore();
 }
@@ -29448,7 +29677,7 @@ function drawSectionMarks(ctx, M) {
       ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(v[0], v[1]); ctx.stroke();
       const ang = Math.atan2(v[1] - P[1], v[0] - P[0]);
       ctx.beginPath(); ctx.moveTo(v[0], v[1]); ctx.lineTo(v[0] - 7 * Math.cos(ang - 0.45), v[1] - 7 * Math.sin(ang - 0.45)); ctx.lineTo(v[0] - 7 * Math.cos(ang + 0.45), v[1] - 7 * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fillStyle = VEC_INK; ctx.fill();
-      ctx.font = '600 12px Geist, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif'; ctx.textAlign = 'center';
+      ctx.font = planFont(M, 'gross'); ctx.textAlign = 'center';
       const t = M.toPx([W[0] - L.a[0] * 1.2 * (W === A ? 1 : -1), W[1] - L.a[1] * 1.2 * (W === A ? 1 : -1)]);
       ctx.fillText(L.name, t[0], t[1] + 4);
     });
@@ -29465,7 +29694,10 @@ function drawUGPlanVector(ctx, lvl, M, opt) {
   const col = planWallColors(opt.dark), k = M.pxPerM;
   const path = (fp) => { ctx.beginPath(); fp.forEach((p, i) => { const q = M.toPx(p); if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.closePath(); };
   const line = (a, b) => { const p = M.toPx(a), q = M.toPx(b); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); };
-  const text = (t, p, size, weight, color) => { const q = M.toPx(p); ctx.font = `${weight || 500} ${size}px ${typeof EX_FONT !== 'undefined' ? EX_FONT : 'sans-serif'}`; ctx.fillStyle = color || ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, q[0], q[1]); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; };
+  // jede Beschriftung bleibt im Band der Schriftregel — so sind alle Pläne gleich laut
+  const text = (t, p, size, weight, color) => { const q = M.toPx(p);
+    const fs = Math.max(planPx(M, 'klein'), Math.min(planPx(M, 'gross'), size));
+    ctx.font = `${weight || 500} ${fs}px ${typeof EX_FONT !== 'undefined' ? EX_FONT : 'sans-serif'}`; ctx.fillStyle = color || ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, q[0], q[1]); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; };
   const cen = r => [r.reduce((a, p) => a + p[0], 0) / r.length, r.reduce((a, p) => a + p[1], 0) / r.length];
   ctx.save();
   if (M.clip) { ctx.beginPath(); ctx.rect(M.clip[0], M.clip[1], M.clip[2], M.clip[3]); ctx.clip(); }
@@ -29600,7 +29832,7 @@ async function buildExposePlanSheets(firstPageNum, totalPages) {
         const x = pad + ci * (cw + gap), y = bodyTop + ri * (rowH + gap);
         const cx = x + cw / 2, cy = y + (rowH - labelH) / 2;
         const sMid = (d.s0 + d.s1) / 2, yMid = (d.y0 + d.y1) / 2;
-        const M = { k, toPx: ([s, yy]) => [cx + (s - sMid) * k, cy - (yy - yMid) * k] };
+        const M = { k, ts: 1.5, toPx: ([s, yy]) => [cx + (s - sMid) * k, cy - (yy - yMid) * k] };
         ctx.save(); ctx.beginPath(); ctx.rect(x, y, cw, rowH - labelH); ctx.clip();
         if (d.kind === 'elev') {
           const ground = drawElevationVector(ctx, d.E, M);
@@ -29667,7 +29899,7 @@ async function buildExposePlanSheets(firstPageNum, totalPages) {
       const bottom = H - DX.bottom - 80, infoW = landscape ? 560 : 0, infoH = landscape ? 0 : 430;
       const cw = W - 160 - (landscape ? infoW + 40 : 0), ch = bottom - P.top - infoH, x = 80, y = P.top;
       const ox = x + cw / 2, oy = y + ch / 2;
-      const M = { pxPerM, toPx: p => [ox + (p[0] - P.cx) * pxPerM, oy + (p[1] - P.cz) * pxPerM], clip: [x, y, cw, ch] };
+      const M = { pxPerM, ts: 1.5, toPx: p => [ox + (p[0] - P.cx) * pxPerM, oy + (p[1] - P.cz) * pxPerM], clip: [x, y, cw, ch] };
       drawUGPlanVector(sh.ctx, lvl, M, { dark: !!EX.dark });
       const nSt = plans.reduce((a, pl) => a + pl.stalls.length, 0), nK = plans.reduce((a, pl) => a + pl.kellers.length, 0);
       const rad = plans.reduce((a, pl) => a + (pl.rad ? pl.rad.area : 0), 0), bgf = plans.reduce((a, pl) => a + Math.abs(polygonArea(pl.fp)), 0);
@@ -29704,7 +29936,7 @@ async function buildExposePlanSheets(firstPageNum, totalPages) {
       const col = i % P.cols, row = Math.floor(i / P.cols);
       const x = P.x0 + col * (P.cw + P.gap), y = P.top + row * (P.ch + P.gap + P.labelH);
       const ox = x + P.cw / 2, oy = y + P.ch / 2;
-      const M = { pxPerM, toPx: p => [ox + (p[0] - P.cx) * pxPerM, oy + (p[1] - P.cz) * pxPerM], clip: [x, y, P.cw, P.ch] };
+      const M = { pxPerM, ts: 1.5, toPx: p => [ox + (p[0] - P.cx) * pxPerM, oy + (p[1] - P.cz) * pxPerM], clip: [x, y, P.cw, P.ch] };
       drawPlanVector(sh.ctx, f, M, { dark: !!EX.dark, dims: true, furniture: true, labels: true, neighbours: true, fsMax: 19 });
       if (f === 0) { sh.ctx.save(); sh.ctx.beginPath(); sh.ctx.rect(x, y, P.cw, P.ch); sh.ctx.clip();
         drawSectionMarks(sh.ctx, M);
@@ -30756,6 +30988,9 @@ function p2dAssign(slot, key, dir) {
   if (typeof pushHistory === 'function') pushHistory();
 }
 function applyP2DLayout() {
+  // Die seitliche Leiste ist abgeschaltet (Vorgabe Ozan, 13.10.2026): es gibt nur noch die
+  // vier Fenster. Der Code bleibt stehen, falls die Leiste je wieder gebraucht wird.
+  p2dState.mode = 'quad';
   const panel = document.getElementById('panel-2d'), vp = document.querySelector('.viewport'), host = document.getElementById('canvas-host');
   const quad = p2dState.mode === 'quad' && !isMobileViewport();
   panel.classList.toggle('quad', quad);
@@ -31142,7 +31377,7 @@ function planMass(ctx, M, a, b, versatz, text, farbe, klein) {
   let w = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]);
   if (w > Math.PI / 2 || w < -Math.PI / 2) w += Math.PI;
   ctx.translate(mx, my); ctx.rotate(w);
-  ctx.font = (klein ? '500 9.5px ' : '600 10.5px ') + (typeof EX_FONT !== 'undefined' ? EX_FONT : 'system-ui, sans-serif');
+  ctx.font = planFont(M, klein ? 'klein' : 'normal');
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   const tw = ctx.measureText(text).width;
   ctx.globalAlpha = 0.9;
@@ -38648,7 +38883,7 @@ function sprSetzen(code, still) {
     ['doppel', 'Doppelfenster'], ['versetzt', 'Versetzte Fenster'], ['franz', 'Französische Fenster'],
     ['band', 'Bandfenster'], ['raumhoch', 'Raumhohe Fenster'], ['loch', 'Lochfassade'], ['glas', 'Glasfassade']]);
   bauen('wahl-balkon', 'viz-balconies', 'Balkone', [
-    ['keine', 'Ohne Balkon'], ['wenige', 'Mit Balkon'], ['ruecksprung', 'Balkon rundum']]);
+    ['keine', 'Ohne Balkon'], ['wenige', 'Mit Balkon']]);
   bauen('wahl-terrasse', 'viz-terrassen', 'Terrassen', [
     ['ja', 'Mit Terrasse'], ['nein', 'Ohne Terrasse']]);
   // Terrassen laufen über dasselbe Neuaufbauen wie die übrigen Fassadenwerte
@@ -38790,7 +39025,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.19';
+  const VERSION = 'v3.20';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
