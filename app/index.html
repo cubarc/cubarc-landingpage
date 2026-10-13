@@ -552,6 +552,36 @@
     z-index: 2;
   }
   .stats-overlay .stat-row { border-bottom: none; }
+  /* ---- Einheitenliste: eine Karte wie die Widgets, nur am Rechner sichtbar ---- */
+  @media (max-width: 900px) { #apartment-overlay { display: none !important; } }
+  /* über dem 3D-Fenster, damit die Zeilen anklickbar bleiben; bei offenen 2D-Plänen weg */
+  #apartment-overlay { width: 268px; pointer-events: none; z-index: 22; }
+  .viewport:has(.panel-2d.open) #apartment-overlay { display: none !important; }
+  .eh-karte { pointer-events: auto; border-radius: 16px; padding: 12px 12px 8px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.26); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .eh-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px 9px; }
+  .eh-kopf b { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+  .eh-kopf span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .eh-rollen { max-height: min(56vh, 460px); overflow-y: auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px; }
+  .eh-rollen::-webkit-scrollbar { width: 6px; }
+  .eh-rollen::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .eh-zeile { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px;
+    padding: 6px 8px; border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+    transition: background .12s ease, border-color .12s ease; }
+  .eh-zeile:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .eh-zeile.an { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .eh-punkt { width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18); }
+  .eh-text { min-width: 0; }
+  .eh-top { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.25; }
+  .eh-sub { font-size: 10.5px; color: var(--muted); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eh-flaeche { font-size: 12.5px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .eh-zeile.an .eh-flaeche, .eh-zeile.an .eh-top { color: var(--accent); }
+  .eh-fuss { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin-top: 8px; padding: 9px 8px 2px; border-top: 1px solid var(--line); }
+  .eh-fuss span { font-size: 11px; color: var(--muted); }
+  .eh-fuss b { font-size: 13.5px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .eh-leer { padding: 10px 8px; font-size: 12px; color: var(--muted); }
   .viewport.viz-mode .stats-overlay .k { color: #6b675e; }
   .viewport.viz-mode .stats-overlay .v { color: #262422; }
   .viewport.viz-mode .stats-overlay .stat-row.limit .v { color: #6b5636; }
@@ -2020,7 +2050,8 @@
   .expose-kennzahlen h3 { color: #b8742f !important; }
   .expose-hero-hint { background: rgba(255,255,255,0.9) !important; border-radius: 999px !important; }
   /* ---- Projektmappen-Themen (Magazin hell / dunkel) für die live-Seiten ---- */
-  #expose-page[data-xtheme="hell"] { --xb: #f3ece1; --xc: #ebe2d4; --xi: #2a211a; --xm: #8a7866; --xl: rgba(42,33,26,0.16); --xa: #9a6a3f; }
+  /* Helles Thema ohne Beige — dieselben Werte wie EX_THEMES.hell (Vorgabe Ozan, 13.10.2026) */
+  #expose-page[data-xtheme="hell"] { --xb: #faf9f7; --xc: #efede9; --xi: #1f2124; --xm: #74727a; --xl: rgba(31,33,36,0.12); --xa: #c46f3e; }
   #expose-page[data-xtheme="dunkel"] { --xb: #0e0e11; --xc: #1a1a1f; --xi: #f1efe9; --xm: #99958c; --xl: rgba(255,255,255,0.13); --xa: #c9a876; }
   #expose-page[data-xtheme] { background: var(--xb); color: var(--xi); }
   #expose-page[data-xtheme] .expose-preview-img { background: var(--xb); }
@@ -2028,11 +2059,11 @@
   .xc2-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .xc2-hot { position: absolute; inset: 0; pointer-events: none; }
   .xc2-hot .xs-hot { pointer-events: auto; }
-  .xc2-in { position: absolute; border: 0; margin: 0; padding: 0; background: transparent; color: transparent; caret-color: var(--xi, #2a211a); font-family: 'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; resize: none; outline: none; overflow: hidden; border-radius: 4px; z-index: 3; }
+  .xc2-in { position: absolute; border: 0; margin: 0; padding: 0; background: transparent; color: transparent; caret-color: var(--xi, #1f2124); font-family: 'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; resize: none; outline: none; overflow: hidden; border-radius: 4px; z-index: 3; }
   .xc2-in::placeholder { color: transparent; }
-  .xc2-sub::placeholder, .xc2-desc::placeholder { color: var(--xm, #8a7866); opacity: .75; font-style: italic; }
+  .xc2-sub::placeholder, .xc2-desc::placeholder { color: var(--xm, #74727a); opacity: .75; font-style: italic; }
   .xc2-sub:not(:placeholder-shown)::placeholder { color: transparent; }
-  .xc2-in:hover { box-shadow: 0 0 0 1px var(--xa, #9a6a3f); box-shadow: 0 0 0 1px color-mix(in srgb, var(--xa) 55%, transparent); }
+  .xc2-in:hover { box-shadow: 0 0 0 1px var(--xa, #c46f3e); box-shadow: 0 0 0 1px color-mix(in srgb, var(--xa) 55%, transparent); }
   .xc2-in:focus { color: var(--xi); background: var(--xb); box-shadow: 0 0 0 1px var(--xa); }
   .xc2-title { font-weight: 300; letter-spacing: -0.03em; line-height: 1.0; }
   .xc2-sub { color: transparent; }
@@ -4572,7 +4603,7 @@ window.KUBATUR_ABO_SERVER = 'probe';
     </div>
     <div id="viz-controls" style="display:none;">
       <div class="wahl-zeile" id="wahl-fenster"></div>
-      <div class="wahl-zeile" id="wahl-balkon"></div>
+      <div class="wahl-zeile" id="wahl-balkon" style="display:none;"></div>
       <div class="wahl-zeile" id="wahl-terrasse"></div>
       <div id="viz-loggia-row" style="display:none;"><div class="viz-lbl viz-lbl-row">Auskragung der Terrasse <span class="val" id="v-viz-loggia">0,0 m</span></div><input type="range" id="viz-loggia-depth" min="0.6" max="3" step="0.1" value="1.2"><input type="hidden" id="viz-slab" value="0.2"><span id="v-viz-slab" style="display:none;"></span></div>
       <input type="hidden" id="viz-terrassen" value="ja">
@@ -13645,7 +13676,7 @@ function applyLightLevels() {
   } else if (viz) {
     hemiLight.intensity = 0.6 * m; hemiLight.groundColor.set(0x232019); sun.intensity = 0.48 * m; fill.intensity = 0.12 * m;
   } else {
-    hemiLight.intensity = BASE_HEMI * m; hemiLight.groundColor.set(0x232019); sun.intensity = BASE_SUN * m; fill.intensity = BASE_FILL * m;
+    hemiLight.intensity = BASE_HEMI * m; hemiLight.groundColor.set(0x1f1f22); sun.intensity = BASE_SUN * m; fill.intensity = BASE_FILL * m;
   }
 }
 function vizWhite() { return true; } // Visualisierung immer als weißes Modell
@@ -14267,7 +14298,7 @@ function boeschungKubatur(hUr, hBoe, grenze, loecher) {
 
 // Das Beige der Gartenfläche in der Visualisierung — dieselbe Farbe trägt das Gelände,
 // sobald die Gartenfläche wegen der Böschung entfällt.
-const VIZ_GRUND = 0xe8e1d6;
+const VIZ_GRUND = 0xe7e6e2;   // neutral, kein Sandton mehr
 function buildTerrain(heightFn, holeFps) {
   // outer shape is the actual parcel boundary — no flat field extending beyond it
   const outer = new THREE.Shape(parcelPoints.map(p => new THREE.Vector2(p[0], p[1])));
@@ -15170,33 +15201,38 @@ function renderApartmentAreas(units) {
   if (!container) return;
   if (selectedApartmentIndex !== null && selectedApartmentIndex >= units.length) selectedApartmentIndex = null;
   const einheitenActive = document.getElementById('toggle-apartments').checked;
-  if (!einheitenActive) {
-    container.style.opacity = '0.4';
-    container.style.pointerEvents = 'none';
-    container.innerHTML = '<div class="stat-row"><span class="k">Einheiten deaktiviert</span></div>';
-    return;
-  }
-  container.style.opacity = '1';
-  container.style.pointerEvents = '';
-  if (!units.length) {
-    container.innerHTML = '<div class="stat-row"><span class="k">Keine Wohnungen generiert</span></div>';
-    return;
-  }
-  let html = '';
+  const karte = inhalt => { container.innerHTML = '<div class="eh-karte">' + inhalt + '</div>'; };
+  if (!einheitenActive) { container.style.opacity = '0.45'; container.style.pointerEvents = 'none';
+    karte('<div class="eh-leer">Einheiten sind ausgeblendet.</div>'); return; }
+  container.style.opacity = '1'; container.style.pointerEvents = '';
+  if (!units.length) { karte('<div class="eh-leer">Noch keine Einheiten berechnet.</div>'); return; }
+  const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const summe = units.reduce((q, u) => q + (u.area || 0), 0);
+  let zeilen = '';
   units.forEach((u, i) => {
-    const activeStyle = i === selectedApartmentIndex ? 'background:var(--accent-soft); border-radius:8px; cursor:pointer;' : 'cursor:pointer;';
-    html += `<div class="stat-row apt-row" data-idx="${i}" style="${activeStyle}"><span class="k">Top ${String(u.top).padStart(2, '0')}</span><span style="color:var(--muted); font-size:12px;">${u.floor}${u.rooms ? ' · ' + u.rooms + ' Zi' : ''}${u.keller ? ' · K' + String(u.keller).padStart(2, '0') : ''}${u.stall ? ' · SP ' + u.stall : ''}</span><span class="v">${u.area.toFixed(0)} m²</span></div>`;
+    const an = i === selectedApartmentIndex;
+    const nr = u.farbNr != null ? u.farbNr : i;
+    const c = einheitTonAn(nr, an || selectedApartmentIndex === null);
+    const sub = [u.floor, u.rooms ? u.rooms + ' Zi' : null,
+      u.keller ? 'K' + String(u.keller).padStart(2, '0') : null,
+      u.stall ? 'SP ' + u.stall : null].filter(Boolean).join(' · ');
+    zeilen += '<div class="eh-zeile' + (an ? ' an' : '') + '" data-idx="' + i + '" role="button" tabindex="0">'
+      + '<span class="eh-punkt" style="background:rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')"></span>'
+      + '<span class="eh-text"><span class="eh-top">Top ' + String(u.top).padStart(2, '0') + '</span>'
+      + '<span class="eh-sub">' + esc(sub) + '</span></span>'
+      + '<span class="eh-flaeche">' + Math.round(u.area) + ' m²</span></div>';
   });
-  const total = units.reduce((s, u) => s + u.area, 0);
-  html += `<div class="stat-row limit" style="border-top:1px solid rgba(0,0,0,0.15); margin-top:4px; padding-top:8px;"><span class="k">Errechnete Gesamtfläche</span><span class="v">${total.toFixed(0)} m²</span></div>`;
-  container.innerHTML = html;
-  container.querySelectorAll('.apt-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const idx = parseInt(row.dataset.idx, 10);
-      const wasSelected = selectedApartmentIndex === idx;
-      selectedApartmentIndex = wasSelected ? null : idx;
-      rebuild();
-    });
+  karte('<div class="eh-kopf"><b>Einheiten</b><span>' + units.length + ' Tops · Ø ' + Math.round(summe / units.length) + ' m²</span></div>'
+    + '<div class="eh-rollen">' + zeilen + '</div>'
+    + '<div class="eh-fuss"><span>Errechnete Gesamtfläche</span><b>' + Math.round(summe) + ' m²</b></div>');
+  const waehle = row => {
+    const idx = parseInt(row.dataset.idx, 10);
+    selectedApartmentIndex = selectedApartmentIndex === idx ? null : idx;
+    rebuild();
+  };
+  container.querySelectorAll('.eh-zeile').forEach(row => {
+    row.addEventListener('click', () => waehle(row));
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); waehle(row); } });
   });
 }
 
@@ -17439,21 +17475,42 @@ const EH_PROFIL = 160;      // Stützstellen der Flächenkurve je Band
 // Zwölf Grundtöne um den CI-Akzent herum; ab dem dreizehnten wird die Reihe heller
 // und dann dunkler wiederholt. So bekommt jede Einheit ihre eigene Farbe — auch
 // Top 01 im Erdgeschoß und Top 08 im zweiten Obergeschoß (Vorgabe Ozan, 12.10.2026).
+// Zehn Töne für die Einheiten: alle hell, alle wenig gesättigt, alle aus derselben
+// Familie wie das CI (Gold → Apricot → Lehm → Oliv → Salbei → Nebelblau). Kein Rosa,
+// kein Magenta, nichts Grelles — die Farben sollen nebeneinander ruhig liegen.
+// (Vorgabe Ozan, 13.10.2026)
 const EH_TOENE = [
-  [214, 138, 74], [196, 168, 118], [120, 152, 176], [134, 166, 126],
-  [182, 130, 150], [162, 154, 104], [126, 142, 186], [198, 146, 112],
-  [140, 174, 160], [176, 148, 186], [206, 170, 96], [150, 160, 140]
+  [227, 199, 154],   // Sand
+  [223, 181, 140],   // Apricot
+  [215, 169, 138],   // Terrakotta hell
+  [203, 178, 148],   // Lehm
+  [195, 190, 158],   // Oliv hell
+  [183, 192, 166],   // Salbei
+  [168, 189, 176],   // Eukalyptus
+  [166, 186, 196],   // Nebelblau
+  [179, 183, 196],   // Graublau
+  [198, 189, 180],   // Greige
 ];
 function einheitTon(i) {
   const n = EH_TOENE.length, k = ((i % n) + n) % n, runde = Math.floor(Math.abs(i) / n) % 3;
-  const f = runde === 0 ? 1 : runde === 1 ? 1.18 : 0.82;   // heller, dann dunkler
-  return EH_TOENE[k].map(v => Math.max(28, Math.min(245, Math.round(v * f))));
+  const f = runde === 0 ? 1 : runde === 1 ? 1.07 : 0.93;
+  return EH_TOENE[k].map(v => Math.max(40, Math.min(246, Math.round(v * f))));
 }
-function einheitFarbe(i, dunkel) {
-  const c = einheitTon(i);
+// Nicht gewählte Einheiten: 85 % der Sättigung raus und 25 % dunkler — sie bleiben
+// unterscheidbar, treten aber deutlich hinter die gewählte zurück.
+function einheitGedaempft(c) {
+  const g = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  return c.map(v => Math.max(0, Math.min(255, Math.round((g + (v - g) * 0.15) * 0.75))));
+}
+function einheitTonAn(i, aktiv) { const c = einheitTon(i); return aktiv === false ? einheitGedaempft(c) : c; }
+function einheitFarbe(i, dunkel, aktiv) {
+  const c = einheitTonAn(i, aktiv);
   return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (dunkel ? 0.55 : 0.46) + ')';
 }
-function einheitFarbe3D(i) { const c = einheitTon(i); return (c[0] << 16) | (c[1] << 8) | c[2]; }
+function einheitFarbe3D(i, aktiv) {
+  const c = einheitTonAn(i, aktiv);
+  return (c[0] << 16) | (c[1] << 8) | c[2];
+}
 
 // Beschriftungspunkt einer Fläche: der Punkt mit dem größten Abstand zum Rand.
 // Der Schwerpunkt liegt bei L-förmigen Flächen oft im Einschnitt, und die Schrift
@@ -17703,6 +17760,7 @@ function buildEinheitenKoerper(units, baseY, hoehe, selFp) {
     } catch (e) { return; }
     const farbe = einheitFarbe3D(u.farbNr != null ? u.farbNr : 0);
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: farbe, roughness: 0.78, metalness: 0.02 }));
+    mesh.userData.ehFarbNr = u.farbNr != null ? u.farbNr : 0;
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.y = baseY + 0.11;
     mesh.castShadow = true; mesh.receiveShadow = true;
@@ -17747,7 +17805,8 @@ function buildEinheitenFlaechen(units, y, dunkel, selFp) {
     const bg = new THREE.BufferGeometry();
     bg.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
     bg.computeVertexNormals();
-    const f = rgba(einheitFarbe(u.zonNr != null ? u.zonNr : i, dunkel));
+    const nrF = u.farbNr != null ? u.farbNr : (u.zonNr != null ? u.zonNr : i);
+    const f = rgba(einheitFarbe(nrF, dunkel, window.__ehWahlNr == null || window.__ehWahlNr === nrF));
     // Die Geschoßkörper werden mit renderOrder 2 als Schleier darübergelegt. Die
     // Farbfläche zeichnet danach (3), sonst verschwindet sie unter dem Geschoß
     // darüber — sichtbar bleiben soll sie, überdecken soll sie nichts: deshalb
@@ -18783,7 +18842,7 @@ function buildCustomVolumeGroup(v, groundY, color) {
       geo = new THREE.BoxGeometry(v.w, v.h, v.d);
       geo.translate(0, v.h / 2, 0);
   }
-  const isSelected = selectedCustomIds.has(v.id);
+  const isSelected = selectedCustomIds.has(v.id) && !window.__exposeShot;
   const baseColor = v.materialColor != null ? v.materialColor : color;
   const mat = new THREE.MeshStandardMaterial(isSelected
     ? { color: SELECTED_VOLUME_COLOR, roughness: 0.75, flatShading: true, transparent: true, opacity: SELECTED_VOLUME_OPACITY }
@@ -19280,7 +19339,7 @@ const VIZ_STOCK_KEYS = ['weiss', 'anthrazit', 'holz', 'gold'];
 // Flügel zu einem breiten Fenster zusammen, „versetzt“ verschiebt die Achsen geschossweise.
 function vizFensterPitch(wt) {
   return wt === 'band' ? 1.35 : wt === 'raumhoch' ? 2.4 : wt === 'franz' ? 1.85
-    : wt === 'klein' ? 2.3 : wt === 'hoch' ? 1.55 : wt === 'doppel' ? 3.6 : wt === 'versetzt' ? 2.5 : 2.7;
+    : wt === 'klein' ? 2.3 : wt === 'hoch' ? 1.55 : wt === 'doppel' ? 3.6 : wt === 'versetzt' ? 2.5 : wt === 'mix' ? 2.6 : 2.7;
 }
 function vizFloorMats() { const el = document.getElementById('viz-floor-mats'); return (el && el.value ? el.value.split(',') : []); }
 // Material eines Geschosses. Gespeichert wird je Geschoss ein Schlüssel aus VIZ_MATS;
@@ -19393,8 +19452,9 @@ function vizOptions() {
   const g = id => document.getElementById(id);
   return {
     windows: (g('viz-windows') && g('viz-windows').value) || 'loch',
-    balconies: (() => { const v = (g('viz-balconies') && g('viz-balconies').value) || 'keine';
-      return (v === 'viele' || v === 'loggia') ? 'wenige' : v; })(),
+    // Balkone sind vorerst abgeschaltet (Vorgabe Ozan, 13.10.2026) — der Code bleibt
+    // stehen, die Auswahl ist aus der Oberfläche genommen.
+    balconies: 'keine',
     pitchedRoof: (g('roof-type') && g('roof-type').value || 'flach') !== 'flach',
     slabThickness: 0.2,
     loggiaDepth: (() => { const e = g('viz-loggia-depth'); const v = e ? parseFloat(e.value) : 0; return isFinite(v) ? Math.max(0, Math.min(5, v)) : 0; })(),
@@ -19990,7 +20050,7 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
   const pitch = vizFensterPitch(wt);
   const buildRng = seededRandom(hashInt(opts.seed, pieceIdx, 77));
   const winW = wt === 'raumhoch' ? 1.2 : wt === 'franz' ? 0.9 : wt === 'klein' ? 0.95
-    : wt === 'hoch' ? 0.72 : wt === 'doppel' ? 2.35 : wt === 'versetzt' ? 1.35
+    : wt === 'hoch' ? 0.72 : wt === 'doppel' ? 2.35 : wt === 'versetzt' ? 1.35 : wt === 'mix' ? 1.35
     : [1.15, 1.3, 1.45][Math.floor(buildRng() * 3)];
   const sill = (wt === 'raumhoch' || wt === 'franz') ? 0.06 : wt === 'klein' ? 1.05 : wt === 'hoch' ? 0.45 : 0.9;
   const head = wt === 'klein' ? Math.min(floorH - 0.45, sill + 1.0)
@@ -20014,15 +20074,33 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
     return best;
   };
   // Brüstung und Breite für eine Öffnung an der Stelle cx/cz
+  // „Gemischte Fenster": ein Satz aus fünf Formaten, über die Fassade gestreut. Der STURZ
+  // bleibt dabei überall auf derselben Höhe (head) — es wechseln nur Brüstung und Breite.
+  // Genau so halten es die ausgewerteten Einreichpläne: durchlaufende Sturzlinie, die
+  // Brüstung richtet sich nach dem Raum dahinter.
+  const MIX_SATZ = [
+    [0.90, 1.35],   // Wohnfenster
+    [0.90, 1.10],   // Zimmerfenster
+    [0.05, 1.90],   // Fenstertür
+    [0.60, 0.80],   // Hochformat
+    [1.25, 0.80],   // hochliegendes Nassraumfenster
+  ];
+  const mixFormat = (cx, cz) => {
+    const r = seededRandom(hashInt(opts.seed, pieceIdx, f, Math.round(cx * 10), Math.round(cz * 10), 919))();
+    const i = r < 0.34 ? 0 : r < 0.58 ? 1 : r < 0.78 ? 2 : r < 0.92 ? 3 : 4;
+    return { h0: MIX_SATZ[i][0], w: MIX_SATZ[i][1] };
+  };
   const formatAn = (cx, cz, wStd) => {
+    const basis = wt === 'mix' ? mixFormat(cx, cz) : { h0: sill, w: wStd };
     const z = raumAn(cx, cz);
-    if (!z || wt === 'glas' || wt === 'band' || wt === 'keine') return { h0: sill, w: wStd };
+    if (!z || wt === 'glas' || wt === 'band' || wt === 'keine')
+      return { h0: basis.h0, w: basis.w, tuer: basis.h0 < 0.2, nass: basis.h0 > 1.1 };
     if (z.kind === 'bath' || z.kind === 'wc') {
       // kleines, hochliegendes Fenster — Einblick vermeiden, Platz für Spiegel und Fliesen
-      return { h0: Math.max(sill, Math.min(1.3, head - 0.82)), w: Math.min(wStd, 0.85), nass: true };
+      return { h0: Math.max(basis.h0, Math.min(1.3, head - 0.82)), w: Math.min(basis.w, 0.85), nass: true };
     }
-    if (z.kind === 'living' && wt !== 'klein') return { h0: Math.min(sill, 0.06), w: Math.max(wStd, 1.8), tuer: true };
-    return { h0: sill, w: wStd };
+    if (z.kind === 'living' && wt !== 'klein') return { h0: Math.min(basis.h0, 0.06), w: Math.max(basis.w, 1.8), tuer: true };
+    return basis;
   };
   const balK = opts.balconies === 'viele' ? 2 : 3;
 
@@ -20606,7 +20684,8 @@ function drawPlanVector(ctx, f, M, opt) {
       units.forEach((u, i) => {
         if (!u.footprint || u.footprint.length < 3) return;
         ctx.save();
-        ctx.fillStyle = einheitFarbe(u.zonNr != null ? u.zonNr : i, dunkelZ);
+        const nrZ = u.farbNr != null ? u.farbNr : (u.zonNr != null ? u.zonNr : i);
+        ctx.fillStyle = einheitFarbe(nrZ, dunkelZ, window.__ehWahlNr == null || window.__ehWahlNr === nrZ);
         path(u.footprint, true); ctx.fill();
         ctx.restore();
       });
@@ -22972,7 +23051,9 @@ function rebuild() {
       } catch (e) { /* nur Darstellung */ }
     } else {
       const highlightActive = false;   // Auswahl zeigt sich nur als Umrahmung (Vorgabe Ozan, 12.10.2026)
-      const pieceEditActive = selectedPieceIdx !== null && currentPieceInfo.length >= 1;
+      // In einer Aufnahme für die Projektmappe gibt es keine Auswahl: ein orange
+      // hervorgehobener Baukörper hat auf dem Blatt nichts verloren.
+      const pieceEditActive = selectedPieceIdx !== null && currentPieceInfo.length >= 1 && !window.__exposeShot;
       // the core (Stiegenhaus/Aufzug) is computed once from this piece's ground floor and
       // reused unchanged for every floor above, so the shaft actually runs straight up
       // instead of drifting sideways as the footprint steps back higher up
@@ -23106,6 +23187,7 @@ function rebuild() {
           const wohnUnits = layout.units.filter(u => u.type === 'wohnung');
           wohnUnits.forEach(u => {
             allApartmentUnits.push(u._apt = {
+              farbNr: u.farbNr,
               pieceIdx,
               reihenhaus: !!u.reihenhaus,
               hausIdx: u.hausIdx != null ? u.hausIdx : null,
@@ -23314,6 +23396,16 @@ function rebuild() {
   // Die gewählte Einheit bekommt eine geschlossene Umrahmung in Orange — kein
   // Hervorheben durch Ausblenden, keine Kamerafahrt, keine Raumskizze.
   // (Vorgabe Ozan, 12.10.2026)
+  // Gewählte Einheit in der echten Farbe, alle anderen fast grau. Ist nichts gewählt,
+  // bleiben alle farbig. (Vorgabe Ozan, 13.10.2026)
+  { const w = (selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) ? allApartmentUnits[selectedApartmentIndex] : null;
+    window.__ehWahlNr = w && w.farbNr != null ? w.farbNr : null;
+    if (apartmentGroup) apartmentGroup.traverse(o => {
+      if (!o.isMesh || !o.material || !o.material.color || o.userData.ehFarbNr == null) return;
+      const aktiv = window.__ehWahlNr == null || o.userData.ehFarbNr === window.__ehWahlNr;
+      o.material.color.setHex(einheitFarbe3D(o.userData.ehFarbNr, aktiv));
+      o.material.needsUpdate = true;
+    }); }
   window.__ehWahlFp = null;
   if (document.getElementById('toggle-apartments').checked && selectedApartmentIndex !== null && allApartmentUnits[selectedApartmentIndex]) {
     const u = allApartmentUnits[selectedApartmentIndex];
@@ -23356,7 +23448,7 @@ function rebuild() {
   window.__terrainHoleFps = terrainHoleFps;   // dieselben Löcher bekommt auch das Orthofoto
   terrainMesh = buildTerrain(terrainFn, terrainHoleFps);
   // In der Einheiten-Ansicht steht nur das Wohnungsvolumen — ohne Gelände und Grundstück
-  if (viewMode() !== 'einheiten') scene.add(terrainMesh); else terrainMesh.visible = false;
+  scene.add(terrainMesh);
   if (showViz && !window.__exposeShot) {
     const hell = ownParcelColor(true);
     terrainHoleFps.forEach(fp => {
@@ -23370,12 +23462,12 @@ function rebuild() {
       } catch (e) {}
     });
   }
-  if (dgmActive() && document.getElementById('toggle-contours').checked && viewMode() !== 'aushub') { const cl = buildContourLines(showViz); if (cl) terrainMesh.add(cl); }
+  if (dgmActive() && document.getElementById('toggle-contours').checked && viewMode() !== 'aushub' && viewMode() !== 'einheiten') { const cl = buildContourLines(showViz); if (cl) terrainMesh.add(cl); }
   // Umgebung (Nachbargrundstücke, -häuser, Höhenlinien der Umgebung, Sockel, Bäume) liegt auf
   // Ebene 2: nur im 3D-Fenster sichtbar — die 2D-Ansichten und die Projektmappe zeigen nur das
   // eigene Grundstück und das Projekt
   const toSiteLayer = o => { if (o) o.traverse(c => c.layers.set(SITE_LAYER)); return o; };
-  if (dgmActive() && document.getElementById('toggle-contours-site').checked && viewMode() !== 'aushub') { const cs = toSiteLayer(buildSiteContours(showViz)); if (cs) terrainMesh.add(cs); }
+  if (dgmActive() && document.getElementById('toggle-contours-site').checked && viewMode() !== 'aushub' && viewMode() !== 'einheiten') { const cs = toSiteLayer(buildSiteContours(showViz)); if (cs) terrainMesh.add(cs); }
   { const sg = toSiteLayer(buildSiteGround(terrainFn, showViz)); if (sg) terrainMesh.add(sg); }
   { const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz)); if (nb) terrainMesh.add(nb); }
   { const pl = toSiteLayer(buildSitePlinth(heightFn, showViz)); if (pl) terrainMesh.add(pl); }
@@ -23639,7 +23731,7 @@ function rebuild() {
   // safety pass: force the correct colour directly from each slab's own pieceIdx tag,
   // so the selected piece is guaranteed to be orange and every other one grey — this
   // can't drift out of sync with selectedPieceIdx the way an earlier closure value could
-  if (selectedPieceIdx !== null && currentPieceInfo.length >= 1) {
+  if (selectedPieceIdx !== null && currentPieceInfo.length >= 1 && !window.__exposeShot) {
     buildingGroup.children.forEach(slabGroup => {
       const pIdx = slabGroup.userData.pieceIdx;
       if (pIdx === undefined) return;
@@ -23909,6 +24001,7 @@ function rebuild() {
   minSetbackLine.visible = document.getElementById('toggle-minsetback').checked;
   earthworkGroup.visible = document.getElementById('toggle-earthwork').checked;
   aushubSetup();
+  einheitenSetup();
   kubaturSetup();
   v2Setup();
   parkingGroup.visible = document.getElementById('toggle-parking').checked;
@@ -25051,7 +25144,7 @@ document.getElementById('variant-list').addEventListener('click', e => {
 renderVariantList();
 
 // ---- Visualisierung: Fenstertyp, Balkone, Neu generieren, Stände merken ----
-const VIZ_LABEL = { loch: 'Lochfassade', band: 'Bandfenster', raumhoch: 'Raumhoch', franz: 'Französische Fenster', klein: 'Kleine Fenster', hoch: 'Hochformat', doppel: 'Doppelfenster', versetzt: 'Versetzte Fenster', glas: 'Glasfassade', ohne: 'Ohne Fenster', keine: 'ohne Balkone', wenige: 'mit Balkonen', ruecksprung: 'Balkone rundum' };   // nicht mehr wählbar, nur noch für alte Projektstände
+const VIZ_LABEL = { mix: 'Gemischte Fenster', loch: 'Lochfassade', band: 'Bandfenster', raumhoch: 'Raumhoch', franz: 'Französische Fenster', klein: 'Kleine Fenster', hoch: 'Hochformat', doppel: 'Doppelfenster', versetzt: 'Versetzte Fenster', glas: 'Glasfassade', ohne: 'Ohne Fenster', keine: 'ohne Balkone', wenige: 'mit Balkonen', ruecksprung: 'Balkone rundum' };   // nicht mehr wählbar, nur noch für alte Projektstände
 function renderVizFloorColors() {
   const ir = document.getElementById('viz-irregular');
   if (ir) setzWert('v-viz-irregular', ir.value + ' %');
@@ -27792,7 +27885,7 @@ function drawWidmungPlan2D(ctx, X, Y, Wd, Hd, radius) {
   const sc = Math.min(Wd / (2 * hx), Hd / (2 * hy));
   const P = p => { const q = rot(p); return [X + Wd / 2 + q[0] * sc, Y + Hd / 2 + q[1] * sc]; };
   const path = (ring, holes) => { ctx.beginPath(); [ring].concat(holes || []).forEach(rg => { rg.forEach((p, i) => { const q = P(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); }); };
-  const paper = EX.dark ? EX.card : '#f6f1e8', ink = EX.dark ? '#e9e9ec' : '#2a211a';
+  const paper = EX.dark ? EX.card : '#faf9f7', ink = EX.dark ? '#e9e9ec' : '#1f2124';
   ctx.save();
   exRoundRect(ctx, X, Y, Wd, Hd, radius || DX.radius); ctx.clip();
   ctx.fillStyle = paper; ctx.fillRect(X, Y, Wd, Hd);
@@ -29389,7 +29482,8 @@ function zeichneGelaendeNeu(ctx, M, pts, sText) {
 // ---- Senkrechte Marken in Ansicht und Schnitt --------------------------------------
 // Grundgrenze kräftig orange, Mindestabstand heller orange, Höhenfaktor grau — alle
 // strichliert, alle beschriftet, alle in der Schriftregel. (Vorgabe Ozan, 13.10.2026)
-const MARK_GRENZE = '#e08a4a', MARK_ABSTAND = '#edbd95';
+const MARK_GRENZE = '#e08a4a';
+// Senkrechte Marke mit Beschriftung längs der Linie
 function vecMarkeSenkrecht(ctx, M, s, yLo, yHi, farbe, text, rechts, rang) {
   const a = M.toPx([s, yLo]), b = M.toPx([s, yHi]);
   ctx.save();
@@ -29399,12 +29493,30 @@ function vecMarkeSenkrecht(ctx, M, s, yLo, yHi, farbe, text, rechts, rang) {
   if (text) {
     ctx.font = planFont(M, 'klein'); ctx.fillStyle = farbe;
     ctx.save();
-    // je Markenart eine eigene Spur, sonst kleben Grundgrenze und Mindestabstand aneinander
     ctx.translate(b[0] + (rechts ? 1 : -1) * planPx(M, 'klein') * (0.5 + (rang || 0) * 1.15), b[1] + planPx(M, 'klein') * 1.6);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'left';
     ctx.fillText(text, 0, 0);
     ctx.restore();
+  }
+  ctx.restore();
+}
+// Eine schräge oder waagrechte Marke mit Beschriftung PARALLEL zur Linie
+function vecMarkeSchraeg(ctx, M, p0, p1, farbe, text, dicke) {
+  const a = M.toPx(p0), b = M.toPx(p1);
+  if (!isFinite(a[0]) || !isFinite(b[0])) return;
+  ctx.save();
+  ctx.strokeStyle = farbe; ctx.lineWidth = dicke || 1.0; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  ctx.setLineDash([]);
+  if (text) {
+    let w = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const umgedreht = w > Math.PI / 2 || w < -Math.PI / 2;      // nie auf dem Kopf lesen
+    if (umgedreht) w += Math.PI;
+    ctx.font = planFont(M, 'klein'); ctx.fillStyle = farbe;
+    ctx.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); ctx.rotate(w);
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 0, -planPx(M, 'klein') * 0.5);
   }
   ctx.restore();
 }
@@ -29421,27 +29533,37 @@ function vecRingSchnitte(ring, weltAt, s0, s1) {
   }
   return out;
 }
-// Grundgrenze, Mindestabstand und Höhenfaktor als senkrechte Marken
-function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, sBauLo, sBauHi) {
+// ---- Marken an der Grundgrenze -----------------------------------------------------
+// Grundgrenze: senkrecht, orange, beschriftet.
+// Mindestabstand: waagrecht von der Grundgrenze ins Grundstück, sehr zurückhaltend grau.
+// Höhenfaktor: die schiefe Linie, die er tatsächlich beschreibt — ab der Grundgrenze
+//   steigt die zulässige Höhe um 1 m je Faktor-Meter Abstand. Beschriftung parallel dazu.
+//   Ist der Faktor 0, gibt es die Linie nicht. (Vorgabe Ozan, 13.10.2026)
+// weltAt(s) liegt in der FLUCHT DER FASSADE, nicht davor — sonst stimmen die Abstände nicht.
+function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
   try {
-    const gs = vecRingSchnitte(parcelPoints, weltAt, sLo, sHi);
-    gs.forEach((s, i) => vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0));
-    if (typeof liveMinSetbackFp !== 'undefined' && liveMinSetbackFp && liveMinSetbackFp.length >= 3) {
-      const ms = vecRingSchnitte(liveMinSetbackFp, weltAt, sLo, sHi);
-      ms.forEach((s, i) => vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_ABSTAND, 'Mindestabstand', i >= ms.length / 2, 1));
-    }
-    // Höhenfaktor an den Gebäudekanten: der Lichtabstand, den diese Höhe verlangt
+    const grau = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
     const f = parseFloat((document.getElementById('factor') || {}).value);
-    if (isFinite(f) && f > 0 && isFinite(sBauLo) && isFinite(sBauHi)) {
-      const H = Math.max(0, yHi - (liveBaseLevel || 0));
-      const txt = 'Höhenfaktor ' + fmtNum(f, 2) + ' · H = ' + fmtNum(f * H, 2) + ' m';
-      const grau = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
-      vecMarkeSenkrecht(ctx, M, sBauLo, yLo, yHi, grau, txt, false, 2);
-      vecMarkeSenkrecht(ctx, M, sBauHi, yLo, yHi, grau, txt, true, 2);
-    }
+    const ab = parseFloat((document.getElementById('setback') || {}).value);
+    const gs = vecRingSchnitte(parcelPoints, weltAt, sLo, sHi);
+    gs.forEach((s, i) => {
+      vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0);
+      // nach innen zeigt die Richtung, in der der Punkt im Grundstück liegt
+      const eps = Math.max(0.05, (sHi - sLo) / 2000);
+      const innen = pointInPolygon(weltAt(s + eps), parcelPoints) ? 1 : -1;
+      const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
+      if (isFinite(ab) && ab > 0.05) {
+        vecMarkeSchraeg(ctx, M, [s, y0], [s + innen * ab, y0], grau,
+          'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9);
+      }
+      if (isFinite(f) && f > 0.001) {
+        const L = Math.min(Math.max(2, f * (yHi - y0)), Math.abs(sHi - sLo) * 0.6);
+        vecMarkeSchraeg(ctx, M, [s, y0 - 0.15], [s + innen * L, y0 - 0.15 + L / f], grau,
+          'Höhenfaktor ' + fmtNum(f, 2), 0.9);
+      }
+    });
   } catch (e) { /* Marken sind nur Darstellung */ }
 }
-
 function drawElevationVector(ctx, E, M) {
   const GF = boeGelaendeFns();
   const hf = GF.neu;
@@ -29511,8 +29633,10 @@ function drawElevationVector(ctx, E, M) {
     ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.6; ctx.stroke();
   }
   { const yLo = Math.min(...ground.map(g => g[1])) - 1.5, yHi = Math.max(E.yMax + 1.2, yLo + 3);
-    vecPlanMarken(ctx, M, sv => [E.r[0] * sv + E.d[0] * (E.tFront + 1), E.r[1] * sv + E.d[1] * (E.tFront + 1)],
-      gS0, gS1, yLo, yHi, E.sMin, E.sMax); }
+    const gAt = sv => { let b = ground[0]; ground.forEach(g => { if (Math.abs(g[0] - sv) < Math.abs(b[0] - sv)) b = g; }); return b ? b[1] : yLo; };
+    // In der Flucht der Fassade, nicht einen Meter davor — sonst stimmen die Abstände nicht
+    vecPlanMarken(ctx, M, sv => [E.r[0] * sv + E.d[0] * E.tFront, E.r[1] * sv + E.d[1] * E.tFront],
+      gS0, gS1, yLo, yHi, gAt); }
   ctx.restore();
   return ground;
 }
@@ -29660,8 +29784,9 @@ function drawSectionVector(ctx, D, M) {
     zeichneUrgelaende(ctx, M, D.groundUr, D.bLo + 2.5);
   }
   { const yLo = Math.min(...D.ground.map(g => g[1])) - 1.5, yHi = Math.max(D.yTop + 1.2, yLo + 3);
+    const gAt = sv => { let b = D.ground[0]; D.ground.forEach(g => { if (Math.abs(g[0] - sv) < Math.abs(b[0] - sv)) b = g; }); return b ? b[1] : yLo; };
     vecPlanMarken(ctx, M, sv => [D.L.c[0] + D.L.a[0] * sv, D.L.c[1] + D.L.a[1] * sv],
-      D.sLo, D.sHi, yLo, yHi, D.bLo + 8, D.bHi - 8); }
+      D.sLo, D.sHi, yLo, yHi, gAt); }
   void k;
   ctx.restore();
 }
@@ -34236,6 +34361,23 @@ function v2Aufraeumen() {
 // Der Baukörper ist an der maßgeblichen Erdoberfläche in Baumasse und unterirdischen Teil
 // zerlegt und auseinandergezogen; beide Geländemodelle liegen dazwischen.
 var kubaturGroup = null;
+// Ansicht „Einheiten": die Wohnungsvolumen stehen im Vordergrund. Grundstück und Umgebung
+// bleiben wie im Linienmodell nur angedeutet, Höhenlinien, Lichtabstände, Mindestabstand und
+// die strichlierten Hilfslinien sind aus. (Vorgabe Ozan, 13.10.2026)
+function einheitenSetup() {
+  if (viewMode() !== 'einheiten') return;
+  [floorLineGroup, lightLineGroup, setbackLine, minSetbackLine, dimensionGroup, markerGroup,
+   parkingGroup, earthworkGroup, customVolumeGroup, vizGroup].forEach(x => { if (x) x.visible = false; });
+  if (parcelLine) parcelLine.visible = false;
+  if (terrainMesh) {
+    terrainMesh.traverse(o => { if (o.isMesh && o.material) {
+      o.material.transparent = true;
+      o.material.opacity = Math.min(o.material.opacity == null ? 1 : o.material.opacity, 0.13);
+      o.material.depthWrite = false; o.material.needsUpdate = true; } });
+    if (terrainMesh.material) { terrainMesh.material.opacity = 0.3; terrainMesh.material.needsUpdate = true; }
+    terrainMesh.receiveShadow = false;
+  }
+}
 function kubaturAufraeumen() {
   if (!kubaturGroup) return;
   scene.remove(kubaturGroup);
@@ -34346,7 +34488,7 @@ function buildSiteGround(heightFn, showViz) {
   }
   geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   geo.computeVertexNormals();
-  const farbe = showViz ? (isLight ? 0xd8d4cb : 0x6d6b66) : (isLight ? 0xe3dfd6 : 0x24242a);
+  const farbe = showViz ? (isLight ? 0xd6d5d2 : 0x6d6b66) : (isLight ? 0xe6e5e2 : 0x24242a);
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: farbe, roughness: 1, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
   m.receiveShadow = true; m.raycast = () => {};
@@ -34371,11 +34513,11 @@ function buildSitePlinth(heightFn, showViz) {
   });
   const g = new THREE.Group();
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
-  const col = showViz && vizWhite() ? 0xdadad8 : showViz ? 0xe2dbd0 : isLight ? 0xcfcac1 : 0x24242b;
+  const col = showViz && vizWhite() ? 0xdadad8 : showViz ? 0xe1e0dc : isLight ? 0xd2d1cd : 0x24242b;
   const wall = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, roughness: 1, side: THREE.DoubleSide }));
   wall.raycast = () => {}; wall.receiveShadow = true; wall.userData.ground = true; g.add(wall);
   const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(line, 3));
-  const ln = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: showViz && vizWhite() ? 0xbdbdbb : showViz ? 0xb5aa98 : isLight ? 0x8f8a80 : 0x6a6975 }));
+  const ln = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: showViz && vizWhite() ? 0xbdbdbb : showViz ? 0xb2b1ac : isLight ? 0x8b8a86 : 0x6a6975 }));
   ln.raycast = () => {}; g.add(ln);
   return g;
 }
@@ -35476,7 +35618,7 @@ function buildOrthoDrape(heightFn) {
   holeFps.forEach(fp => { const ring = signedArea(fp) > 0 ? fp.slice().reverse() : fp; sh.holes.push(new THREE.Path(ring.map(p => new THREE.Vector2(p[0], p[1])))); });
   // halb so große Dreiecke wie beim Gelände: das Foto folgt dem Hang dann enger als
   // das Geländemesh selbst und wird von diesem nicht mehr durchstoßen
-  const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh), Math.max(0.6, (terrainDgm.step || 2) / 5));
+  const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh), Math.max(0.6, ((terrainDgm && terrainDgm.step) || 2) / 5));
   const pos = geo.attributes.position, n = pos.count, P = new Float32Array(n * 3), UV = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) {
     const x = pos.getX(i), z = pos.getY(i);
@@ -38881,9 +39023,8 @@ function sprSetzen(code, still) {
   bauen('wahl-fenster', 'viz-windows', 'Fenster', [
     ['keine', 'Ohne Fenster'], ['klein', 'Kleine Fenster'], ['hoch', 'Hochformat'],
     ['doppel', 'Doppelfenster'], ['versetzt', 'Versetzte Fenster'], ['franz', 'Französische Fenster'],
-    ['band', 'Bandfenster'], ['raumhoch', 'Raumhohe Fenster'], ['loch', 'Lochfassade'], ['glas', 'Glasfassade']]);
-  bauen('wahl-balkon', 'viz-balconies', 'Balkone', [
-    ['keine', 'Ohne Balkon'], ['wenige', 'Mit Balkon']]);
+    ['band', 'Bandfenster'], ['raumhoch', 'Raumhohe Fenster'], ['loch', 'Lochfassade'], ['glas', 'Glasfassade'],
+    ['mix', 'Gemischte Fenster']]);
   bauen('wahl-terrasse', 'viz-terrassen', 'Terrassen', [
     ['ja', 'Mit Terrasse'], ['nein', 'Ohne Terrasse']]);
   // Terrassen laufen über dasselbe Neuaufbauen wie die übrigen Fassadenwerte
@@ -39025,7 +39166,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.20';
+  const VERSION = 'v3.21';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
