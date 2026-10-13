@@ -563,20 +563,33 @@
   .eh-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px 9px; }
   .eh-kopf b { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
   .eh-kopf span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .eh-rollen { max-height: min(56vh, 460px); overflow-y: auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px; }
-  .eh-rollen::-webkit-scrollbar { width: 6px; }
-  .eh-rollen::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
-  .eh-zeile { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px;
-    padding: 6px 8px; border-radius: 10px; cursor: pointer; border: 1px solid transparent;
-    transition: background .12s ease, border-color .12s ease; }
-  .eh-zeile:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
-  .eh-zeile.an { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-  .eh-punkt { width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18); }
-  .eh-text { min-width: 0; }
-  .eh-top { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.25; }
-  .eh-sub { font-size: 10.5px; color: var(--muted); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .eh-flaeche { font-size: 12.5px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .eh-zeile.an .eh-flaeche, .eh-zeile.an .eh-top { color: var(--accent); }
+  /* Geschoßstapel statt Liste: je Geschoß eine Reihe farbiger Kacheln — man sieht den
+     Aufbau des Hauses und findet ein Top schneller als in einer langen Zeile. */
+  .eh-stapel { max-height: min(56vh, 460px); overflow-y: auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px 2px; }
+  .eh-stapel::-webkit-scrollbar { width: 6px; }
+  .eh-stapel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .eh-ebene + .eh-ebene { margin-top: 11px; padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+  .eh-ebene-kopf { display: flex; align-items: center; gap: 7px; padding: 0 2px 7px; }
+  .eh-ebene-kopf i { font-style: normal; font-size: 9.5px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink); padding: 2px 7px; border-radius: 6px;
+    background: color-mix(in srgb, var(--ink) 10%, transparent); }
+  .eh-ebene-kopf span { margin-left: auto; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .eh-gitter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .eh-kachel { position: relative; overflow: hidden; cursor: pointer; text-align: left; font: inherit;
+    border-radius: 11px; padding: 8px 8px 7px; border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
+    background: var(--eh-weich); transition: transform .12s ease, box-shadow .12s ease, background .12s ease; }
+  .eh-kachel::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--eh-ton); }
+  .eh-kachel:hover { transform: translateY(-1px); box-shadow: 0 7px 16px rgba(0,0,0,0.26); }
+  .eh-kachel b { display: flex; align-items: baseline; gap: 5px; font-size: 12.5px; font-weight: 600;
+    color: var(--ink); line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .eh-kachel b em { font-style: normal; font-size: 9.5px; font-weight: 500; color: var(--muted); margin-left: auto; }
+  .eh-kachel u { display: block; text-decoration: none; margin-top: 2px; font-size: 10.5px;
+    color: var(--muted); font-variant-numeric: tabular-nums; }
+  .eh-kachel.an { background: var(--eh-ton); border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent), 0 8px 18px rgba(0,0,0,0.3); }
+  .eh-kachel.an::before { background: rgba(0,0,0,0.3); }
+  .eh-kachel.an b, .eh-kachel.an u, .eh-kachel.an b em { color: #1e1c19; }
   .eh-fuss { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
     margin-top: 8px; padding: 9px 8px 2px; border-top: 1px solid var(--line); }
   .eh-fuss span { font-size: 11px; color: var(--muted); }
@@ -15208,31 +15221,47 @@ function renderApartmentAreas(units) {
   if (!units.length) { karte('<div class="eh-leer">Noch keine Einheiten berechnet.</div>'); return; }
   const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const summe = units.reduce((q, u) => q + (u.area || 0), 0);
-  let zeilen = '';
+  // Nach Geschoßen stapeln — oberstes Geschoß zuoberst, wie das Haus selbst steht.
+  const ebenen = [];
   units.forEach((u, i) => {
-    const an = i === selectedApartmentIndex;
-    const nr = u.farbNr != null ? u.farbNr : i;
-    const c = einheitTonAn(nr, an || selectedApartmentIndex === null);
-    const sub = [u.floor, u.rooms ? u.rooms + ' Zi' : null,
-      u.keller ? 'K' + String(u.keller).padStart(2, '0') : null,
-      u.stall ? 'SP ' + u.stall : null].filter(Boolean).join(' · ');
-    zeilen += '<div class="eh-zeile' + (an ? ' an' : '') + '" data-idx="' + i + '" role="button" tabindex="0">'
-      + '<span class="eh-punkt" style="background:rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')"></span>'
-      + '<span class="eh-text"><span class="eh-top">Top ' + String(u.top).padStart(2, '0') + '</span>'
-      + '<span class="eh-sub">' + esc(sub) + '</span></span>'
-      + '<span class="eh-flaeche">' + Math.round(u.area) + ' m²</span></div>';
+    const name = u.floor || '–';
+    let e = ebenen.find(q => q.name === name);
+    if (!e) { e = { name, tops: [] }; ebenen.push(e); }
+    e.tops.push({ u, i });
+  });
+  ebenen.reverse();
+  let stapel = '';
+  ebenen.forEach(e => {
+    const flaeche = e.tops.reduce((q, t) => q + (t.u.area || 0), 0);
+    let kacheln = '';
+    e.tops.forEach(({ u, i }) => {
+      const an = i === selectedApartmentIndex;
+      const nr = u.farbNr != null ? u.farbNr : i;
+      const c = einheitTonAn(nr, an || selectedApartmentIndex === null);
+      const ton = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+      const weich = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',0.16)';
+      const titel = ['Top ' + String(u.top).padStart(2, '0'), u.floor,
+        u.rooms ? u.rooms + ' Zimmer' : null, Math.round(u.area) + ' m²',
+        u.stall ? 'Stellplatz ' + u.stall : null,
+        u.keller ? 'Keller K' + String(u.keller).padStart(2, '0') : null].filter(Boolean).join(' · ');
+      kacheln += '<button type="button" class="eh-kachel' + (an ? ' an' : '') + '" data-idx="' + i + '"'
+        + ' style="--eh-ton:' + ton + ';--eh-weich:' + weich + '" title="' + esc(titel) + '">'
+        + '<b>' + String(u.top).padStart(2, '0') + (u.rooms ? '<em>' + u.rooms + ' Zi</em>' : '') + '</b>'
+        + '<u>' + Math.round(u.area) + ' m²</u></button>';
+    });
+    stapel += '<div class="eh-ebene"><div class="eh-ebene-kopf"><i>' + esc(e.name) + '</i>'
+      + '<span>' + e.tops.length + ' Tops · ' + Math.round(flaeche) + ' m²</span></div>'
+      + '<div class="eh-gitter">' + kacheln + '</div></div>';
   });
   karte('<div class="eh-kopf"><b>Einheiten</b><span>' + units.length + ' Tops · Ø ' + Math.round(summe / units.length) + ' m²</span></div>'
-    + '<div class="eh-rollen">' + zeilen + '</div>'
+    + '<div class="eh-stapel">' + stapel + '</div>'
     + '<div class="eh-fuss"><span>Errechnete Gesamtfläche</span><b>' + Math.round(summe) + ' m²</b></div>');
-  const waehle = row => {
-    const idx = parseInt(row.dataset.idx, 10);
-    selectedApartmentIndex = selectedApartmentIndex === idx ? null : idx;
-    rebuild();
-  };
-  container.querySelectorAll('.eh-zeile').forEach(row => {
-    row.addEventListener('click', () => waehle(row));
-    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); waehle(row); } });
+  container.querySelectorAll('.eh-kachel').forEach(kachel => {
+    kachel.addEventListener('click', () => {
+      const idx = parseInt(kachel.dataset.idx, 10);
+      selectedApartmentIndex = selectedApartmentIndex === idx ? null : idx;
+      rebuild();
+    });
   });
 }
 
@@ -29457,8 +29486,8 @@ function zeichneUrgelaende(ctx, M, pts, sText) {
     const q = M.toPx(profilBei(pts, sText));
     ctx.font = planFont(M, 'klein');
     ctx.fillStyle = farbe;
-    ctx.textAlign = 'right';
-    ctx.fillText('Urgelände', q[0] - 4, q[1] - planPx(M, 'klein') * 0.5);
+    ctx.textAlign = 'left';
+    ctx.fillText('Urgelände', q[0] + 4, q[1] - planPx(M, 'klein') * 0.9);
   }
   ctx.restore();
 }
@@ -29502,7 +29531,7 @@ function vecMarkeSenkrecht(ctx, M, s, yLo, yHi, farbe, text, rechts, rang) {
   ctx.restore();
 }
 // Eine schräge oder waagrechte Marke mit Beschriftung PARALLEL zur Linie
-function vecMarkeSchraeg(ctx, M, p0, p1, farbe, text, dicke) {
+function vecMarkeSchraeg(ctx, M, p0, p1, farbe, text, dicke, unten) {
   const a = M.toPx(p0), b = M.toPx(p1);
   if (!isFinite(a[0]) || !isFinite(b[0])) return;
   ctx.save();
@@ -29516,7 +29545,7 @@ function vecMarkeSchraeg(ctx, M, p0, p1, farbe, text, dicke) {
     ctx.font = planFont(M, 'klein'); ctx.fillStyle = farbe;
     ctx.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); ctx.rotate(w);
     ctx.textAlign = 'center';
-    ctx.fillText(text, 0, -planPx(M, 'klein') * 0.5);
+    ctx.fillText(text, 0, planPx(M, 'klein') * (unten ? 1.15 : -0.5));
   }
   ctx.restore();
 }
@@ -29554,7 +29583,7 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
       if (isFinite(ab) && ab > 0.05) {
         vecMarkeSchraeg(ctx, M, [s, y0], [s + innen * ab, y0], grau,
-          'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9);
+          'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
       }
       if (isFinite(f) && f > 0.001) {
         const L = Math.min(Math.max(2, f * (yHi - y0)), Math.abs(sHi - sLo) * 0.6);
@@ -29569,11 +29598,16 @@ function drawElevationVector(ctx, E, M) {
   const hf = GF.neu;
   const k = M.k;
   // Geländeprofil vor dem Gebäude
-  const ground = [], groundUr = [];
+  const ground = [];
   const gS0 = Math.min(E.sMin - 7, isFinite(E.pS0) ? E.pS0 - 3 : Infinity), gS1 = Math.max(E.sMax + 7, isFinite(E.pS1) ? E.pS1 + 3 : -Infinity);
   const gStep = Math.max(0.5, (gS1 - gS0) / 400);
-  for (let s = gS0; s <= gS1 + 0.001; s += gStep) { const x = E.r[0] * s + E.d[0] * (E.tFront + 1), z = E.r[1] * s + E.d[1] * (E.tFront + 1); ground.push([s, hf(x, z)]); if (GF.an) groundUr.push([s, GF.ur(x, z)]); }
+  for (let s = gS0; s <= gS1 + 0.001; s += gStep) { const x = E.r[0] * s + E.d[0] * (E.tFront + 1), z = E.r[1] * s + E.d[1] * (E.tFront + 1); ground.push([s, hf(x, z)]); }
   const faces = E.faces.slice().sort((a, b) => a.t - b.t);
+  // Tiefenverlauf: je weiter eine Fassade hinter der vordersten liegt, desto blasser wird
+  // sie gezeichnet. Ohne das kleben vorderer und hinterer Baukoerper in der Ansicht
+  // aufeinander und man sieht den Abstand nicht. (Vorgabe Ozan, 13.10.2026)
+  const tNah = faces.length ? Math.max(...faces.map(f => f.t)) : 0;
+  const tiefeVon = f => Math.min(1, Math.max(0, (tNah - f.t) / 16));
   ctx.save(); ctx.lineJoin = 'miter';
   // 2D-Fenster: statt einer Füllfläche unter dem Gelände einfach nur oberhalb der Geländelinie
   // zeichnen — der Hintergrund (Verlauf) bleibt so unverändert sichtbar
@@ -29599,9 +29633,11 @@ function drawElevationVector(ctx, E, M) {
     if (x1 - x0 < 0.3) return;
     // leichte Abstufung je Ausrichtung — frontal weiß, schräg ganz leicht grau
     const g = Math.round(VP.face - (1 - f.nd) * VP.faceStep);
+    const tf = tiefeVon(f);
+    ctx.save(); ctx.globalAlpha = 1 - tf * 0.55;          // nach hinten verblassen
     ctx.fillStyle = `rgb(${g},${g},${Math.min(255, g + 1)})`;
     ctx.fillRect(x0, yT, x1 - x0, yB - yT);
-    ctx.strokeStyle = VP.ink; ctx.lineWidth = f.attika ? 0.7 : 0.8;
+    ctx.strokeStyle = VP.ink; ctx.lineWidth = (f.attika ? 0.7 : 0.8) * (1 - tf * 0.25);
     ctx.strokeRect(x0, yT, x1 - x0, yB - yT);
     if (!VP.noHoles) f.holes.forEach(h => {
       const p = M.toPx([h.sa, h.y1]), q = M.toPx([h.sb, h.y0]);
@@ -29615,6 +29651,7 @@ function drawElevationVector(ctx, E, M) {
 
       if (!h.door && !h.curtain && hy1 - hy0 > 4) { ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(hx0 - 0.06 * k, hy1 + 0.5); ctx.lineTo(hx1 + 0.06 * k, hy1 + 0.5); ctx.stroke(); }
     });
+    ctx.restore();
   });
   // Gelände: darunter weiß (verdeckt Untergeschosse), kräftige Geländelinie
   const gp = ground.map(M.toPx);
@@ -29625,31 +29662,45 @@ function drawElevationVector(ctx, E, M) {
     ctx.fillStyle = VP.ground || EX.bg; ctx.fill();
   }
   if (GF.an) {
-    // projektiertes Gelände: dunkelgrün in geschnittener Stärke, Beschriftung rechts
-    zeichneGelaendeNeu(ctx, M, ground, E.sMax + 2.5);
-    zeichneUrgelaende(ctx, M, groundUr, E.sMin - 2.5);
+    // In der Ansicht nur das projektierte Gelände, ohne Bezeichnung — das Urgelände und
+    // seine Beschriftung gehören in den Schnitt. (Vorgabe Ozan, 13.10.2026)
+    zeichneGelaendeNeu(ctx, M, ground, null);
   } else {
     ctx.beginPath(); gp.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
     ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.6; ctx.stroke();
   }
-  { const yLo = Math.min(...ground.map(g => g[1])) - 1.5, yHi = Math.max(E.yMax + 1.2, yLo + 3);
-    const gAt = sv => { let b = ground[0]; ground.forEach(g => { if (Math.abs(g[0] - sv) < Math.abs(b[0] - sv)) b = g; }); return b ? b[1] : yLo; };
-    // In der Flucht der Fassade, nicht einen Meter davor — sonst stimmen die Abstände nicht
-    vecPlanMarken(ctx, M, sv => [E.r[0] * sv + E.d[0] * E.tFront, E.r[1] * sv + E.d[1] * E.tFront],
-      gS0, gS1, yLo, yHi, gAt); }
+  // Grundgrenze, Höhenfaktor und Mindestabstand stehen nur im Schnitt. In der Ansicht
+  // blickt man parallel zur Grenze, dort sagen die Marken nichts aus. (Vorgabe Ozan, 13.10.2026)
   ctx.restore();
   return ground;
 }
 // Höhenkote an einer Stelle (Dreieck + Text)
-function vecLevel(ctx, M, s, y, text, left) {
-  const p = M.toPx([s, y]);
-  ctx.save(); ctx.strokeStyle = VP.ink; ctx.fillStyle = VP.ink; ctx.lineWidth = 0.8;
-  const dir = left ? -1 : 1, L = 34;
-  ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + dir * L, p[1]); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(p[0] + dir * 8, p[1]); ctx.lineTo(p[0] + dir * 4, p[1] - 6); ctx.lineTo(p[0] + dir * 12, p[1] - 6); ctx.closePath(); ctx.stroke();
-  ctx.font = planFont(M, 'normal'); ctx.textAlign = left ? 'right' : 'left';
-  ctx.fillText(text, p[0] + dir * (L + 3), p[1] + planPx(M, 'normal') * 0.35);
+// Höhenkoten stehen in Ansicht wie Schnitt LINKS neben dem Plan, alle auf einer Achse,
+// in einem ruhigen Grau. xPx überschreibt die Achse in Pixeln, damit sie unabhängig vom
+// Maßstab immer knapp neben der Zeichnung sitzt. (Vorgabe Ozan, 13.10.2026)
+function koteFarbe() { return hellerGrund() ? '#6b6b72' : '#b4b2ac'; }
+function vecLevel(ctx, M, s, y, text, left, xPx) {
+  const p = M.toPx([s, y]), ts = planTs(M), px = (xPx == null ? p[0] : xPx);
+  const farbe = koteFarbe();
+  ctx.save(); ctx.strokeStyle = farbe; ctx.fillStyle = farbe; ctx.lineWidth = 0.8;
+  const dir = left === false ? 1 : -1, L = 22 * ts, h = 6 * ts;
+  ctx.beginPath(); ctx.moveTo(px, p[1]); ctx.lineTo(px + dir * L, p[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px + dir * h * 1.33, p[1]); ctx.lineTo(px + dir * h * 0.67, p[1] - h); ctx.lineTo(px + dir * h * 2, p[1] - h); ctx.closePath(); ctx.stroke();
+  ctx.font = planFont(M, 'normal'); ctx.textAlign = dir < 0 ? 'right' : 'left';
+  const tx = px + dir * (L + 3 * ts), ty = p[1] + planPx(M, 'normal') * 0.35;
+  // Text freistellen, damit Gelände- und Wandlinien nicht hindurchlaufen
+  const bw = ctx.measureText(text).width, bh = planPx(M, 'normal');
+  ctx.fillStyle = VP.paper || '#fff';
+  ctx.fillRect(tx - (dir < 0 ? bw : 0) - 2, ty - bh * 0.92, bw + 4, bh * 1.2);
+  ctx.fillStyle = farbe;
+  ctx.fillText(text, tx, ty);
   ctx.restore();
+}
+// Alle Höhenkoten eines Plans sitzen auf EINER senkrechten Achse links neben der Zeichnung.
+function vecKotenNiveaus() {
+  const ns = new Set();
+  (liveVizArgs || []).forEach(a => ns.add(+a.baseY.toFixed(3)));
+  return [...ns].sort((a, b) => a - b);
 }
 function vecLevelText(y) { const v = y - (liveBaseLevel || 0); return (Math.abs(v) < 0.005 ? '±' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(2).replace('.', ','); }
 // Schnittlinien (durch die Mitte des Erdgeschosses, längs und quer zur Gebäudeachse)
@@ -29781,7 +29832,7 @@ function drawSectionVector(ctx, D, M) {
   ctx.stroke();
   if (D.groundUr && D.groundUr.length) {
     zeichneGelaendeNeu(ctx, M, D.ground, D.bHi - 2.5);
-    zeichneUrgelaende(ctx, M, D.groundUr, D.bLo + 2.5);
+    zeichneUrgelaende(ctx, M, D.groundUr, D.bHi - 2.5);
   }
   { const yLo = Math.min(...D.ground.map(g => g[1])) - 1.5, yHi = Math.max(D.yTop + 1.2, yLo + 3);
     const gAt = sv => { let b = D.ground[0]; D.ground.forEach(g => { if (Math.abs(g[0] - sv) < Math.abs(b[0] - sv)) b = g; }); return b ? b[1] : yLo; };
@@ -29959,6 +30010,8 @@ async function buildExposePlanSheets(firstPageNum, totalPages) {
         const sMid = (d.s0 + d.s1) / 2, yMid = (d.y0 + d.y1) / 2;
         const M = { k, ts: 1.5, toPx: ([s, yy]) => [cx + (s - sMid) * k, cy - (yy - yMid) * k] };
         ctx.save(); ctx.beginPath(); ctx.rect(x, y, cw, rowH - labelH); ctx.clip();
+        // Kotenachse links neben der Zeichnung — in jedem Plan an derselben Stelle
+        const xKote = Math.max(x + 62, cx + (d.s0 - sMid) * k - 6);
         if (d.kind === 'elev') {
           const ground = drawElevationVector(ctx, d.E, M);
           const gAt = s => { let best = ground[0]; ground.forEach(g => { if (Math.abs(g[0] - s) < Math.abs(best[0] - s)) best = g; }); return best[1]; };
@@ -29966,19 +30019,21 @@ async function buildExposePlanSheets(firstPageNum, totalPages) {
             .map(([s, type, flip]) => { const p = M.toPx([s, gAt(s)]); return { x: p[0], y: p[1], k, type, flip }; });
           drawStaffage(ctx, figs, EX.dark ? 'rgba(200,198,190,0.75)' : 'rgba(70,70,78,0.7)');
           const eg = liveBaseLevel || 0;
-          vecLevel(ctx, M, d.E.sMax + 0.6, eg, vecLevelText(eg) + ' EG', false);
-          vecLevel(ctx, M, d.E.sMax + 0.6, d.E.yMax, vecLevelText(d.E.yMax), false);
+          const ns = vecKotenNiveaus(); if (!ns.length) ns.push(eg);
+          ns.forEach(yy => vecLevel(ctx, M, 0, yy, vecLevelText(yy) + (Math.abs(yy - eg) < 0.005 ? ' EG' : ''), true, xKote));
+          vecLevel(ctx, M, 0, d.E.yMax, vecLevelText(d.E.yMax), true, xKote);
         } else {
           drawSectionVector(ctx, d.D, M);
           // Höhenkoten links, je Geschoss; Staffage in den Geschossen
           const levels = [...new Set((liveVizArgs || []).map(a => a.baseY.toFixed(3)))].map(Number).sort((a, b) => a - b);
-          levels.forEach(yy => vecLevel(ctx, M, d.D.bLo + 6.2, yy, vecLevelText(yy), true));
+          levels.forEach(yy => vecLevel(ctx, M, 0, yy, vecLevelText(yy), true, xKote));
           const figs = [];
           (liveVizArgs || []).filter(a => a.f <= 1).forEach((a, i) => { const iv = vecLineIntervals(a.fp, d.D.L.c, d.D.L.a); if (iv.length) { const s = iv[0][0] + (iv[0][1] - iv[0][0]) * (i % 2 ? 0.65 : 0.35); const p = M.toPx([s, a.baseY]); figs.push({ x: p[0], y: p[1], k, type: i % 2 ? 'frau' : 'mann', flip: !!(i % 2) }); } });
           const gs = d.D.ground; if (gs.length) { const g0 = gs[Math.floor(gs.length * 0.02)], g1 = gs[Math.floor(gs.length * 0.97)]; [[g0, 'gehend', false], [g1, 'kind', true]].forEach(([g, t, f]) => { const p = M.toPx(g); figs.push({ x: p[0], y: p[1], k, type: t, flip: f }); }); }
           drawStaffage(ctx, figs, EX.dark ? 'rgba(200,198,190,0.75)' : 'rgba(70,70,78,0.7)');
         }
         ctx.restore();
+        // Planbenennung zentriert, mit Abstand unter der Zeichnung (Vorgabe Ozan, 13.10.2026)
         dxLabel(ctx, d.label, x + cw / 2, y + rowH - 8, EX.accent, 17, 'center');
       });
     });
@@ -31430,7 +31485,14 @@ function draw2DOverlays() {
         const figs = [[E.sMin - 2.8, 'mann', false], [E.sMin - 2.0, 'kind', false], [E.sMin + (E.sMax - E.sMin) * 0.4, 'gehend', true], [E.sMax + 2.2, 'frau', true]]
           .map(([sv, type, flip]) => { const p = M.toPx([sv, gAt(sv)]); return { x: p[0], y: p[1], k, type, flip }; });
         drawStaffage(ctx, figs, dark ? 'rgba(200,198,190,0.75)' : 'rgba(70,70,78,0.7)');
-        if (k > 3) { const eg = liveBaseLevel || 0; vecLevel(ctx, M, E.sMax + 0.6, eg, vecLevelText(eg) + ' EG', false); vecLevel(ctx, M, E.sMax + 0.6, E.yMax, vecLevelText(E.yMax), false); }
+        if (k > 3) {
+          const eg = liveBaseLevel || 0;
+          const sA = E.sMin - 1.5, sB = E.sMax + 1.5;
+          const sKo = M.toPx([sA, 0])[0] <= M.toPx([sB, 0])[0] ? sA : sB;
+          const ns = vecKotenNiveaus(); if (!ns.length) ns.push(eg);
+          ns.forEach(yy => vecLevel(ctx, M, sKo, yy, vecLevelText(yy) + (Math.abs(yy - eg) < 0.005 ? ' EG' : ''), true));
+          vecLevel(ctx, M, sKo, E.yMax, vecLevelText(E.yMax), true);
+        }
       } }
     // Schnitt (Quer-/Längsschnitt) mit Poché, Erdreich, Koten und Staffage
     { const v = view2D.section, P = prep('view-section-ov', v), L = p2dSectionLine();
@@ -31440,7 +31502,11 @@ function draw2DOverlays() {
           const { ctx, w, h, k } = P, pr = proj(v, w, h);
           const M = { k, toPx: ([sv, y]) => pr(L.c[0] + L.a[0] * sv, y, L.c[1] + L.a[1] * sv) };
           drawSectionVector(ctx, D, M);
-          if (k > 7) { const levels = [...new Set((liveVizArgs || []).map(a => a.baseY.toFixed(3)))].map(Number).sort((x, y) => x - y); const xa = M.toPx([D.bLo + 6.2, 0])[0], xb = M.toPx([D.bHi - 6.2, 0])[0], sL = xa <= xb ? D.bLo + 6.2 : D.bHi - 6.2; levels.forEach(yy => vecLevel(ctx, M, sL, yy, vecLevelText(yy), true)); }
+          if (k > 7) {
+            const sA = D.bLo + 1.5, sB = D.bHi - 1.5;
+            const sKo = M.toPx([sA, 0])[0] <= M.toPx([sB, 0])[0] ? sA : sB;
+            vecKotenNiveaus().forEach(yy => vecLevel(ctx, M, sKo, yy, vecLevelText(yy), true));
+          }
           const figs = [];
           (liveVizArgs || []).filter(a => a.f <= 1).forEach((a, i) => { const iv = vecLineIntervals(a.fp, L.c, L.a); if (iv.length) { const sv = iv[0][0] + (iv[0][1] - iv[0][0]) * (i % 2 ? 0.65 : 0.35); const p = M.toPx([sv, a.baseY]); figs.push({ x: p[0], y: p[1], k, type: i % 2 ? 'frau' : 'mann', flip: !!(i % 2) }); } });
           const gs = D.ground; if (gs.length) { const g0 = gs[Math.floor(gs.length * 0.02)], g1 = gs[Math.floor(gs.length * 0.97)]; [[g0, 'gehend', false], [g1, 'kind', true]].forEach(([g, t, fl]) => { const p = M.toPx(g); figs.push({ x: p[0], y: p[1], k, type: t, flip: fl }); }); }
@@ -38982,6 +39048,26 @@ function sprSetzen(code, still) {
   ['menu-bebauung', 'menu-baukoerper', 'menu-wirtschaft'].forEach(kapitelFalten);
 })();
 
+// ---------- Einzelregler, die über den Kapiteln hängen bleiben, einsortieren ----------
+// Die Böschung gehört zum Gelände, die Tiroler Startwerte und die Stellplätze zur
+// Bauordnung. Standen sie lose über den Kapiteln, wirkte das Menü unaufgeräumt und man
+// sah nicht, wozu die Regler gehören. (Vorgabe Ozan, 13.10.2026)
+(function () {
+  const kapitel = (panelId, titel) => [...document.querySelectorAll('#' + panelId + ' details.more')]
+    .find(d => ((d.querySelector('summary span') || {}).textContent || '').trim().startsWith(titel));
+  const einhaengen = (d, ids) => {
+    if (!d) return;
+    const body = d.querySelector('.more-body'); if (!body) return;
+    ids.forEach(id => {
+      const el = document.getElementById(id); if (!el) return;
+      const w = el.closest('.group') || el.closest('.ios-toggle-row') || el;
+      if (w && w.parentElement !== body) body.appendChild(w);
+    });
+  };
+  einhaengen(kapitel('menu-bebauung', 'Lage'), ['toggle-boeschung', 'boeschung-row']);
+  einhaengen(kapitel('menu-bebauung', 'Bauordnung'), ['bundesland-note', 'tirol-lage', 'tirol-lage-note', 'tirol-sp-kat']);
+})();
+
 // ---------- Fenster, Balkone und Terrassen: je ein Knopf mit Auswahlliste ----------
 // Statt eines Rasters aus zehn Knöpfen steht der gewählte Wert da; ein Klick klappt die
 // Liste auf. Das spart Platz und benennt die aktuelle Einstellung.
@@ -39166,7 +39252,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.21';
+  const VERSION = 'v3.22';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
