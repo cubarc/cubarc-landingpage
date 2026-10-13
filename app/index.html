@@ -17904,6 +17904,103 @@ function buildApartmentLayout(footprint, y, showRoomHints, showZoning, coreRef, 
 // own. Pult/Sattel only touch down along SOME edges — wherever the roof edge is raised
 // (the ridge side, the gable ends), a vertical infill wall is added down to the floor
 // top so the whole thing always reads as one fused solid, never a floating sheet.
+// ---- Giebeldach nach dem Vorbild der Nachbargebäude ---------------------------------
+// Der First bleibt auf der zulässigen Höhe des Baukörpers; zwei Ebenen (Walmdach vier,
+// Pultdach eine) laufen mit dem eingestellten Winkel nach unten und kappen die Wände
+// darunter. Dadurch kann das Dach nie über die Höhenregel hinauswachsen und nie vom
+// Hüllkörper weggetrimmt werden — und es sieht nicht mehr wie ein aufgesetztes
+// Dachgeschoß aus. (Vorgabe Ozan, 13.10.2026)
+function dachAchse(fp, querFirst) {
+  let best = null;
+  for (let i = 0; i < fp.length; i++) {
+    const a = fp[i], b = fp[(i + 1) % fp.length];
+    const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+    if (len < 0.05) continue;
+    const ux = dx / len, uz = dz / len;
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    fp.forEach(p => {
+      const u = p[0] * ux + p[1] * uz, v = -p[0] * uz + p[1] * ux;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    });
+    const fl = (u1 - u0) * (v1 - v0);
+    if (!best || fl < best.fl) best = { fl, ux, uz, u0, u1, v0, v1 };
+  }
+  if (!best) return null;
+  let { ux, uz, u0, u1, v0, v1 } = best;
+  // der First läuft entlang der längeren Seite — auf Wunsch quer dazu
+  const drehen = (u1 - u0 < v1 - v0) !== !!querFirst;
+  if (drehen) { const tx = ux; ux = -uz; uz = tx;
+    const t0 = u0, t1 = u1; u0 = v0; u1 = v1; v0 = -t1; v1 = -t0; }
+  const vm = (v0 + v1) / 2, um = (u0 + u1) / 2;
+  return { ux, uz,
+    quer: p => (-p[0] * uz + p[1] * ux) - vm,
+    laengs: p => (p[0] * ux + p[1] * uz) - um,
+    halbQ: Math.max(0.5, (v1 - v0) / 2), halbL: Math.max(0.5, (u1 - u0) / 2) };
+}
+function buildGiebeldach(fp, firstY, opts, maxAbfall, color, showViz) {
+  const group = new THREE.Group();
+  const info = { type: opts.type, pitch: 0, wanted: opts.pitch, volume: 0,
+                 ridgeY: firstY, traufY: firstY, drop: 0, trimmed: false, H: null };
+  if (opts.type === 'flach' || !fp || fp.length < 3) return { group, info };
+  const A = dachAchse(fp, opts.ridge === 'quer');
+  if (!A) return { group, info };
+  const abfallFn = st => p => {
+    const q = Math.abs(A.quer(p));
+    if (opts.type === 'pult') return st * (A.quer(p) + A.halbQ);
+    if (opts.type === 'walm') return st * Math.max(q, Math.abs(A.laengs(p)) - Math.max(0, A.halbL - A.halbQ));
+    return st * q;
+  };
+  const groesster = st => { const f = abfallFn(st); let m = 0; fp.forEach(p => { m = Math.max(m, f(p)); }); return m; };
+  let steig = Math.tan(Math.max(5, Math.min(60, opts.pitch || 25)) * Math.PI / 180);
+  const roh = groesster(steig);
+  if (roh > maxAbfall && roh > 1e-6) { steig *= maxAbfall / roh; info.trimmed = true; }
+  const abfall = abfallFn(steig);
+  info.pitch = Math.atan(steig) * 180 / Math.PI;
+  info.drop = groesster(steig);
+  info.traufY = firstY - info.drop;
+  info.H = p => firstY - Math.max(0, abfall(p));
+  if (info.drop < 0.08) { info.pitch = 0; info.drop = 0; info.traufY = firstY; info.H = null; return { group, info }; }
+  const H = info.H;
+  // Volumen zwischen Traufebene und Dachhaut
+  { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    fp.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+    const st = 0.5; let v = 0;
+    for (let x = x0 + st / 2; x < x1; x += st) for (let z = z0 + st / 2; z < z1; z += st)
+      if (pointInPolygon([x, z], fp)) v += Math.max(0, H([x, z]) - info.traufY) * st * st;
+    info.volume = v; }
+  // Dachhaut: der Grundriss fein unterteilt, jeder Punkt auf die Dachfläche gehoben —
+  // so entstehen First und Grate von selbst, auch bei einspringenden Ecken.
+  const pos = [];
+  try {
+    const sh = new THREE.Shape(fp.map(q => new THREE.Vector2(q[0], q[1])));
+    const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh), 0.55);
+    const pz = geo.attributes.position, idx = geo.index;
+    const addV = i => { const x = pz.getX(i), z = pz.getY(i); pos.push(x, H([x, z]) + ROOF_LIFT, z); };
+    if (idx) for (let i = 0; i < idx.count; i++) addV(idx.getX(i));
+    else for (let i = 0; i < pz.count; i++) addV(i);
+    geo.dispose();
+  } catch (e) { /* ohne Dachhaut weiter */ }
+  // Giebel- und Traufwände: von der Traufebene bis zur Dachhaut
+  const wall = [];
+  const dicht = dgmDensify(fp, true, 0.5);
+  for (let i = 0; i < dicht.length; i++) {
+    const a = dicht[i], b = dicht[(i + 1) % dicht.length];
+    const ha = H(a), hb = H(b);
+    if (ha - info.traufY < 0.02 && hb - info.traufY < 0.02) continue;
+    wall.push(a[0], info.traufY, a[1], b[0], info.traufY, b[1], b[0], hb + ROOF_LIFT, b[1],
+              a[0], info.traufY, a[1], b[0], hb + ROOF_LIFT, b[1], a[0], ha + ROOF_LIFT, a[1]);
+  }
+  const mk = (arr, rough) => { if (!arr.length) return null;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: showViz ? 0 : 0.05, side: THREE.DoubleSide, flatShading: true }));
+    m.castShadow = true; m.receiveShadow = true; return m; };
+  const dachMesh = mk(pos, showViz ? 0.92 : 0.85), wandMesh = mk(wall, showViz ? 0.92 : 0.85);
+  if (dachMesh) { dachMesh.receiveShadow = false; dachMesh.material.flatShading = false;
+    dachMesh.material.polygonOffset = true; dachMesh.material.polygonOffsetFactor = -2; dachMesh.material.polygonOffsetUnits = -2;
+    group.add(dachMesh); }
+  if (wandMesh) group.add(wandMesh);
+  return { group, info };
+}
 function buildRoof(footprint, baseY, type, pitchDeg, color) {
   if (type === 'flach' || footprint.length < 3) return null;
   const pitch = Math.tan(pitchDeg * Math.PI / 180);
@@ -22812,9 +22909,38 @@ function rebuild() {
     // embedded, and that portion is genuinely unterirdisch even though it's still "EG".
     // Maximalhüllkörper mode computes its own split further down from the exact fine-
     // sliced shape it renders (see integrateEnvelopeVolume), not this per-floor version.
+    // Das Dach schneidet in das oberste Geschoß: der First bleibt auf der zulässigen Höhe,
+    // die Dachflächen laufen von dort nach unten. Die Absenkung muss daher feststehen,
+    // bevor Kubatur, Geschoßkörper und Pläne gerechnet werden. (Vorgabe Ozan, 13.10.2026)
+    let dachAbsenkung = 0, dachBau = null;
+    if (modelMode !== 'envelope' && roofOpts.type !== 'flach' && floors > 0) {
+      const tFp = floorFootprints[floors - 1];
+      if (!(tFp.holes && tFp.holes.length)) {
+        const dachFarbe = showViz ? (vizWhite() ? 0xf4f4f2 : VIZ_WHITE)
+          : (viewMode() === 'widmung' ? WID_RED[(floors - 1) % 2] : ((floors - 1) % 2 === 0 ? 0xf7f7f5 : 0xeeeeec));
+        const deckeY = ebeneY(floors);
+        // So viel Luft, wie die Höhenregel über der obersten Decke noch zulässt — der First
+        // steigt nur so weit, wie er darf, und ist an seiner Stelle auch nach der
+        // Abstandsregel geprüft.
+        const zMaxD = Math.min(baseLevel + maxH - Math.max(0, pieceOffset), topAbsY != null ? topAbsY : Infinity);
+        let kopf = Math.max(0, zMaxD - deckeY);
+        try { const mitte = polygonCentroid(tFp);
+          while (kopf > 0.05 && !roofLegalAt(mitte, deckeY + kopf)) kopf -= 0.25;
+          kopf = Math.max(0, kopf); } catch (e) { kopf = Math.max(0, kopf); }
+        // Was der gewünschte Winkel darüber hinaus braucht, holt sich das Dach aus dem
+        // obersten Geschoß — aber höchstens so viel, dass ein Kniestock von 1,25 m bleibt.
+        const achse = dachAchse(tFp, roofOpts.ridge === 'quer');
+        const wunsch = achse ? Math.tan(Math.max(5, Math.min(60, roofOpts.pitch || 25)) * Math.PI / 180) * achse.halbQ : 0;
+        const hoch = Math.min(wunsch, kopf);
+        const maxAbfall = hoch + Math.max(0.4, floorH - 1.25);
+        dachBau = buildGiebeldach(tFp, deckeY + hoch, roofOpts, maxAbfall, dachFarbe, showViz);
+        dachAbsenkung = Math.max(0, deckeY - dachBau.info.traufY);
+      }
+    }
+    const geschossOben = f => ebeneY(f + 1) - (f === floors - 1 ? dachAbsenkung : 0);
     if (modelMode !== 'envelope') {
       floorFootprints.forEach((ffp, f) => {
-        const yBottom = ebeneY(f), yTop = ebeneY(f + 1);
+        const yBottom = ebeneY(f), yTop = geschossOben(f);
         const belowFrac = floorBelowFrac(ffp, yBottom, yTop, kubFn);
         const area = fpArea(ffp), floorVol = area * (yTop - yBottom);
         totals.volumeBelow += floorVol * belowFrac;
@@ -22970,14 +23096,12 @@ function rebuild() {
       }
     });
     if (cyHole && viewMode() !== 'aushub') { const cg = buildCourtyardGround(cyHole, baseLevel, showViz, pieceIdx); if (cg) buildingGroup.add(cg); }
-    // Dach auf dem obersten Geschoss (zählt zur Kubatur, hält die Abstandsregeln ein)
+    // Dach auf dem obersten Geschoss: schon oben gebaut, hier nur eingehängt und gerechnet
     vizOpts.pitchedRoof = false;
-    if (modelMode !== 'envelope' && roofOpts.type !== 'flach' && !(floorFootprints[floors - 1].holes && floorFootprints[floors - 1].holes.length)) {
-      const topFp = floorFootprints[floors - 1], eaveY = ebeneY(floors);
-      const zMax = Math.min(baseLevel + maxH - Math.max(0, pieceOffset), topAbsY != null ? topAbsY : Infinity);
-      const roofCol = showViz ? (vizWhite() ? 0xf4f4f2 : VIZ_WHITE) : (viewMode() === 'widmung' ? WID_RED[(floors - 1) % 2] : ((floors - 1) % 2 === 0 ? 0xf7f7f5 : 0xeeeeec));
-      const r = buildRoof(topFp, eaveY, roofOpts, roofLegalAt, zMax, roofCol, showViz, roofEnvs);
-      vizOpts.pitchedRoof = r.info.pitch > 0;
+    if (dachBau && dachBau.info.pitch > 0 && dachBau.info.H) {
+      const topFp = floorFootprints[floors - 1], eaveY = dachBau.info.traufY;
+      const r = dachBau;
+      vizOpts.pitchedRoof = true;
       buildingGroup.add(r.group);
       // Dachraum: nur dort Geschossflaeche, wo die lichte Hoehe die Schwelle des Landes
       // erreicht (Tirol und Steiermark 1,50 m, Vorarlberg misst in 1,50 m Hoehe). Flaechen
@@ -23190,7 +23314,7 @@ function rebuild() {
         } else {
           color = curMode === 'widmung' ? WID_RED[f % 2] : (f % 2 === 0 ? 0xf7f7f5 : 0xeeeeec); // Massenmodell weiß, Flächenwidmung rot
         }
-        const slab = makeFloorMesh(fp, floorH, color, transparencyFlag, showViz);
+        const slab = makeFloorMesh(fp, geschossOben(f) - ebeneY(f), color, transparencyFlag, showViz);
         if (showApartments) slab.traverse(ch => {
           if (ch.isMesh) { ch.material.polygonOffset = true; ch.material.polygonOffsetFactor = 3; ch.material.polygonOffsetUnits = 3; } // Linien darauf ohne Flimmern
           if (ch.isLineSegments && ch.material.depthFunc === THREE.GreaterDepth) ch.visible = false;   // keine verdeckten Kanten durch den Grundriss
@@ -23282,7 +23406,7 @@ function rebuild() {
         }
 
         const planUnitsF = ((planFloorsTmp[f] || []).find(pc => pc.fp === fp) || {}).units || null;
-        liveVizArgsTmp.push({ fp, baseY: ebeneY(f), floorH: ebeneY(f + 1) - ebeneY(f), f, lowerFp: floorFootprints[f - 1] || null, upperFp: floorFootprints[f + 1] || null, pieceIdx, top: f === floorFootprints.length - 1, entryPt: vizOpts.entryPt || null, entryF: vizOpts.entryF || 0, planUnits: planUnitsF });
+        liveVizArgsTmp.push({ fp, baseY: ebeneY(f), floorH: geschossOben(f) - ebeneY(f), f, lowerFp: floorFootprints[f - 1] || null, upperFp: floorFootprints[f + 1] || null, pieceIdx, top: f === floorFootprints.length - 1, entryPt: vizOpts.entryPt || null, entryF: vizOpts.entryF || 0, planUnits: planUnitsF });
         vizOpts.planUnits = planUnitsF;
         if (showViz) {
           buildVizFloor(vizAcc, fp, ebeneY(f), ebeneY(f + 1) - ebeneY(f), f, floorFootprints[f - 1] || null, floorFootprints[f + 1] || null, gelaendeNachBoeschung(heightFn, baseLevel), pieceIdx, vizOpts);
@@ -39372,7 +39496,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.27';
+  const VERSION = 'v3.28';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
