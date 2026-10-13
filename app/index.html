@@ -158,8 +158,8 @@
     padding: 0 18px;
     height: 54px;
     background: var(--panel);
-    backdrop-filter: blur(30px) saturate(180%);
-    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    /* kein backdrop-filter: die Fläche ist ohnehin deckend bzw. liegt nicht über dem
+       3D-Fenster. Der Weichzeichner kostete beim Menüwechsel das meiste. */
     border-bottom: 1px solid var(--line);
     box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.4);
     position: relative;
@@ -225,8 +225,8 @@
     flex: 0 0 auto;
     width: 360px;
     background: var(--panel);
-    backdrop-filter: blur(30px) saturate(180%);
-    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    /* kein backdrop-filter: die Fläche ist ohnehin deckend bzw. liegt nicht über dem
+       3D-Fenster. Der Weichzeichner kostete beim Menüwechsel das meiste. */
     border-right: 1px solid var(--line);
     overflow-y: auto;
     padding: 10px 0;
@@ -262,8 +262,8 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     background: var(--panel-solid);
-    backdrop-filter: blur(34px) saturate(180%);
-    -webkit-backdrop-filter: blur(34px) saturate(180%);
+    /* kein backdrop-filter: die Fläche ist ohnehin deckend bzw. liegt nicht über dem
+       3D-Fenster. Der Weichzeichner kostete beim Menüwechsel das meiste. */
     border: 1px solid var(--line-strong);
     border-radius: var(--r-lg);
     box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03);
@@ -516,7 +516,7 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--panel-solid) 96%, #fff 4%), var(--panel-solid));
     border: 1px solid var(--line-strong);
     box-shadow: 0 14px 38px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05);
-    backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+    backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
     z-index: 24;
   }
   .nav-bar button {
@@ -947,7 +947,7 @@
     display: flex; flex-direction: column; gap: 1px;
     padding: 6px 11px; border-radius: 10px;
     background: var(--panel); border: 1px solid var(--line);
-    backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%);
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   .kpi.clickable { pointer-events: auto; cursor: pointer; }
@@ -1708,7 +1708,7 @@
     .sidebar {
       width: auto !important; height: 60px; margin: 6px 12px calc(10px + env(safe-area-inset-bottom, 0px));
       padding: 6px 8px !important; border-radius: 999px; border: 1px solid var(--line) !important;
-      background: var(--panel) !important; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+      background: var(--panel) !important;
       box-shadow: 0 12px 36px rgba(0,0,0,0.35); gap: 4px; align-items: center;
     }
     .side-btn, .side-btn:hover { height: 46px; border-radius: 999px !important; padding: 0 !important; color: var(--muted); background: transparent; }
@@ -1811,7 +1811,7 @@
   .wid-own span { flex: 1; color: var(--ink); } .wid-own em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
   .nb-tip { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
   .piece-card { position: absolute; z-index: 25; top: 84px; left: 16px; width: 272px; display: none; padding: 12px 14px; border-radius: 18px;
-    background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(0,0,0,.3); color: var(--ink); font: 13px var(--f-body); }
+    background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(0,0,0,.3); color: var(--ink); font: 13px var(--f-body); }
   .piece-card.open { display: block; }
   .piece-card .pc-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
   .piece-card .pc-head b { font-size: 14px; } .piece-card .pc-head span { font-size: 11.5px; color: var(--muted); }
@@ -1825,7 +1825,7 @@
   .piece-card .pc-note { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
   @media (max-width: 640px) { .piece-card { top: auto; bottom: 90px; left: 10px; right: 10px; width: auto; } }
   .nb-popover { position: absolute; z-index: 30; display: none; min-width: 220px; max-width: 270px; padding: 12px; border-radius: 18px;
-    background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(0,0,0,.35); color: var(--ink); font: 13px var(--f-body); }
+    background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(0,0,0,.35); color: var(--ink); font: 13px var(--f-body); }
   .nb-popover.open { display: block; }
   .nb-popover .nbp-alle { display: flex; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
   .nb-popover .nbp-alle button { flex: 1; height: 28px; border-radius: 999px; border: 1px solid var(--line);
@@ -2596,7 +2596,7 @@
   #home-overlay *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hm-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px; height: 64px;
     padding: 0 max(28px, calc((100% - 1340px) / 2)); background: var(--panel);
-    backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
     border-bottom: 1px solid var(--line); transition: box-shadow .22s ease, background .22s ease; }
   .hm-bar.hm-ab { box-shadow: 0 12px 34px rgba(0,0,0,.26); }
   :root[data-theme="light"] .hm-bar.hm-ab { box-shadow: 0 10px 26px rgba(90,70,45,.10); }
@@ -2630,7 +2630,7 @@
   .hm-hello h1 { margin: 0; font-size: 30px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.1; color: var(--ink); }
   .hm-hello h1 b { font-weight: 700; }
   .hm-hello p { margin: 6px 0 20px; color: var(--muted); font-size: 14px; }
-  .hm-card { background: var(--panel); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; min-width: 0; }
+  .hm-card { background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; min-width: 0; }
   .hm-card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .hm-card-h h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--ink); }
   .hm-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
@@ -2979,7 +2979,7 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
     display: flex !important; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
     width: auto; flex: none; flex-direction: column; height: 80vh; height: 80dvh;
     border-left: 0; border-top: 1px solid var(--line-strong); border-radius: 22px 22px 0 0;
-    background: var(--panel-solid); backdrop-filter: blur(34px) saturate(180%); -webkit-backdrop-filter: blur(34px) saturate(180%);
+    background: var(--panel-solid);   /* deckend — ein backdrop-filter wäre hier reine Rechenlast */
     box-shadow: 0 -18px 50px rgba(0,0,0,0.5);
     transform: translateY(101%); transition: transform .28s cubic-bezier(.2,.8,.2,1);
     z-index: 40; padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px)); gap: 0; overflow: hidden;
@@ -3085,7 +3085,7 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
   background: linear-gradient(180deg, color-mix(in srgb, var(--panel-solid) 96%, #fff 4%), var(--panel-solid));
   border: 1px solid var(--line-strong);
   box-shadow: 0 14px 38px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05);
-  backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 .vm-bar button {
   border: 0; background: none; cursor: pointer; white-space: nowrap;
@@ -3110,7 +3110,7 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
   background: linear-gradient(180deg, color-mix(in srgb, var(--panel-solid) 96%, #fff 4%), var(--panel-solid));
   border: 1px solid var(--line-strong);
   box-shadow: 0 18px 44px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.05);
-  backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 .vm-auf.open { display: block; }
 .vm-auf-k { font: 600 10.5px var(--f-body); letter-spacing: .09em; text-transform: uppercase;
@@ -3151,7 +3151,7 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
   background: linear-gradient(180deg, color-mix(in srgb, var(--panel-solid) 96%, #fff 4%), var(--panel-solid));
   color: var(--ink);
   box-shadow: 0 10px 26px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
-  backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(13px) saturate(150%); -webkit-backdrop-filter: blur(13px) saturate(150%);
   transition: background .15s ease, border-color .15s ease;
 }
 .fab-ass:hover { background: var(--panel-hi-2); border-color: var(--accent); }
@@ -3606,7 +3606,10 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
   position: fixed; left: 50%; transform: translateX(-50%); top: 118px; z-index: 120;
   display: none; align-items: center; gap: 12px; max-width: calc(100vw - 24px);
   padding: 8px 10px 8px 16px; border-radius: 999px;
-  background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  /* Deckend und OHNE Weichzeichner: das Band liegt fest über der ganzen Oberfläche.
+     Ein backdrop-filter zwingt den Browser, bei jeder Änderung die komplette Seite samt
+     3D-Fenster neu zu rastern — das allein hat jeden Menüwechsel verdoppelt. */
+  background: var(--panel-solid);
   box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.3);
   font: 500 13px var(--f-body); color: var(--ink); white-space: nowrap;
 }
@@ -12947,10 +12950,10 @@ document.querySelectorAll('.menu-btn, .side-btn').forEach(btn => {
       panel.classList.add('open');
       btn.classList.add('active');
     }
-    // the Grundstückskante highlight only shows while menu-erweitert is open — refresh
-    // immediately whenever that specifically changes (opened, or closed by picking a
-    // different sidebar item), not just when it's dismissed via an outside click/scroll
-    if (erweitertWasOpen !== erweitertPanel.classList.contains('open') && typeof rebuild === 'function') rebuild();
+    // Früher wurde hier das Modell neu aufgebaut, weil die Kantenhervorhebung am offenen
+    // Grundstück-Menü hing. Hervorgehoben wird längst nur noch die ausgewählte Kante —
+    // der Neuaufbau war reine Wartezeit bei jedem Menüwechsel. (13.10.2026)
+    void erweitertWasOpen; void erweitertPanel;
   });
 });
 function closeAllMenus(keepSidebarPanels) {
@@ -12964,10 +12967,8 @@ function closeAllMenus(keepSidebarPanels) {
     if (keepSidebarPanels && SIDEBAR_PANEL_IDS.includes(b.dataset.menu)) return;
     b.classList.remove('active');
   });
-  // the Grundstückskante highlight only shows while this panel is open — refresh the
-  // scene right away so it disappears the moment the panel closes, not on some later,
-  // unrelated rebuild
-  if (erweitertWasOpen && !erweitertPanel.classList.contains('open') && typeof rebuild === 'function') rebuild();
+  // kein Neuaufbau beim Schließen — siehe oben
+  void erweitertWasOpen; void erweitertPanel;
 }
 // On desktop, the Baukörper/Grundstück/Objekte/Erweiterte-Einstellungen panels are
 // embedded in the sidebar (not a floating popup), so working in the 3D window — orbiting,
@@ -23571,14 +23572,12 @@ function rebuild() {
         const cap = buildFilledPolygonMesh(parcelPoints, heightFn, c, 1); cap.material.polygonOffsetFactor = 2; cap.material.polygonOffsetUnits = 2; cap.renderOrder = 1; cap.raycast = () => {}; parcelLine.add(cap); } catch (e) {}
     }
   }
-  const menuErweitertOpen = document.getElementById('menu-bebauung').classList.contains('open') || edgeEditorIsOpen();
   parcelPoints.forEach((p1, i) => {
     const p2 = parcelPoints[(i + 1) % parcelPoints.length];
     const isSelected = selectedParcelEdgeIdx === i;
     // Eine Kante mit eigener Festlegung sieht aus wie jede andere Grundstückskante —
     // hervorgehoben wird nur, was gerade ausgewählt ist.
     if (isSelected) parcelLine.add(buildEdgeHighlightRibbon(p1, p2, heightFn, 0.5, 0xe98f6c));
-    void menuErweitertOpen;
   });
 
   // Straßen: eine schlichte, hellgraue Fläche außerhalb des Grundstücks, entlang jeder
@@ -37075,7 +37074,7 @@ function northUpView() {
   function schliessen(panel) {
     panel.classList.remove('open', 'tall');
     document.querySelectorAll(`.side-btn[data-menu="${panel.id}"], .menu-btn[data-menu="${panel.id}"]`).forEach(b => b.classList.remove('active'));
-    if (typeof rebuild === 'function' && panel.id === 'menu-bebauung') rebuild();
+    // kein Neuaufbau beim Schließen des Grundstück-Blatts — siehe den Menüknopf oben
   }
   document.querySelectorAll('.menu-panel').forEach(kopfBauen);
 
@@ -39263,7 +39262,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.23';
+  const VERSION = 'v3.24';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
