@@ -18814,6 +18814,18 @@ function s5Geschosse(k, K) {
     if (!fp.length) break;
     out.push({ f, y0, h, regs: fp, flaeche: s5Area(fp) });
   }
+  // Durchgehende Wand: springt ein oberes Geschoß nur wegen des Lichtabstands um weniger als
+  // 1,5 m zurück, steht in Wirklichkeit die ganze Fassade auf dieser Linie (Wandhöhe = ganze
+  // Höhe bis zur Attika, § 6 TBO) — kein kaum sichtbarer Mini-Rücksprung. Echte Staffeln
+  // (≥ 1,5 m) bleiben erhalten. Von oben nach unten, damit es sich durch alle Geschoße zieht.
+  for (let f = out.length - 2; f >= 0; f--) {
+    const unten = out[f].regs, oben = out[f + 1].regs;
+    const rest = s5Minus(unten, oben);
+    if (!rest.length) continue;
+    const breit = s5Offset(s5Offset(rest, -0.75), 0.75);          // nur Teile ≥ 1,5 m Tiefe bleiben
+    const neu = s5Teile(s5And(unten, s5Union(oben.concat(breit))), 8);
+    if (neu.length) { out[f].regs = neu; out[f].flaeche = s5Area(neu); }
+  }
   return out;
 }
 
@@ -33767,7 +33779,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.16';
+  const VERSION = 'v5.17';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
