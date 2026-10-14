@@ -18325,6 +18325,16 @@ var S5 = s5Default();
 //  · Brüstung: Absturzsicherung von Terrasse/Balkon über einem zurückspringenden Geschoß
 //    (OIB-Richtlinie 4, Punkt 4.2.1: mind. 1,00 m, ab mehr als 12 m Absturzhöhe mind. 1,10 m)
 //  · Dachterrasse: auf dem obersten Geschoß gilt dann die Brüstung statt der Attika
+// Geplante Wandhöhe an der Grundgrenze: als Geschoße (EG + OGs + Brüstung darüber — meist
+// Terrasse, Dachterrasse oder Geländer, OIB-RL 4: 1,00 m) oder direkt in Metern; je Kante änderbar
+function s5WandGlobal() {
+  const w = (S5 && S5.wand) || {};
+  if (w.modus === 'hoehe') return Math.max(0, +w.hoehe || 7);
+  const g = Math.max(1, Math.round(+w.geschosse || 2));
+  const roh = S5.hEG + (g - 1) * S5.hOG;
+  return roh + s5Bruestung(roh);
+}
+function s5WandKante(i) { const k = S5 && S5.wandKante; const v = k && k[i]; return v != null && isFinite(+v) && +v > 0 ? +v : s5WandGlobal(); }
 function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.5 : Math.max(0, +a); }   // Rohdecke → Oberkante Attika: Dachaufbau + Aufkantung
 function s5Bruestung(absturz) { const b = S5 && S5.bruestung; const w = b == null || !isFinite(+b) ? 1.0 : Math.max(0, +b); return absturz > 12 ? Math.max(w, 1.1) : w; }
 function s5Oben(absturz) { return S5 && S5.dachterrasse ? s5Bruestung(absturz) : s5Attika(); }
@@ -18462,7 +18472,9 @@ function s5Kontext(o) {
   const { heightFn, edgeReq, lotArea, maxH, topAbsY, isTirol, bmd, nfd, bdMax, gfz } = o;
   const n = parcelPoints.length;
   const mindest = parcelPoints.map((p1, i) => edgeReq(p1, parcelPoints[(i + 1) % n], i).setback);
-  const nachAbstand = s5Regs([offsetPolygonVariable(parcelPoints, mindest)]);
+  // Abstand je Kante aus der geplanten Wandhöhe (§ 6 TBO): max(Mindestabstand, Faktor × Wandhöhe)
+  const wandAbstand = parcelPoints.map((p1, i) => { const r = edgeReq(p1, parcelPoints[(i + 1) % n], i); return Math.max(r.setback, (r.factor || 0) * s5WandKante(i)); });
+  const nachAbstand = s5Regs([offsetPolygonVariable(parcelPoints, wandAbstand)]);
   const schutz = s5SchutzRegionen(heightFn);
   const flaeche = s5Minus(nachAbstand, schutz.regs).filter(r => s5RegArea(r) >= 12);
   const base = flaeche.length ? Math.min(...flaeche.map(r => s5Tiefster(heightFn, r.o))) : s5Tiefster(heightFn, parcelPoints);
@@ -18545,7 +18557,7 @@ function s5Kontext(o) {
     bebaut: isTirol && bdMax > 0 ? bdMax * lotArea : Infinity
   };
   return { heightFn, lotArea, maxH, topAbsY, isTirol, bmd, nfd, bdMax, gfz, regel: r, grenzen,
-    mindest, nachAbstand, schutz, flaeche, flaecheM2: s5Area(flaeche), base, huelleBei, bezugH, edgeReq,
+    mindest, wandAbstand, nachAbstand, schutz, flaeche, flaecheM2: s5Area(flaeche), base, huelleBei, bezugH, edgeReq,
     gefaelle: flaeche.length ? s5Gefaelle(heightFn, flaeche) : { prozent: 0, dir: [0, 1] } };
 }
 
@@ -19030,7 +19042,10 @@ function s5Optimieren(typ, K) {
   } else kand.push(basis);
   // Geschoßzahl mitsuchen: bei gerader Wand kostet jedes Geschoß mehr Abstand (Faktor × Höhe) —
   // die beste Variante ist daher nicht automatisch die höchste
-  const maxG = basis.geschosse || 1, alle = [];
+  // höchstens so viele Geschoße, wie unter die geplante Wandhöhe an der Grundgrenze passen
+  const wandG = (() => { const w = S5.wand || {}; if (w.modus !== 'hoehe') return Math.max(1, Math.round(+w.geschosse || 2));
+    const H = s5WandGlobal(); let n = 1; while (S5.hEG + n * S5.hOG + s5Bruestung(S5.hEG + n * S5.hOG) <= H + 1e-6) n++; return n; })();
+  const maxG = Math.max(1, Math.min(basis.geschosse || 1, wandG)), alle = [];
   kand.forEach(p => { for (let g = 1; g <= maxG; g++) alle.push(Object.assign({}, p, { geschosse: g })); });
   let best = null;
   alle.forEach(p => {
@@ -33832,7 +33847,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.19';
+  const VERSION = 'v5.20';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34270,6 +34285,15 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
 .s5-tbo-z .t em { display: block; font-style: normal; opacity: .6; font-size: 11px; }
 .s5-tbo-z b { font-weight: 600; white-space: nowrap; font-size: 12px; }
 .s5-tbo-z.hw .t em { color: #e0a458; opacity: .9; }
+
+.s5-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 11px; background: color-mix(in srgb, var(--text, #fff) 6%, transparent); margin: 4px 0 8px; }
+.s5-seg button { border: 0; background: transparent; color: inherit; padding: 7px 0; border-radius: 9px; font: inherit; font-size: 12.5px; cursor: pointer; opacity: .7; }
+.s5-seg button.on { background: color-mix(in srgb, #e98f45 22%, transparent); opacity: 1; font-weight: 600; }
+.s5-wand-erg { font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, #e98f45 9%, transparent); margin: 4px 0 6px; }
+.s5-tbo-z b small { font-weight: 400; opacity: .65; font-size: 10.5px; margin-left: 3px; }
+.s5-tbo-z b { text-align: right; }
+.s5-wh { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; margin-top: 3px; }
+.s5-wh input { width: 52px; padding: 2px 4px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--text, #fff) 18%, transparent); background: transparent; color: inherit; font: inherit; font-size: 11px; text-align: right; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34400,7 +34424,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     host.innerHTML = `<div class="s5-kpi-big"><span>Maximal bebaubare Fläche</span><b>${f0(L.flaecheM2)}<i>m²</i></b><em>${pct(L.flaecheM2 / Math.max(1, lot))} des Grundstücks (${f0(lot)} m²)</em></div>
       <div class="mp-sec">So entsteht sie</div>
       <div class="s5-abzug"><div><span>Grundstück</span><b>${f0(lot)} m²</b></div>
-        <div><span>− Abstände zur Grundgrenze${linien ? ' und ' + linien + (linien === 1 ? ' Baulinie' : ' Baulinien') : ''}</span><b>${f0(abAbstand)} m²</b></div>
+        <div><span>− Abstände zur Grundgrenze (aus der Wandhöhe)${linien ? ' und ' + linien + (linien === 1 ? ' Baulinie' : ' Baulinien') : ''}</span><b>${f0(abAbstand)} m²</b></div>
         <div><span>− Schutzzonen</span><b>${f0(abSchutz)} m²</b></div>
         <div class="sum"><span>= bebaubar</span><b>${f0(L.flaecheM2)} m²</b></div></div>
       ${(() => {   // Abstände je Kante nach TBO — automatisch aus Widmung und Kataster
@@ -34408,12 +34432,22 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         if (!tbo.some(Boolean)) return `<div class="s5-info">Abstände: Grundwerte ${fmtNum(+($('setback') || {}).value || 0, 1)} m und Faktor ${fmtNum(+($('factor') || {}).value || 0, 2)} — für die automatische Regel nach Tiroler Bauordnung die Flächenwidmung laden (Grundstück aus dem Kataster).</div>`;
         const zeilen = parcelPoints.map((p, i) => {
           const t = tbo[i], o = parcelEdgeOverrides[i], hand = o && o.active && !o.ausWidmung;
-          const wert = hand ? fmtNum(o.setback, 1) + ' m · ' + fmtNum(o.factor, 2) + ' × H' : !t ? '–' : t.strasse ? fmtNum(t.setback, 1) + ' m · ohne Höhenfaktor' : fmtNum(t.factor, 1) + ' × H · mind. ' + fmtNum(t.setback, 0) + ' m';
-          return `<div class="s5-tbo-z${t && t.hinweis && !t.strasse ? ' hw' : ''}" title="${esc(t && t.hinweis || '')}"><span class="n">${i + 1}</span><span class="t">${esc(t && t.nbText || (t && t.nb ? S5_KLASSE_NAME[t.nb] : 'Nachbar unbekannt'))}<em>${hand ? 'von Hand gesetzt' : t ? esc(t.lit) + (t.strasse ? ' · Verkehrsfläche' : t.hinweis ? ' · ' + esc(t.hinweis) : '') : ''}</em></span><b>${wert}</b></div>`;
+          const fak = hand ? o.factor : t ? t.factor : 0, mind = hand ? o.setback : t ? t.setback : 0, wh = s5WandKante(i), eigenH = S5.wandKante && S5.wandKante[i] != null;
+          const ab = Math.max(mind, fak * wh);
+          const wert = (!t && !hand) ? '–' : (t && t.strasse && !hand) ? fmtNum(t.setback, 2) + ' m <small>ohne Höhenfaktor</small>'
+            : fmtNum(ab, 2) + ' m <small>' + (fak * wh > mind ? fmtNum(fak, 1) + ' × ' + fmtNum(wh, 2) : 'mind. ' + fmtNum(mind, 0) + ' m') + '</small>';
+          return `<div class="s5-tbo-z${t && t.hinweis && !t.strasse ? ' hw' : ''}" title="${esc(t && t.hinweis || '')}"><span class="n">${i + 1}</span><span class="t">${esc(t && t.nbText || (t && t.nb ? S5_KLASSE_NAME[t.nb] : 'Nachbar unbekannt'))}<em>${hand ? 'von Hand gesetzt' : t ? esc(t.lit) + (t.strasse ? ' · Verkehrsfläche' : t.hinweis ? ' · ' + esc(t.hinweis) : '') : ''}</em></span><b>${wert}${t && !t.strasse ? `<label class="s5-wh">Wand <input type="number" step="0.1" min="0" data-i="${i}" value="${eigenH ? fmtNum(wh, 2).replace(',', '.') : ''}" placeholder="${fmtNum(wh, 2)}"> m</label>` : ''}</b></div>`;
         }).join('');
         const eigen = tbo.find(Boolean);
         const strasse = tbo.some(t => t && t.strasse);
-        return `<div class="mp-sec">Abstände nach Tiroler Bauordnung</div>
+        const w = S5.wand || {}, modus = w.modus === 'hoehe' ? 'hoehe' : 'geschosse', g = Math.max(1, Math.round(+w.geschosse || 2));
+        const roh = S5.hEG + (g - 1) * S5.hOG, wg = s5WandGlobal();
+        const wandBlock = `<div class="mp-sec">Wandhöhe an der Grundgrenze</div>
+          <div class="s5-seg"><button type="button" data-wm="geschosse" class="${modus === 'geschosse' ? 'on' : ''}">Geschoße</button><button type="button" data-wm="hoehe" class="${modus === 'hoehe' ? 'on' : ''}">Wandhöhe</button></div>
+          ${modus === 'geschosse' ? regler('s5-wand-g', 'Geschoße bis zur Brüstung', g, 1, 10, 1, '', 0) : regler('s5-wand-h', 'Wandhöhe', +w.hoehe || 7, 3, 35, 0.1, 'm', 2)}
+          <div class="s5-wand-erg">${modus === 'geschosse' ? `EG ${fmtNum(S5.hEG, 2)}${g > 1 ? ' + ' + (g - 1) + ' × OG ' + fmtNum(S5.hOG, 2) : ''} + Brüstung ${fmtNum(wg - roh, 2)} = ` : ''}<b>${fmtNum(wg, 2)} m Wandhöhe</b><br>Abstand je Kante = max(Mindestabstand; Faktor × ${fmtNum(wg, 2)} m)${tbo.some(t => t && !t.strasse && t.factor * wg > t.setback) ? ' — z. B. 0,6 × ' + fmtNum(wg, 2) + ' = <b>' + fmtNum(0.6 * wg, 2) + ' m</b>' : ''}</div>
+          <div class="s5-info">Die Brüstung (1,00 m, ab 12 m Absturzhöhe 1,10 m) über dem obersten Geschoß an der Grenze zählt zur Wand — Terrasse, Dachterrasse oder Geländer. Je Kante kann unten eine eigene Wandhöhe eingetragen werden.</div>`;
+        return wandBlock + `<div class="mp-sec">Abstände nach Tiroler Bauordnung</div>
           <div class="s5-info">Eigene Widmung: <b>${esc(S5_KLASSE_NAME[eigen.eigen] || '–')}</b>. Je Kante nach § 6 Abs. 1 TBO 2022 (Faktor × Höhe über dem Urgelände darunter, mindestens 3 bzw. 4 m) — zur Straße nach § 5 TBO ohne Höhenfaktor.</div>
           <div class="s5-tbo">${zeilen}</div>
           ${strasse ? regler('s5-strasse', 'Abstand zu Verkehrsflächen (ohne Baufluchtlinie)', S5.strassenAbstand != null ? S5.strassenAbstand : (tbo.find(t => t && t.strasse) || {}).setback || 4, 0, 10, 0.5, 'm', 1) + '<div class="s5-info">§ 5 Abs. 4 TBO: ohne Bebauungsplan so weit, dass Orts- und Straßenbild und Verkehr nicht beeinträchtigt werden; zu Landesstraßen mindestens 5 m. Eine Baufluchtlinie im Kanten-Editor geht vor.</div>' : ''}`;
@@ -34434,7 +34468,21 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       ${schalter('s5-z-suchraum', 'Suchraum auch bei den Varianten zeigen', S5.zeige.suchraum)}
       <button type="button" class="viz-btn primary s5-weiter" data-zu="menu-varianten">Weiter zu den Varianten</button>`;
     host.querySelector('.s5-kanten').addEventListener('click', () => { const b = $('edge-editor-open'); if (b) b.click(); });
-    if ($('s5-strasse')) bindRegler(host, r => { if (r.id === 's5-strasse') { S5.strassenAbstand = +r.value; neuZeichnenBald(); } });
+    bindRegler(host, r => {
+      if (r.id === 's5-strasse') { S5.strassenAbstand = +r.value; neuZeichnenBald(); }
+      if (r.id === 's5-wand-g') { S5.wand = Object.assign({}, S5.wand, { modus: 'geschosse', geschosse: +r.value }); neuZeichnenBald(); }
+      if (r.id === 's5-wand-h') { S5.wand = Object.assign({}, S5.wand, { modus: 'hoehe', hoehe: +r.value }); neuZeichnenBald(); }
+    });
+    host.querySelectorAll('[data-wm]').forEach(b => b.addEventListener('click', () => {
+      const alt = s5WandGlobal(); S5.wand = Object.assign({}, S5.wand, { modus: b.dataset.wm });
+      if (b.dataset.wm === 'hoehe' && !(+S5.wand.hoehe)) S5.wand.hoehe = Math.round(alt * 100) / 100;
+      neu();
+    }));
+    host.querySelectorAll('.s5-wh input').forEach(inp => inp.addEventListener('change', () => {
+      const i = +inp.dataset.i, v = parseFloat(String(inp.value).replace(',', '.'));
+      S5.wandKante = Object.assign({}, S5.wandKante); if (isFinite(v) && v > 0) S5.wandKante[i] = v; else delete S5.wandKante[i];
+      neu();
+    }));
     $('s5-tiris-rot').addEventListener('change', e => { S5.tiris.aktiv = true; S5.tiris.rot = e.target.checked; neu(); });
     $('s5-tiris-gelb').addEventListener('change', e => { S5.tiris.aktiv = true; S5.tiris.gelb = e.target.checked; neu(); });
     host.querySelector('.s5-tiris-laden').addEventListener('click', () => tirisLaden(true));
