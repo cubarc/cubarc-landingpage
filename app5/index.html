@@ -19022,7 +19022,7 @@ function s5Mesh(reg, y, h, farbe, opt) {
   const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, steps: 1 });
   const mat = opt.basic
     ? new THREE.MeshBasicMaterial({ color: farbe, transparent: true, opacity: opt.opacity == null ? 0.2 : opt.opacity, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 })
-    : new THREE.MeshStandardMaterial({ color: farbe, roughness: 0.92, metalness: 0, transparent: !!opt.opacity, opacity: opt.opacity == null ? 1 : opt.opacity, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    : new THREE.MeshStandardMaterial({ color: farbe, roughness: 0.92, metalness: 0, transparent: !!opt.opacity, opacity: opt.opacity == null ? 1 : opt.opacity, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
   const m = new THREE.Mesh(geo, mat);
   m.rotation.x = -Math.PI / 2; m.position.y = y;
   if (!opt.basic) { m.castShadow = true; m.receiveShadow = true; }
@@ -29125,7 +29125,7 @@ function buildSiteGround(heightFn, showViz) {
   geo.computeVertexNormals();
   const farbe = showViz ? (isLight ? 0xd6d5d2 : 0x6d6b66) : (isLight ? 0xe6e5e2 : 0x24242a);
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: farbe, roughness: 1, side: THREE.DoubleSide,
-    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
   m.receiveShadow = true; m.raycast = () => {};
   return m;
 }
@@ -29302,7 +29302,7 @@ function buildNeighbourLayer(heightFn, showViz) {
     const pos = geo.attributes.position, arr = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getY(i); arr[i * 3] = x; arr[i * 3 + 1] = heightFn(x, z) + lift; arr[i * 3 + 2] = z; }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
     m.receiveShadow = true; return m;
   };
   const outline = (ring, color, lift, opacity) => {
@@ -30198,7 +30198,7 @@ function buildTreeInstances(picks, protos, heightFn, showViz) {
         im.setColorAt(k, col.set(tinted ? color[Math.floor(t.tint * color.length) % color.length] : color));
       });
       im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
-      im.castShadow = true; im.receiveShadow = true; im.raycast = () => {};
+      im.castShadow = false; im.receiveShadow = false; im.raycast = () => {};
       return im;
     };
     g.add(mk(p.crown, crownCols, true));
@@ -33620,7 +33620,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.01';
+  const VERSION = 'v5.02';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -33913,6 +33913,86 @@ function sprSetzen(code, still) {
   .sidebar .side-btn[data-menu="menu-baukoerper"], .sidebar .side-btn[data-menu="menu-wirtschaft"] { display: none !important; }
   .sidebar .side-btn, .sidebar .side-btn:hover, .sidebar .side-btn.active, .sidebar .side-btn.active:hover { font-size: 11px !important; padding: 9px 1px 8px !important; letter-spacing: -.01em; }
 }
+/* ===== CAD-Zeichenfenster ===== */
+.s5-cad-ov { padding: 14px; }
+.cad { width: 100%; height: 100%; max-width: 1680px; display: flex; flex-direction: column; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 80px rgba(0,0,0,.45); overflow: hidden; }
+.cad-kopf { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.cad-kopf h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.cad-kopf span { font-size: 12px; color: var(--muted); }
+.cad-kopf-r { display: flex; gap: 8px; }
+.cad-btn { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 10px; padding: 8px 14px; font: 500 12.5px var(--f-body); cursor: pointer; white-space: nowrap; }
+.cad-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cad-btn.primary { background: linear-gradient(135deg, #f3c27f, #e98f6c); color: #1b1410; border: 0; font-weight: 600; }
+.cad-btn.primary:hover { color: #1b1410; filter: brightness(1.05); }
+.cad-btn.ghost { border-color: transparent; }
+.cad-btn.wide { width: 100%; margin-top: 6px; }
+.cad-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 52px 1fr 300px; }
+.cad-tools { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; border-right: 1px solid var(--line); background: var(--panel-hi, rgba(255,255,255,.02)); }
+.cad-tools button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.cad-tools button:hover { color: var(--ink); background: var(--panel-hi-2, rgba(255,255,255,.05)); }
+.cad-tools button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.cad-sep { width: 24px; height: 1px; background: var(--line); margin: 6px 0; }
+.cad-flaeche { position: relative; min-width: 0; min-height: 0; background: var(--bg, #101114); }
+.cad-svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: crosshair; }
+.cad-nord { position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font: 600 11px var(--f-body); color: var(--muted); background: var(--panel); pointer-events: none; }
+.cad-tip { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 7px 12px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); font-size: 12px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.cad-panel { border-left: 1px solid var(--line); overflow-y: auto; padding: 12px 14px 18px; font-size: 12.5px; }
+.cad-p-sec { font: 600 10.5px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 16px 0 7px; }
+.cad-p-sec:first-child { margin-top: 2px; }
+.cad-p-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.cad-p-row > button { flex: 1; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 9px; padding: 7px 6px; font: 500 12px var(--f-body); cursor: pointer; }
+.cad-p-row > button:hover { border-color: var(--accent); color: var(--accent); }
+.cad-p-row > button.weg:hover { border-color: #e0584a; color: #e0584a; }
+.cad-p-row select { width: 100%; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; padding: 0 8px; }
+.cad-geschoss span { flex: 1; color: var(--muted); }
+.cad-geschoss b { min-width: 28px; text-align: center; font-size: 15px; }
+.cad-geschoss button { flex: 0 0 34px !important; height: 30px; font-size: 15px !important; }
+.cad-p-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: end; }
+.cad-feld { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 9px; padding: 0 8px; height: 34px; background: var(--panel); }
+.cad-feld span { color: var(--muted); font-size: 11.5px; }
+.cad-feld input { flex: 1; min-width: 0; width: 40px; border: 0; background: transparent; color: var(--ink); font: 600 13px var(--f-body); text-align: right; outline: none; }
+.cad-feld em { font-style: normal; color: var(--muted); font-size: 11px; }
+.cad-stat, .cad-live-kz { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cad-stat > div, .cad-live-kz > div { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-hi, rgba(255,255,255,.03)); }
+.cad-stat span, .cad-live-kz span { display: block; font-size: 11px; color: var(--muted); }
+.cad-stat b, .cad-live-kz b { font-size: 14px; font-weight: 600; }
+.cad-live-kz > div { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.cad-hint { color: var(--muted); line-height: 1.5; font-size: 12px; }
+.cad-keys { display: grid; gap: 5px; color: var(--muted); font-size: 11.5px; }
+.cad-keys kbd { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line-strong, var(--line)); background: var(--panel-hi, transparent); color: var(--ink); font: 600 10.5px var(--f-body); text-align: center; }
+.cad-reihe { margin-top: 4px; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; }
+.cad-fuss { display: flex; align-items: center; gap: 18px; padding: 9px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.cad-fuss label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.cad-fuss select { height: 26px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 12px; }
+.cad-koord { font-variant-numeric: tabular-nums; min-width: 190px; color: var(--ink); }
+.cad-zoom { margin-left: auto; }
+/* Zeichnung */
+.cad-svg * { vector-effect: non-scaling-stroke; }
+.cad-svg .cad-gr { stroke: var(--line); stroke-width: .5; opacity: .45; fill: none; }
+.cad-svg .cad-gr2 { stroke: var(--line-strong, var(--line)); stroke-width: .8; opacity: .55; fill: none; }
+.cad-svg .cad-grund { fill: none; stroke: var(--ink); stroke-width: 1.4; opacity: .8; }
+.cad-svg .cad-fl { fill: #e98f45; fill-opacity: .07; stroke: #e98f45; stroke-width: 1.2; stroke-dasharray: 6 4; }
+.cad-svg .cad-schutz { fill: #d9534f; fill-opacity: .16; stroke: #d9534f; stroke-width: 1; stroke-dasharray: 4 3; }
+.cad-svg .cad-k-aus { fill: #e0584a; fill-opacity: .16; stroke: none; cursor: move; }
+.cad-svg .cad-k { fill: #f3f1ec; fill-opacity: .92; stroke: none; cursor: move; }
+.cad-svg .cad-k.sockel { fill: #d4cec2; }
+.cad-svg .cad-k.aufsatz { fill: #fffaf0; }
+.cad-svg .cad-k-rand { fill: none; stroke: #6b665e; stroke-width: 1.2; pointer-events: stroke; cursor: move; }
+.cad-svg .cad-k-rand.on { stroke: var(--accent); stroke-width: 2.2; }
+.cad-svg .cad-t { fill: #2b2a28; font-family: var(--f-body); font-weight: 600; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #f3f1ec; stroke-width: 3px; }
+.cad-svg .cad-t2 { fill: #6b665e; font-family: var(--f-body); font-weight: 500; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #f3f1ec; stroke-width: 3px; }
+.cad-svg .cad-mass { fill: var(--accent); font-family: var(--f-body); font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; paint-order: stroke; stroke: var(--bg, #101114); stroke-width: 3px; }
+.cad-svg .cad-pt { fill: var(--panel); stroke: var(--accent); stroke-width: 1.6; cursor: grab; }
+.cad-svg .cad-pt.neu { fill: var(--accent); stroke: #fff; }
+.cad-svg .cad-kante { fill: var(--accent); fill-opacity: .9; stroke: #fff; stroke-width: 1.2; cursor: ns-resize; }
+.cad-svg .cad-bbox { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 4; opacity: .6; pointer-events: none; }
+.cad-svg .cad-dreh { fill: var(--panel); stroke: var(--accent); stroke-width: 1.6; cursor: grab; pointer-events: all; }
+.cad-svg .cad-neu { fill: rgba(233,143,69,.12); stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 3; }
+.cad-svg .cad-band { fill: rgba(233,143,69,.08); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
+.cad-svg .cad-messl { stroke: #6fb3e0; stroke-width: 1.6; stroke-dasharray: 5 3; }
+.cad-svg .cad-live { fill: var(--ink); font-family: var(--f-body); font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: var(--bg, #101114); stroke-width: 3.5px; pointer-events: none; }
+.cad-svg .cad-fang { fill: none; stroke: #6fe0a0; stroke-width: 1.6; pointer-events: none; }
+@media (max-width: 900px) { .cad-body { grid-template-columns: 46px 1fr; } .cad-panel { display: none; } }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34073,8 +34153,8 @@ function sprSetzen(code, still) {
     host.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
       const art = b.dataset.add, id = 'r' + Date.now().toString(36);
       if (art === 'streifen') { S5.regeln.push({ id, art, kante: 0, breite: 3, name: 'Freihaltestreifen Kante 1' }); neu(); }
-      else if (art === 'kreis') zeichenfenster({ modus: 'kreis', fertig: m => { S5.regeln.push({ id, art, mitte: m, radius: 4, name: 'Baum / Schutzkreis' }); neu(); } });
-      else zeichenfenster({ modus: 'zone', fertig: ring => { S5.regeln.push({ id, art: 'flaeche', ring, name: 'Freihaltefläche' }); neu(); } });
+      else if (art === 'kreis') (window.s5Cad || zeichenfenster)({ modus: 'kreis', fertig: m => { S5.regeln.push({ id, art, mitte: m, radius: 4, name: 'Baum / Schutzkreis' }); neu(); } });
+      else (window.s5Cad || zeichenfenster)({ modus: 'zone', fertig: ring => { S5.regeln.push({ id, art: 'flaeche', ring, name: 'Freihaltefläche' }); neu(); } });
     }));
     weiterKnopf(host);
   }
@@ -34190,13 +34270,13 @@ function sprSetzen(code, still) {
     host.querySelectorAll('.s5-karte').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); }));
     host.querySelectorAll('.s5-typ').forEach(b => b.addEventListener('click', () => {
       const t = b.dataset.t; const nv = s5NeueVariante(t, L, t !== 'frei'); nv.eigen = true; S5.aktiv = nv.id; neu();
-      if (t === 'frei') zeichenfenster({ modus: 'frei', variante: nv });
+      if (t === 'frei') (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: nv });
     }));
     if (v) {
       const nm = host.querySelector('.s5-name'); nm.addEventListener('change', () => { v.name = nm.value.trim() || S5_TYPEN[v.typ].name; v.eigen = true; neu(); });
       bindRegler(host, r => { if (!r.id.startsWith('p-')) return; v.p[r.id.slice(2)] = +r.value; v.eigen = true; if (v.typ === 'frei' && r.id === 'p-geschosse') (v.p.koerper || []).forEach(k => { if (k.rolle !== 'sockel') k.geschosse = +r.value; }); neuZeichnenBald(); });
       host.querySelectorAll('.s5-sel').forEach(s => { s.value = v.p[s.dataset.k] || 'auto'; s.addEventListener('change', () => { v.p[s.dataset.k] = s.value; v.eigen = true; neu(); }); });
-      const zb = host.querySelector('.s5-zeichnen'); if (zb) zb.addEventListener('click', () => zeichenfenster({ modus: 'frei', variante: v }));
+      const zb = host.querySelector('.s5-zeichnen'); if (zb) zb.addEventListener('click', () => (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: v }));
       host.querySelectorAll('.s5-akt-knoepfe button').forEach(b => b.addEventListener('click', () => {
         const a = b.dataset.a;
         if (a === 'weg') { S5.varianten = S5.varianten.filter(x => x !== v); if (S5.favorit === v.id) S5.favorit = null; S5.aktiv = (S5.varianten[0] || {}).id || null; neu(); }
@@ -34207,7 +34287,7 @@ function sprSetzen(code, still) {
           const fr = s5NeueVariante('frei', L, false); fr.eigen = true; fr.name = v.name + ' — frei';
           fr.p.geschosse = v.p.geschosse;
           fr.p.koerper = e2.koerper.filter(k => k._geschosse.length).map((k, i) => ({ id: 'k' + i, ring: k.fp.o.map(p => [p[0], p[1]]), geschosse: k._geschosse.length, rolle: k.rolle === 'sockel' ? 'sockel' : k.aufSockel ? 'aufsatz' : null }));
-          S5.aktiv = fr.id; neu(); zeichenfenster({ modus: 'frei', variante: fr });
+          S5.aktiv = fr.id; neu(); (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: fr });
         }
       }));
     }
@@ -34447,6 +34527,527 @@ function sprSetzen(code, still) {
   };
   // erster Aufbau der Oberfläche
   setTimeout(() => { try { if (s5Live) s5Aenderung(); } catch (e) {} }, 0);
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════════════
+//  cubarc v5 — Zeichenfenster als einfaches CAD-Werkzeug (Draufsicht, Norden oben)
+//  Werkzeuge: Auswählen/Verschieben, Rechteck, Vieleck, Messen
+//  Bearbeiten: Eckpunkte und Kanten ziehen, Drehen, Versatz nach innen/außen (scharfe
+//  Ecken), Spiegeln, Duplizieren, Reihe, Vereinigen/Abziehen/Schneiden, Zuschneiden,
+//  Rückgängig/Wiederholen, Fangen an Raster, Ecken und Kanten, Zoomen und Schwenken.
+// ═════════════════════════════════════════════════════════════════════════════════════
+(() => {
+  'use strict';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const f1 = v => fmtNum(v || 0, 1), f0 = v => fmtNum(v || 0, 0), f2 = v => fmtNum(v || 0, 2);
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const area = r => polygonArea(r);
+  const cen = r => polygonCentroid(r);
+  const drin = (p, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+  // Beschriftungspunkt sicher innerhalb der Form (auch bei L- und U-Formen)
+  function innenPunkt(r) {
+    const c = cen(r); if (drin(c, r)) return c;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; r.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+    let best = null; const n = 14;
+    for (let i = 1; i < n; i++) for (let j = 1; j < n; j++) {
+      const p = [x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * j / n]; if (!drin(p, r)) continue;
+      let d = Infinity; r.forEach((a, k) => { const b = r[(k + 1) % r.length], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)); d = Math.min(d, Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t)); });
+      if (!best || d > best.d) best = { d, p };
+    }
+    return best ? best.p : c;
+  }
+  window.s5InnenPunkt = innenPunkt;
+  const neuId = () => 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const ICO = {
+    waehlen: '<path d="M5 3l14 8-6 1.5L10 19z"/>',
+    rechteck: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
+    vieleck: '<path d="M5 18l2-11 8-3 4 8-6 6z"/><circle cx="5" cy="18" r="1.4" fill="currentColor"/><circle cx="7" cy="7" r="1.4" fill="currentColor"/>',
+    messen: '<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/>',
+    redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/>',
+    fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>'
+  };
+  const ico = (k, s) => `<svg width="${s || 18}" height="${s || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICO[k]}</svg>`;
+
+  // Versatz einer Form mit scharfen Ecken (Gehrung) — nie gerundet
+  function versatz(ring, d) {
+    const r = s5Offset([{ o: s5Norm(ring), h: [] }], d);
+    if (!r.length) return null;
+    r.sort((a, b) => s5RegArea(b) - s5RegArea(a));
+    return r[0].o;
+  }
+  function bool(typ, a, list) {
+    const C = ClipperLib.ClipType;
+    const A = [{ o: s5Norm(a), h: [] }], B = list.map(q => ({ o: s5Norm(q), h: [] }));
+    const res = typ === 'union' ? s5Union(A.concat(B)) : typ === 'minus' ? s5Minus(A, B) : s5And(A, B);
+    return res.filter(r => s5RegArea(r) > 1).map(r => r.o);
+  }
+  function drehe(ring, c, w) { const cs = Math.cos(w), sn = Math.sin(w); return ring.map(p => { const dx = p[0] - c[0], dz = p[1] - c[1]; return [c[0] + dx * cs - dz * sn, c[1] + dx * sn + dz * cs]; }); }
+  // ausgerichtetes Rechteck um eine Form (Breite × Tiefe)
+  function obb(ring) {
+    let best = null;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length]; if (dist(a, b) < 0.05) continue;
+      const w = Math.atan2(b[1] - a[1], b[0] - a[0]), e = s5Extent(ring, w), A = (e.u1 - e.u0) * (e.v1 - e.v0);
+      if (!best || A < best.A) best = { A, w, l: e.u1 - e.u0, t: e.v1 - e.v0 };
+    }
+    if (!best) return { l: 0, t: 0, w: 0 };
+    return best.l >= best.t ? best : { A: best.A, w: best.w + Math.PI / 2, l: best.t, t: best.l };
+  }
+
+  function s5Cad(opt) {
+    const L = s5Live && s5Live.K; if (!L) return;
+    const modus = opt.modus;                       // 'frei' | 'zone' | 'kreis'
+    const v = opt.variante;
+    let koerper = modus === 'frei' ? JSON.parse(JSON.stringify(v.p.koerper || [])) : [];
+    koerper.forEach(k => { if (!k.id) k.id = neuId(); });
+    let sel = new Set(), werkzeug = modus === 'kreis' ? 'punkt' : modus === 'zone' ? 'vieleck' : (koerper.length ? 'waehlen' : 'rechteck');
+    let zug = null, poly = [], maus = null, fang = null, mess = null;
+    const ein = { raster: true, rasterW: 0.5, ecken: true, ortho: false, achse: 'grund' };
+    const verlauf = [], vor = [];
+    const merke = () => { verlauf.push(JSON.stringify(koerper)); if (verlauf.length > 80) verlauf.shift(); vor.length = 0; };
+    const rueck = () => { if (!verlauf.length) return; vor.push(JSON.stringify(koerper)); koerper = JSON.parse(verlauf.pop()); sel = new Set([...sel].filter(id => koerper.some(k => k.id === id))); alles(); };
+    const wieder = () => { if (!vor.length) return; verlauf.push(JSON.stringify(koerper)); koerper = JSON.parse(vor.pop()); alles(); };
+    // Achse der bebaubaren Fläche (für Rechtecke, Ortho, Reihen)
+    const F = s5Frame(L.flaeche.length ? L.flaeche : s5Regs([parcelPoints]), 0);
+    const achsW = () => ein.achse === 'grund' ? F.ang : 0;
+
+    // ---------------------------------------------------------------- Oberfläche ------
+    let ov = document.getElementById('s5-cad'); if (!ov) { ov = document.createElement('div'); ov.id = 's5-cad'; ov.className = 's5-ov s5-cad-ov'; document.body.appendChild(ov); }
+    const titel = modus === 'frei' ? esc(v.name) : modus === 'kreis' ? 'Baum / Schutzkreis setzen' : 'Freihaltefläche zeichnen';
+    const tools = modus === 'frei' ? [['waehlen', 'Auswählen & verschieben (V)'], ['rechteck', 'Rechteck (R)'], ['vieleck', 'Vieleck (P)'], ['messen', 'Messen (M)']]
+      : modus === 'zone' ? [['vieleck', 'Vieleck (P)'], ['rechteck', 'Rechteck (R)'], ['messen', 'Messen (M)']] : [['messen', 'Messen (M)']];
+    ov.innerHTML = `<div class="cad">
+      <div class="cad-kopf"><div><h2>${modus === 'frei' ? 'Baukörper bearbeiten' : titel}</h2><span>${modus === 'frei' ? titel + ' · Draufsicht, Norden oben' : 'Draufsicht, Norden oben'}</span></div>
+        <div class="cad-kopf-r"><button type="button" class="cad-btn ghost" data-a="abbr">Abbrechen</button><button type="button" class="cad-btn primary" data-a="ok">Übernehmen</button></div></div>
+      <div class="cad-body">
+        <div class="cad-tools">${tools.map(t => `<button type="button" data-w="${t[0]}" title="${t[1]}">${ico(t[0])}</button>`).join('')}
+          <span class="cad-sep"></span>
+          <button type="button" data-a="undo" title="Rückgängig (Strg+Z)">${ico('undo')}</button><button type="button" data-a="redo" title="Wiederholen (Strg+Y)">${ico('redo')}</button>
+          <span class="cad-sep"></span>
+          <button type="button" data-a="zin" title="Vergrößern">${ico('plus')}</button><button type="button" data-a="zout" title="Verkleinern">${ico('minus')}</button><button type="button" data-a="fit" title="Einpassen (F)">${ico('fit')}</button>
+        </div>
+        <div class="cad-flaeche"><svg class="cad-svg" preserveAspectRatio="xMidYMid meet"></svg><div class="cad-nord">N</div><div class="cad-tip"></div></div>
+        <div class="cad-panel"></div>
+      </div>
+      <div class="cad-fuss"><span class="cad-koord">–</span>
+        <label><input type="checkbox" data-e="raster" ${ein.raster ? 'checked' : ''}> Raster <select data-e="rasterW"><option value="0.1">0,1 m</option><option value="0.5" selected>0,5 m</option><option value="1">1 m</option></select></label>
+        <label><input type="checkbox" data-e="ecken" ${ein.ecken ? 'checked' : ''}> Ecken & Kanten fangen</label>
+        <label><input type="checkbox" data-e="ortho" ${ein.ortho ? 'checked' : ''}> Ortho (Shift)</label>
+        <label>Achse <select data-e="achse"><option value="grund" selected>Bebaubare Fläche</option><option value="nord">Nord</option></select></label>
+        <span class="cad-zoom"></span></div>
+    </div>`;
+    const svg = ov.querySelector('.cad-svg'), fl = ov.querySelector('.cad-flaeche'), panel = ov.querySelector('.cad-panel'), tip = ov.querySelector('.cad-tip'), koord = ov.querySelector('.cad-koord');
+
+    // ---------------------------------------------------------------- Ansicht ---------
+    let vb = null;
+    function einpassen() {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      parcelPoints.concat(...koerper.map(k => k.ring)).forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+      const r = fl.getBoundingClientRect(), asp = Math.max(0.3, r.width / Math.max(1, r.height));
+      let w = (x1 - x0) * 1.18 + 8, h = (z1 - z0) * 1.18 + 8;
+      if (w / h < asp) w = h * asp; else h = w / asp;
+      vb = { x: (x0 + x1) / 2 - w / 2, y: (z0 + z1) / 2 - h / 2, w, h };
+    }
+    const pxProM = () => { const r = svg.getBoundingClientRect(); return r.width / vb.w; };
+    function welt(ev) { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const m = svg.getScreenCTM(); if (!m) return [0, 0]; const q = pt.matrixTransform(m.inverse()); return [q.x, q.y]; }
+    function zoom(f, um) { const c = um || [vb.x + vb.w / 2, vb.y + vb.h / 2]; vb = { x: c[0] - (c[0] - vb.x) * f, y: c[1] - (c[1] - vb.y) * f, w: vb.w * f, h: vb.h * f }; zeichne(); }
+
+    // ---------------------------------------------------------------- Fangen ----------
+    function fangPunkte() {
+      const out = [];
+      parcelPoints.forEach(p => out.push(p));
+      L.flaeche.forEach(r => r.o.forEach(p => out.push(p)));
+      koerper.forEach(k => { if (zug && zug.ids && zug.ids.has(k.id)) return; k.ring.forEach(p => out.push(p)); });
+      return out;
+    }
+    function fangKanten() {
+      const out = [], add = ring => ring.forEach((a, i) => out.push([a, ring[(i + 1) % ring.length]]));
+      add(parcelPoints); L.flaeche.forEach(r => add(r.o));
+      koerper.forEach(k => { if (zug && zug.ids && zug.ids.has(k.id)) return; add(k.ring); });
+      return out;
+    }
+    function rasterFang(p) {
+      if (!ein.raster) return p;
+      const w = achsW(), g = ein.rasterW, cs = Math.cos(w), sn = Math.sin(w);
+      const u = p[0] * cs + p[1] * sn, t = -p[0] * sn + p[1] * cs;
+      const uu = Math.round(u / g) * g, tt = Math.round(t / g) * g;
+      return [uu * cs - tt * sn, uu * sn + tt * cs];
+    }
+    function fange(p, ev, von) {
+      fang = null;
+      const tol = 9 / pxProM();
+      if (ein.ecken && !(ev && ev.altKey)) {
+        let best = null;
+        fangPunkte().forEach(q => { const d = dist(p, q); if (d < tol && (!best || d < best.d)) best = { d, q }; });
+        if (best) { fang = { p: best.q, art: 'ecke' }; return best.q.slice(); }
+      }
+      // Ortho: Richtung zum letzten Punkt auf 0/45/90° der Achse
+      if (von && (ein.ortho || (ev && ev.shiftKey))) {
+        const w0 = achsW(), d = dist(p, von), a = Math.atan2(p[1] - von[1], p[0] - von[0]) - w0;
+        const st = Math.PI / 4, a2 = Math.round(a / st) * st + w0;
+        let q = [von[0] + Math.cos(a2) * d, von[1] + Math.sin(a2) * d];
+        if (ein.raster) { const g = ein.rasterW; const d2 = Math.round(d / g) * g; q = [von[0] + Math.cos(a2) * d2, von[1] + Math.sin(a2) * d2]; }
+        fang = { p: q, art: 'ortho' }; return q;
+      }
+      if (ein.ecken && !(ev && ev.altKey)) {
+        let best = null;
+        fangKanten().forEach(([a, b]) => {
+          const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz; if (L2 < 1e-6) return;
+          const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)), q = [a[0] + dx * t, a[1] + dz * t], d = dist(p, q);
+          if (d < tol * 0.8 && (!best || d < best.d)) best = { d, q };
+        });
+        if (best) { fang = { p: best.q, art: 'kante' }; return best.q.slice(); }
+      }
+      return rasterFang(p);
+    }
+
+    // ---------------------------------------------------------------- Zeichnen --------
+    const pd = r => 'M' + r.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join('L') + 'Z';
+    const auswahl = () => koerper.filter(k => sel.has(k.id));
+    function auswahlMitte() { const a = auswahl(); if (!a.length) return null; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; a.forEach(k => k.ring.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); })); return { c: [(x0 + x1) / 2, (z0 + z1) / 2], x0, x1, z0, z1 }; }
+    function zeichne() {
+      if (!vb) einpassen();
+      svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const k1 = 1 / pxProM();                          // 1 Bildpunkt in Metern
+      const T = (x, y, txt, cls, gr) => `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" class="${cls}" style="font-size:${((gr || 12) * k1).toFixed(3)}px">${esc(txt)}</text>`;
+      let s = '';
+      // Raster (an der Achse ausgerichtet)
+      { const ppm = pxProM(); let g = ppm > 18 ? 1 : ppm > 6 ? 5 : 10; const w = achsW() * 180 / Math.PI;
+        const c = [vb.x + vb.w / 2, vb.y + vb.h / 2], R = Math.hypot(vb.w, vb.h) / 2 + g;
+        let lines = '';
+        const n = Math.ceil(R / g);
+        for (let i = -n; i <= n; i++) { const st = (i * g) % (g * 5) === 0 ? 'cad-gr2' : 'cad-gr'; lines += `<path d="M${-R},${i * g}H${R}M${i * g},${-R}V${R}" class="${st}"/>`; }
+        const cs = Math.cos(achsW()), sn = Math.sin(achsW()), cu = c[0] * cs + c[1] * sn, cv = -c[0] * sn + c[1] * cs, gu = Math.round(cu / g) * g, gv = Math.round(cv / g) * g;
+        s += `<g transform="rotate(${w}) translate(${gu},${gv})">${lines}</g>`; }
+      s += `<path d="${pd(parcelPoints)}" class="cad-grund"/>`;
+      L.flaeche.forEach(r => { s += `<path d="${pd(r.o)}${(r.h || []).map(pd).join('')}" class="cad-fl" fill-rule="evenodd"/>`; });
+      L.schutz.liste.forEach(z => { s += `<path d="${pd(z.reg.o)}" class="cad-schutz"/>`; });
+      // Baukörper: Sockel zuerst
+      const reihe = koerper.slice().sort((a, b) => (a.rolle === 'sockel' ? 0 : 1) - (b.rolle === 'sockel' ? 0 : 1));
+      reihe.forEach((k, i) => {
+        if (!k.ring || k.ring.length < 3) return;
+        const on = sel.has(k.id);
+        s += `<path d="${pd(k.ring)}" class="cad-k-aus" data-k="${k.id}"/>`;
+        s5And([{ o: s5Norm(k.ring), h: [] }], L.flaeche).forEach(r => { s += `<path d="${pd(r.o)}${(r.h || []).map(pd).join('')}" class="cad-k ${k.rolle === 'sockel' ? 'sockel' : k.rolle === 'aufsatz' ? 'aufsatz' : ''}" fill-rule="evenodd" data-k="${k.id}"/>`; });
+        s += `<path d="${pd(k.ring)}" class="cad-k-rand ${on ? 'on' : ''}" data-k="${k.id}"/>`;
+      });
+      reihe.forEach(k => {
+        const c = innenPunkt(k.ring), nr = koerper.indexOf(k) + 1;
+        const art = k.rolle === 'sockel' ? 'Sockel' : (k.rolle === 'aufsatz' ? 'Aufsatz · ' : '') + k.geschosse + ' G';
+        s += T(c[0], c[1] - 2 * k1, 'B' + nr + ' · ' + art, 'cad-t', 12.5) + T(c[0], c[1] + 13 * k1, f0(area(k.ring)) + ' m²', 'cad-t2', 11);
+      });
+      // Auswahl: Maße, Griffe, Drehgriff
+      const am = auswahlMitte();
+      auswahl().forEach(k => {
+        k.ring.forEach((a, i) => {
+          const b = k.ring[(i + 1) % k.ring.length], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], l = dist(a, b); if (l < 0.3) return;
+          const nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l, sg = signedArea(k.ring) >= 0 ? -1 : 1, off = 12 * k1;
+          let ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+          const tx = m[0] + nx * off * sg, tz = m[1] + nz * off * sg;
+          s += `<text x="${tx.toFixed(2)}" y="${tz.toFixed(2)}" class="cad-mass" style="font-size:${(11 * k1).toFixed(3)}px" transform="rotate(${ang.toFixed(2)} ${tx.toFixed(2)} ${tz.toFixed(2)})">${f2(l)}</text>`;
+          if (sel.size === 1) s += `<circle cx="${m[0]}" cy="${m[1]}" r="${(4.5 * k1).toFixed(3)}" class="cad-kante" data-k="${k.id}" data-e="${i}"/>`;
+        });
+        if (sel.size === 1) k.ring.forEach((p, i) => { const r = 5 * k1; s += `<rect x="${p[0] - r}" y="${p[1] - r}" width="${2 * r}" height="${2 * r}" class="cad-pt" data-k="${k.id}" data-i="${i}"/>`; });
+      });
+      if (am) {
+        const pad = 10 * k1;
+        s += `<rect x="${am.x0 - pad}" y="${am.z0 - pad}" width="${am.x1 - am.x0 + 2 * pad}" height="${am.z1 - am.z0 + 2 * pad}" class="cad-bbox"/>`;
+        const hy = am.z0 - pad - 26 * k1;
+        s += `<path d="M${am.c[0]},${am.z0 - pad}V${hy}" class="cad-bbox"/><circle cx="${am.c[0]}" cy="${hy}" r="${(6 * k1).toFixed(3)}" class="cad-dreh" data-dreh="1"/>`;
+      }
+      // laufendes Zeichnen
+      if (poly.length) {
+        const pts = poly.concat(maus ? [maus] : []);
+        s += `<polyline points="${pts.map(p => p.join(',')).join(' ')}" class="cad-neu"/>`;
+        poly.forEach((p, i) => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="${((i === 0 ? 6 : 4) * k1).toFixed(3)}" class="cad-pt neu"/>`; });
+        if (maus) { const a = poly[poly.length - 1], l = dist(a, maus), w = (Math.atan2(maus[1] - a[1], maus[0] - a[0]) - achsW()) * 180 / Math.PI; s += T((a[0] + maus[0]) / 2, (a[1] + maus[1]) / 2 - 8 * k1, f2(l) + ' m · ' + f0(((w % 360) + 360) % 360) + '°', 'cad-live', 12); }
+      }
+      if (zug && zug.rechteck) { const r = rechteck(zug.a, zug.b); s += `<path d="${pd(r.ring)}" class="cad-neu"/>` + T(cen(r.ring)[0], cen(r.ring)[1], f2(r.l) + ' × ' + f2(r.t) + ' m', 'cad-live', 12.5); }
+      if (zug && zug.band) { const a = zug.a, b = zug.b; s += `<rect x="${Math.min(a[0], b[0])}" y="${Math.min(a[1], b[1])}" width="${Math.abs(a[0] - b[0])}" height="${Math.abs(a[1] - b[1])}" class="cad-band"/>`; }
+      if (zug && zug.info) s += T(zug.info.p[0], zug.info.p[1], zug.info.t, 'cad-live', 12.5);
+      if (mess) { const b = mess.b || maus; if (b) s += `<path d="M${mess.a[0]},${mess.a[1]}L${b[0]},${b[1]}" class="cad-messl"/>` + T((mess.a[0] + b[0]) / 2, (mess.a[1] + b[1]) / 2 - 8 * k1, f2(dist(mess.a, b)) + ' m', 'cad-live', 12.5); }
+      if (fang && maus) { const r = 6 * k1, p = fang.p; s += fang.art === 'ecke' ? `<rect x="${p[0] - r}" y="${p[1] - r}" width="${2 * r}" height="${2 * r}" class="cad-fang"/>` : fang.art === 'kante' ? `<path d="M${p[0] - r},${p[1] + r}L${p[0]},${p[1] - r}L${p[0] + r},${p[1] + r}Z" class="cad-fang"/>` : `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" class="cad-fang"/>`; }
+      svg.innerHTML = s;
+      ov.querySelector('.cad-zoom').textContent = f0(pxProM() * 10) + ' px / 10 m';
+    }
+    function rechteck(a, b) {
+      const w = achsW(), cs = Math.cos(w), sn = Math.sin(w);
+      const U = p => [p[0] * cs + p[1] * sn, -p[0] * sn + p[1] * cs], W = q => [q[0] * cs - q[1] * sn, q[0] * sn + q[1] * cs];
+      const ua = U(a), ub = U(b);
+      const ring = [W([ua[0], ua[1]]), W([ub[0], ua[1]]), W([ub[0], ub[1]]), W([ua[0], ub[1]])];
+      return { ring: s5Norm(ring), l: Math.abs(ub[0] - ua[0]), t: Math.abs(ub[1] - ua[1]) };
+    }
+
+    // ---------------------------------------------------------------- Eigenschaften ---
+    let liveT = null;
+    function liveKennzahlen() {
+      clearTimeout(liveT);
+      liveT = setTimeout(() => {
+        const box = panel.querySelector('.cad-live-kz'); if (!box || modus !== 'frei') return;
+        try {
+          const rez = { typ: 'frei', p: Object.assign({}, v.p, { koerper }) };
+          const e = s5Auswerten(rez, L), z = e.z;
+          box.innerHTML = `<div><span>BGF</span><b>${f0(z.bgf)} m²</b></div><div><span>Ausnutzung</span><b>${z.ausnutzung == null ? '–' : f0(z.ausnutzung * 100) + ' %'}</b></div><div><span>Bebaut</span><b>${f0(z.bebaut)} m²</b></div><div><span>Höhe</span><b>${f1(z.hoehe)} m</b></div>`;
+        } catch (e) { box.textContent = ''; }
+      }, 80);
+    }
+    function feld(id, label, wert, einheit, step) { return `<label class="cad-feld"><span>${label}</span><input type="number" data-f="${id}" value="${wert}" step="${step || 0.5}"><em>${einheit || ''}</em></label>`; }
+    function panelZeichnen() {
+      if (modus !== 'frei') {
+        panel.innerHTML = `<div class="cad-p-sec">Anleitung</div><div class="cad-hint">${modus === 'kreis' ? 'Auf die Stelle klicken, an der der Baum, Schacht oder Mast steht. Der Radius lässt sich danach in Schritt 3 einstellen.' : 'Form mit dem Vieleck oder als Rechteck zeichnen. Ein Klick auf den ersten Punkt, Doppelklick oder Enter schließt das Vieleck.'}</div>`;
+        return;
+      }
+      const a = auswahl();
+      let h = '';
+      if (!a.length) {
+        const tot = koerper.reduce((q, k) => q + area(k.ring), 0);
+        h += `<div class="cad-p-sec">Variante</div><div class="cad-stat"><div><span>Baukörper</span><b>${koerper.length}</b></div><div><span>Fußabdruck</span><b>${f0(tot)} m²</b></div></div>
+          <div class="cad-p-sec">Live-Kennzahlen</div><div class="cad-live-kz"></div>
+          <div class="cad-p-sec">Tastenkürzel</div><div class="cad-keys">
+          <div><kbd>V</kbd> Auswählen</div><div><kbd>R</kbd> Rechteck</div><div><kbd>P</kbd> Vieleck</div><div><kbd>M</kbd> Messen</div>
+          <div><kbd>Pfeile</kbd> verschieben (Shift = 2 m)</div><div><kbd>Q</kbd>/<kbd>E</kbd> drehen ±15°</div><div><kbd>Strg</kbd>+<kbd>D</kbd> duplizieren</div><div><kbd>Entf</kbd> löschen</div>
+          <div><kbd>Strg</kbd>+<kbd>Z</kbd> rückgängig</div><div><kbd>Shift</kbd> beim Zeichnen: Ortho</div><div><kbd>Alt</kbd> Fangen aus</div><div>Doppelklick Kante: Punkt einfügen</div></div>`;
+      } else {
+        const k = a[0], b = obb(k.ring), A = a.reduce((q, x) => q + area(x.ring), 0);
+        h += `<div class="cad-p-sec">${a.length === 1 ? 'Baukörper B' + (koerper.indexOf(k) + 1) : a.length + ' Baukörper gewählt'}</div>`;
+        if (a.length === 1) h += `<div class="cad-p-row"><select data-p="rolle"><option value="">Baukörper</option><option value="sockel">Sockel (Erdgeschoß)</option><option value="aufsatz">Aufsatz auf dem Sockel</option></select></div>`;
+        h += `<div class="cad-p-row cad-geschoss"><span>Geschoße</span><button type="button" data-p="g-">−</button><b>${a.every(x => x.geschosse === k.geschosse) ? k.geschosse : '–'}</b><button type="button" data-p="g+">+</button></div>
+          <div class="cad-stat"><div><span>Fläche</span><b>${f1(A)} m²</b></div>${a.length === 1 ? `<div><span>Breite × Tiefe</span><b>${f1(b.l)} × ${f1(b.t)}</b></div><div><span>Umfang</span><b>${f1(k.ring.reduce((q, p, i) => q + dist(p, k.ring[(i + 1) % k.ring.length]), 0))} m</b></div><div><span>Eckpunkte</span><b>${k.ring.length}</b></div>` : ''}</div>
+          <div class="cad-p-sec">Verschieben</div><div class="cad-p-grid">${feld('dx', 'X', 0, 'm')}${feld('dz', 'Y', 0, 'm')}</div><button type="button" class="cad-btn wide" data-p="move">Um diesen Wert verschieben</button>
+          <div class="cad-p-sec">Drehen</div><div class="cad-p-row cad-4"><button type="button" data-p="r-90">−90°</button><button type="button" data-p="r-15">−15°</button><button type="button" data-p="r15">+15°</button><button type="button" data-p="r90">+90°</button></div>
+          <div class="cad-p-grid">${feld('rw', 'Winkel', 0, '°', 1)}<button type="button" class="cad-btn" data-p="rot">Drehen</button></div>
+          <button type="button" class="cad-btn wide" data-p="achse">An der Achse der Fläche ausrichten</button>
+          <div class="cad-p-sec">Nach innen / außen versetzen</div><div class="cad-p-grid">${feld('off', 'Abstand', 1, 'm', 0.1)}<div class="cad-p-row cad-2"><button type="button" data-p="innen">Nach innen</button><button type="button" data-p="aussen">Nach außen</button></div></div>
+          <div class="cad-p-sec">Kopieren & Spiegeln</div><div class="cad-p-row cad-2"><button type="button" data-p="dup">Duplizieren</button><button type="button" data-p="reihe">Reihe …</button></div>
+          <div class="cad-p-row cad-2"><button type="button" data-p="spx">Spiegeln ↔</button><button type="button" data-p="spy">Spiegeln ↕</button></div>
+          <div class="cad-reihe" hidden><div class="cad-p-grid">${feld('rn', 'Anzahl', 3, 'Stk', 1)}${feld('rd', 'Abstand', 6, 'm', 0.5)}</div><div class="cad-p-row cad-2"><button type="button" data-p="reihe-u">Entlang</button><button type="button" data-p="reihe-v">Quer</button></div></div>
+          ${a.length >= 2 ? `<div class="cad-p-sec">Formen verbinden</div><div class="cad-p-row cad-3"><button type="button" data-p="union">Vereinigen</button><button type="button" data-p="minus">Abziehen</button><button type="button" data-p="schnitt">Schneiden</button></div><div class="cad-hint">Abziehen: die zuerst gewählte Form minus die übrigen.</div>` : ''}
+          <div class="cad-p-sec">Weiteres</div><div class="cad-p-row cad-2"><button type="button" data-p="clip">Auf Fläche zuschneiden</button><button type="button" data-p="weg" class="weg">Löschen</button></div>
+          <div class="cad-p-sec">Live-Kennzahlen</div><div class="cad-live-kz"></div>`;
+      }
+      panel.innerHTML = h;
+      const rs = panel.querySelector('[data-p=rolle]'); if (rs) { rs.value = a[0].rolle || ''; rs.addEventListener('change', () => { merke(); a[0].rolle = rs.value || null; if (a[0].rolle === 'sockel') a[0].geschosse = 1; alles(); }); }
+      panel.querySelectorAll('button[data-p]').forEach(bt => bt.addEventListener('click', () => aktion(bt.dataset.p)));
+      liveKennzahlen();
+    }
+    const fwert = id => { const e = panel.querySelector(`[data-f="${id}"]`); return e ? parseFloat(e.value) || 0 : 0; };
+    function aktion(p) {
+      const a = auswahl(); if (!a.length && p !== 'reihe') return;
+      const am = auswahlMitte();
+      const um = (fn) => { merke(); fn(); alles(); };
+      const rot = w => um(() => a.forEach(k => { k.ring = drehe(k.ring, am.c, w * Math.PI / 180); }));
+      switch (p) {
+        case 'g-': um(() => a.forEach(k => { k.geschosse = Math.max(1, k.geschosse - 1); })); break;
+        case 'g+': um(() => a.forEach(k => { if (k.rolle !== 'sockel') k.geschosse = Math.min(30, k.geschosse + 1); })); break;
+        case 'move': { const dx = fwert('dx'), dz = fwert('dz'); if (!dx && !dz) return; um(() => a.forEach(k => { k.ring = k.ring.map(q => [q[0] + dx, q[1] + dz]); })); break; }
+        case 'r-90': rot(-90); break; case 'r-15': rot(-15); break; case 'r15': rot(15); break; case 'r90': rot(90); break;
+        case 'rot': { const w = fwert('rw'); if (w) rot(w); break; }
+        case 'achse': um(() => a.forEach(k => { const b = obb(k.ring); let d = achsW() - b.w; d = ((d + Math.PI / 4) % (Math.PI / 2) + Math.PI / 2) % (Math.PI / 2) - Math.PI / 4; k.ring = drehe(k.ring, cen(k.ring), d); })); break;
+        case 'innen': case 'aussen': { const d = Math.abs(fwert('off')) * (p === 'innen' ? -1 : 1); if (!d) return; merke(); let fehl = 0; a.forEach(k => { const r = versatz(k.ring, d); if (r && r.length >= 3 && area(r) > 1) k.ring = r; else fehl++; }); if (fehl) appToast('Zu weit nach innen — die Form würde verschwinden.'); alles(); break; }
+        case 'dup': um(() => { const neu = a.map(k => { const w = achsW(), cs = Math.cos(w), sn = Math.sin(w), d = 3; return Object.assign(JSON.parse(JSON.stringify(k)), { id: neuId(), ring: k.ring.map(q => [q[0] + (cs - sn) * d, q[1] + (sn + cs) * d]) }); }); koerper.push(...neu); sel = new Set(neu.map(k => k.id)); }); break;
+        case 'reihe': { const r = panel.querySelector('.cad-reihe'); if (r) r.hidden = !r.hidden; break; }
+        case 'reihe-u': case 'reihe-v': {
+          const n = Math.max(2, Math.min(20, Math.round(fwert('rn')))), d = fwert('rd');
+          const w = achsW() + (p === 'reihe-v' ? Math.PI / 2 : 0), cs = Math.cos(w), sn = Math.sin(w);
+          // Schrittweite = Ausdehnung der Auswahl in dieser Richtung + Abstand
+          let lo = Infinity, hi = -Infinity; a.forEach(k => k.ring.forEach(q => { const u = q[0] * cs + q[1] * sn; lo = Math.min(lo, u); hi = Math.max(hi, u); }));
+          const schritt = hi - lo + d;
+          um(() => { const neu = []; for (let i = 1; i < n; i++) a.forEach(k => neu.push(Object.assign(JSON.parse(JSON.stringify(k)), { id: neuId(), ring: k.ring.map(q => [q[0] + cs * schritt * i, q[1] + sn * schritt * i]) }))); koerper.push(...neu); });
+          break;
+        }
+        case 'spx': um(() => a.forEach(k => { k.ring = s5Norm(k.ring.map(q => [2 * am.c[0] - q[0], q[1]])); })); break;
+        case 'spy': um(() => a.forEach(k => { k.ring = s5Norm(k.ring.map(q => [q[0], 2 * am.c[1] - q[1]])); })); break;
+        case 'union': case 'minus': case 'schnitt': {
+          const erst = koerper.find(k => k.id === [...sel][0]) || a[0], rest = a.filter(k => k !== erst);
+          const res = bool(p === 'union' ? 'union' : p === 'minus' ? 'minus' : 'and', erst.ring, rest.map(k => k.ring));
+          if (!res.length) { appToast('Das Ergebnis wäre leer.'); return; }
+          um(() => {
+            const weg = new Set(p === 'minus' ? [erst.id] : a.map(k => k.id));
+            const neu = res.map(r => Object.assign(JSON.parse(JSON.stringify(erst)), { id: neuId(), ring: r }));
+            koerper = koerper.filter(k => !weg.has(k.id)).concat(neu); sel = new Set(neu.map(k => k.id));
+          });
+          break;
+        }
+        case 'clip': um(() => { const neu = []; a.forEach(k => { const c = s5And([{ o: s5Norm(k.ring), h: [] }], L.flaeche).filter(r => s5RegArea(r) > 2); c.forEach((r, i) => neu.push(Object.assign(JSON.parse(JSON.stringify(k)), { id: i ? neuId() : k.id, ring: r.o }))); }); const ids = new Set(a.map(k => k.id)); koerper = koerper.filter(k => !ids.has(k.id)).concat(neu); sel = new Set(neu.map(k => k.id)); }); break;
+        case 'weg': um(() => { koerper = koerper.filter(k => !sel.has(k.id)); sel.clear(); }); break;
+      }
+    }
+    function alles() { zeichne(); panelZeichnen(); tipps(); }
+    function tipps() {
+      ov.querySelectorAll('.cad-tools [data-w]').forEach(b => b.classList.toggle('on', b.dataset.w === werkzeug));
+      tip.textContent = werkzeug === 'rechteck' ? 'Rechteck aufziehen — es richtet sich nach der gewählten Achse.'
+        : werkzeug === 'vieleck' ? (poly.length ? 'Weiter klicken · erster Punkt, Doppelklick oder Enter schließt · Rücktaste entfernt den letzten Punkt' : 'Ersten Punkt setzen')
+        : werkzeug === 'messen' ? 'Zwei Punkte anklicken, um den Abstand zu messen.'
+        : werkzeug === 'punkt' ? 'Auf die Stelle klicken.'
+        : sel.size ? 'Ziehen verschiebt · Ecken und Kantenmitten ziehen ändert die Form · oben drehen' : 'Baukörper anklicken (Shift für mehrere) oder einen Rahmen aufziehen';
+    }
+
+    // ---------------------------------------------------------------- Maus ------------
+    let schwenk = null, leer = false;
+    svg.addEventListener('contextmenu', e => e.preventDefault());
+    svg.addEventListener('wheel', e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, welt(e)); }, { passive: false });
+    svg.addEventListener('pointerdown', ev => {
+      try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+      const roh = welt(ev);
+      if (ev.button === 1 || ev.button === 2 || leer) { schwenk = { sx: ev.clientX, sy: ev.clientY, vb: Object.assign({}, vb) }; return; }
+      const t = ev.target;
+      if (werkzeug === 'punkt') { const p = fange(roh, ev); ov.classList.remove('open'); opt.fertig && opt.fertig(p); return; }
+      if (werkzeug === 'messen') { const p = fange(roh, ev); if (!mess || mess.b) mess = { a: p }; else mess.b = p; zeichne(); return; }
+      if (werkzeug === 'vieleck') {
+        const p = fange(roh, ev, poly[poly.length - 1]);
+        if (poly.length >= 3 && dist(p, poly[0]) < 10 / pxProM()) return schliessen();
+        poly.push(p); zeichne(); tipps(); return;
+      }
+      if (werkzeug === 'rechteck') { const p = fange(roh, ev); zug = { rechteck: true, a: p, b: p }; return; }
+      // Auswählen
+      if (t.dataset && t.dataset.dreh) { const am = auswahlMitte(); merke(); zug = { dreh: true, c: am.c, w0: Math.atan2(roh[1] - am.c[1], roh[0] - am.c[0]), orig: auswahl().map(k => [k, k.ring.map(q => q.slice())]), ids: new Set(sel) }; return; }
+      if (t.classList.contains('cad-pt') && t.dataset.k) { merke(); zug = { punkt: true, k: koerper.find(x => x.id === t.dataset.k), i: +t.dataset.i, ids: new Set([t.dataset.k]) }; return; }
+      if (t.classList.contains('cad-kante') && t.dataset.k) {
+        const k = koerper.find(x => x.id === t.dataset.k), i = +t.dataset.e, a = k.ring[i], b = k.ring[(i + 1) % k.ring.length], l = dist(a, b);
+        merke(); zug = { kante: true, k, i, n: [-(b[1] - a[1]) / l, (b[0] - a[0]) / l], a: roh, orig: k.ring.map(q => q.slice()), ids: new Set([k.id]) }; return;
+      }
+      if (t.dataset && t.dataset.k) {
+        const id = t.dataset.k;
+        if (ev.shiftKey) { if (sel.has(id)) sel.delete(id); else sel.add(id); }
+        else if (!sel.has(id)) sel = new Set([id]);
+        merke(); zug = { verschieben: true, a: roh, orig: auswahl().map(k => [k, k.ring.map(q => q.slice())]), ids: new Set(sel), bewegt: false };
+        alles(); return;
+      }
+      if (!ev.shiftKey) sel.clear();
+      zug = { band: true, a: roh, b: roh }; alles();
+    });
+    svg.addEventListener('pointermove', ev => {
+      const roh = welt(ev);
+      koord.textContent = 'X ' + f2(roh[0] - (F.ox || 0)) + '  ·  Y ' + f2(roh[1]) + ' m';
+      if (schwenk) { const r = svg.getBoundingClientRect(), k = vb.w / r.width; vb = Object.assign({}, schwenk.vb, { x: schwenk.vb.x - (ev.clientX - schwenk.sx) * k, y: schwenk.vb.y - (ev.clientY - schwenk.sy) * k }); zeichne(); return; }
+      if (werkzeug === 'vieleck' || werkzeug === 'messen' || werkzeug === 'punkt' || (werkzeug === 'rechteck' && !zug)) { maus = fange(roh, ev, werkzeug === 'vieleck' ? poly[poly.length - 1] : (mess && !mess.b ? mess.a : null)); zeichne(); return; }
+      if (!zug) { maus = null; return; }
+      maus = roh;
+      if (zug.rechteck) { zug.b = fange(roh, ev); }
+      else if (zug.band) zug.b = roh;
+      else if (zug.punkt) { zug.k.ring[zug.i] = fange(roh, ev, zug.k.ring[(zug.i - 1 + zug.k.ring.length) % zug.k.ring.length]); }
+      else if (zug.kante) {
+        let d = (roh[0] - zug.a[0]) * zug.n[0] + (roh[1] - zug.a[1]) * zug.n[1];
+        if (ein.raster) d = Math.round(d / ein.rasterW) * ein.rasterW;
+        const n = zug.orig.length, i = zug.i, j = (i + 1) % n;
+        zug.k.ring = zug.orig.map((q, m) => (m === i || m === j) ? [q[0] + zug.n[0] * d, q[1] + zug.n[1] * d] : q.slice());
+        zug.info = { p: [(zug.k.ring[i][0] + zug.k.ring[j][0]) / 2, (zug.k.ring[i][1] + zug.k.ring[j][1]) / 2], t: (d >= 0 ? '+' : '') + f2(d) + ' m' };
+      }
+      else if (zug.dreh) {
+        let w = Math.atan2(roh[1] - zug.c[1], roh[0] - zug.c[0]) - zug.w0;
+        const st = (ev.shiftKey ? 1 : 15) * Math.PI / 180; w = Math.round(w / st) * st;
+        zug.orig.forEach(([k, r]) => { k.ring = drehe(r, zug.c, w); });
+        zug.info = { p: zug.c, t: f0(w * 180 / Math.PI) + '°' };
+      }
+      else if (zug.verschieben) {
+        let dx = roh[0] - zug.a[0], dz = roh[1] - zug.a[1];
+        if (Math.hypot(dx, dz) * pxProM() < 3 && !zug.bewegt) return;
+        zug.bewegt = true;
+        // Fangen: der nächste Eckpunkt der bewegten Formen rastet an Ecken/Raster ein
+        const ref = zug.orig[0][1][0], ziel = [ref[0] + dx, ref[1] + dz];
+        let best = null; const tol = 9 / pxProM();
+        if (ein.ecken && !ev.altKey) zug.orig.forEach(([, r]) => r.forEach(q => { const qq = [q[0] + dx, q[1] + dz]; fangPunkte().forEach(f => { const d = dist(qq, f); if (d < tol && (!best || d < best.d)) best = { d, off: [f[0] - qq[0], f[1] - qq[1]], f }; }); }));
+        if (best) { dx += best.off[0]; dz += best.off[1]; fang = { p: best.f, art: 'ecke' }; }
+        else { const g = rasterFang(ziel); dx += g[0] - ziel[0]; dz += g[1] - ziel[1]; fang = null; }
+        if (ev.shiftKey) { const w = achsW(), u = dx * Math.cos(w) + dz * Math.sin(w), t2 = -dx * Math.sin(w) + dz * Math.cos(w); if (Math.abs(u) > Math.abs(t2)) { dx = u * Math.cos(w); dz = u * Math.sin(w); } else { dx = -t2 * Math.sin(w); dz = t2 * Math.cos(w); } }
+        zug.orig.forEach(([k, r]) => { k.ring = r.map(q => [q[0] + dx, q[1] + dz]); });
+        zug.info = { p: auswahlMitte().c, t: 'Δ ' + f2(Math.hypot(dx, dz)) + ' m' };
+      }
+      zeichne();
+    });
+    svg.addEventListener('pointerup', ev => {
+      if (schwenk) { schwenk = null; return; }
+      if (zug && zug.rechteck) {
+        const r = rechteck(zug.a, zug.b);
+        if (r.l >= 1 && r.t >= 1) {
+          if (modus === 'zone') { zug = null; ov.classList.remove('open'); opt.fertig && opt.fertig(r.ring); return; }
+          merke(); const k = { id: neuId(), ring: r.ring, geschosse: (v && v.p.geschosse) || 3, rolle: null }; koerper.push(k); sel = new Set([k.id]); werkzeug = 'waehlen';
+        }
+      }
+      if (zug && zug.band) {
+        const a = zug.a, b = zug.b, x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), z0 = Math.min(a[1], b[1]), z1 = Math.max(a[1], b[1]);
+        if (x1 - x0 > 0.2 || z1 - z0 > 0.2) koerper.forEach(k => { if (k.ring.every(p => p[0] >= x0 && p[0] <= x1 && p[1] >= z0 && p[1] <= z1)) sel.add(k.id); });
+      }
+      if (zug && zug.verschieben && !zug.bewegt) verlauf.pop();
+      zug = null; fang = null; alles();
+    });
+    svg.addEventListener('dblclick', ev => {
+      if (werkzeug === 'vieleck' && poly.length >= 3) { poly.pop(); return schliessen(); }
+      // Doppelklick auf eine Kante der gewählten Form: Eckpunkt einfügen
+      if (werkzeug === 'waehlen' && sel.size === 1) {
+        const k = auswahl()[0], p = welt(ev); let best = null;
+        k.ring.forEach((a, i) => { const b = k.ring[(i + 1) % k.ring.length], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz; if (L2 < 1e-6) return; const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)), q = [a[0] + dx * t, a[1] + dz * t], d = dist(p, q); if (!best || d < best.d) best = { d, i, q }; });
+        if (best && best.d < 12 / pxProM()) { merke(); k.ring.splice(best.i + 1, 0, rasterFang(best.q)); alles(); }
+      }
+    });
+    function schliessen() {
+      const ring = poly.slice(); poly = []; maus = null;
+      if (ring.length < 3 || area(ring) < 1) { zeichne(); return; }
+      if (modus === 'zone') { ov.classList.remove('open'); opt.fertig && opt.fertig(ring); return; }
+      merke(); const k = { id: neuId(), ring: s5Norm(ring), geschosse: (v && v.p.geschosse) || 3, rolle: null }; koerper.push(k); sel = new Set([k.id]); werkzeug = 'waehlen'; alles();
+    }
+
+    // ---------------------------------------------------------------- Tasten ----------
+    const tasten = ev => {
+      if (!ov.classList.contains('open')) { document.removeEventListener('keydown', tasten, true); document.removeEventListener('keyup', hoch, true); return; }
+      if (/INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) { if (ev.key === 'Enter' && ev.target.dataset.f) { ev.preventDefault(); const map = { dx: 'move', dz: 'move', rw: 'rot', off: 'aussen' }; if (map[ev.target.dataset.f]) aktion(map[ev.target.dataset.f]); } return; }
+      const k = ev.key.toLowerCase(), strg = ev.ctrlKey || ev.metaKey;
+      const stop = () => { ev.preventDefault(); ev.stopPropagation(); };
+      if (k === ' ') { leer = true; stop(); return; }
+      if (strg && k === 'z') { stop(); ev.shiftKey ? wieder() : rueck(); return; }
+      if (strg && k === 'y') { stop(); wieder(); return; }
+      if (strg && k === 'd') { stop(); aktion('dup'); return; }
+      if (strg && k === 'a') { stop(); sel = new Set(koerper.map(x => x.id)); alles(); return; }
+      if (k === 'escape') { stop(); if (poly.length) { poly = []; zeichne(); } else if (mess) { mess = null; zeichne(); } else if (sel.size) { sel.clear(); alles(); } else zu(); return; }
+      if (k === 'enter' && poly.length >= 3) { stop(); schliessen(); return; }
+      if (k === 'backspace' && poly.length) { stop(); poly.pop(); zeichne(); return; }
+      if ((k === 'delete' || k === 'backspace') && sel.size) { stop(); aktion('weg'); return; }
+      if (modus === 'frei' && !strg) {
+        if (k === 'v') { werkzeug = 'waehlen'; poly = []; stop(); alles(); return; }
+        if (k === 'r') { werkzeug = 'rechteck'; stop(); alles(); return; }
+        if (k === 'p') { werkzeug = 'vieleck'; stop(); alles(); return; }
+        if (k === 'm') { werkzeug = 'messen'; mess = null; stop(); alles(); return; }
+        if (k === 'f') { einpassen(); zeichne(); stop(); return; }
+        if ((k === 'q' || k === 'e') && sel.size) { stop(); const am = auswahlMitte(), w = (k === 'q' ? -1 : 1) * (ev.shiftKey ? 1 : 15) * Math.PI / 180; merke(); auswahl().forEach(x => { x.ring = drehe(x.ring, am.c, w); }); alles(); return; }
+        if (ev.key.startsWith('Arrow') && sel.size) {
+          stop(); const s = ev.shiftKey ? 2 : (ein.raster ? ein.rasterW : 0.1), w = achsW();
+          const d = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[ev.key];
+          const dx = (d[0] * Math.cos(w) - d[1] * Math.sin(w)) * s, dz = (d[0] * Math.sin(w) + d[1] * Math.cos(w)) * s;
+          merke(); auswahl().forEach(x => { x.ring = x.ring.map(q => [q[0] + dx, q[1] + dz]); }); alles(); return;
+        }
+      }
+    };
+    const hoch = ev => { if (ev.key === ' ') leer = false; };
+    document.addEventListener('keydown', tasten, true);
+    document.addEventListener('keyup', hoch, true);
+
+    // ---------------------------------------------------------------- Knöpfe ----------
+    const zu = () => ov.classList.remove('open');
+    ov.querySelectorAll('.cad-tools [data-w]').forEach(b => b.addEventListener('click', () => { werkzeug = b.dataset.w; poly = []; mess = null; alles(); }));
+    ov.querySelector('[data-a=undo]').addEventListener('click', rueck);
+    ov.querySelector('[data-a=redo]').addEventListener('click', wieder);
+    ov.querySelector('[data-a=zin]').addEventListener('click', () => zoom(1 / 1.3));
+    ov.querySelector('[data-a=zout]').addEventListener('click', () => zoom(1.3));
+    ov.querySelector('[data-a=fit]').addEventListener('click', () => { einpassen(); zeichne(); });
+    ov.querySelector('[data-a=abbr]').addEventListener('click', zu);
+    ov.querySelector('[data-a=ok]').addEventListener('click', () => {
+      if (modus === 'frei') { v.p.koerper = koerper; v.eigen = true; zu(); rebuild(); pushHistory(); return; }
+      if (modus === 'zone' && poly.length >= 3) { schliessen(); return; }
+      zu();
+    });
+    ov.querySelectorAll('.cad-fuss [data-e]').forEach(e => e.addEventListener('change', () => {
+      const k = e.dataset.e; ein[k] = e.type === 'checkbox' ? e.checked : (k === 'rasterW' ? parseFloat(e.value) : e.value); zeichne();
+    }));
+    ov.onclick = e => { if (e.target === ov) zu(); };
+    ov.classList.add('open');
+    requestAnimationFrame(() => { einpassen(); alles(); });
+    window.addEventListener('resize', () => { if (ov.classList.contains('open')) zeichne(); });
+  }
+  window.s5Cad = s5Cad;
+  // das bisherige Zeichenfenster durch das CAD-Fenster ersetzen
+  window.s5Zeichenfenster = s5Cad;
 })();
 
 </script>
