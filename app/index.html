@@ -37723,12 +37723,14 @@ function northUpView() {
     // 3) Messen, 4) Kennzahlen — direkte Schalter
     const bMess = knopf('vm-mess', 'Messen im 3D — zwei Punkte anklicken, Esc bricht ab',
       '<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>', false);
+    // Der Zustand steht schon nach dem Klick fest — die frühere Verzögerung von 40 ms ließ
+    // die Markierung je nach Taktung aus. (14.10.2026)
     bMess.addEventListener('click', e => { e.stopPropagation(); zu(); const o = $('meas-3d'); if (o) o.click();
-      setTimeout(() => { bMess.classList.toggle('on', document.body.classList.contains('mess-an')); }, 40); });
+      bMess.classList.toggle('on', document.body.classList.contains('mess-an')); });
     const bKpi = knopf('vm-kpi', 'Kennzahlen ein- und ausblenden',
       '<line x1="5" y1="19" x2="5" y2="12"/><line x1="12" y1="19" x2="12" y2="7"/><line x1="19" y1="19" x2="19" y2="14"/>', false);
     bKpi.addEventListener('click', e => { e.stopPropagation(); zu(); const o = $('toggle-stats'); if (o) o.click();
-      setTimeout(() => { const so = $('stats-overlay'); bKpi.classList.toggle('on', so && !so.classList.contains('hidden')); }, 40); });
+      const so = $('stats-overlay'); bKpi.classList.toggle('on', !!(so && !so.classList.contains('hidden'))); });
 
     if (vp) { vp.appendChild(bar); vp.appendChild(auf); }
     document.addEventListener('pointerdown', e => { if (!auf.contains(e.target) && !bar.contains(e.target)) zu(); }, true);
@@ -39384,6 +39386,16 @@ function sprSetzen(code, still) {
   // ── Grundstück ──
   weg('menu-bebauung', 'Abstand');                                  // enthielt nur einen Hinweis
   schieben('Weitere Regeln', 'Werte anpassen', 'menu-bebauung');    // Lichtabstand und höchster Punkt
+  // Kapitel ohne einen einzigen Regler sind nur noch Überschriften — „Dichte & Höhe" blieb
+  // so zurück, nachdem GFZ, Baumassendichte und Gebäudehöhe nach „Werte anpassen" gewandert
+  // sind. Übrig war ein verwaister Hinweis. (Vorgabe Ozan, 14.10.2026)
+  ['menu-bebauung', 'menu-baukoerper', 'menu-wirtschaft'].forEach(pid => {
+    [...(document.getElementById(pid) || document).querySelectorAll('details.more')].forEach(d => {
+      const q = d.querySelector('.more-body');
+      if (!q || d.dataset.verborgen) return;
+      if (!q.querySelector('input, select, textarea, button, .kat-card, canvas')) d.remove();
+    });
+  });
   // ── Baukörper ──
   { const d = kap('menu-baukoerper', 'Dach');                        // Dachform läuft über den Rechtsklick am Baukörper
     if (d) { d.style.display = 'none'; d.dataset.verborgen = '1'; } }
@@ -39496,7 +39508,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.28';
+  const VERSION = 'v3.29';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
