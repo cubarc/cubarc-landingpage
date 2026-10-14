@@ -19246,7 +19246,8 @@ function s5WidmungAn(pt) {
 let s5KantenTbo = { key: null, vals: [] };
 function s5TboKanten() {
   const n = parcelPoints.length, tirol = (document.getElementById('bundesland') || {}).value === 'tirol';
-  const key = JSON.stringify([parcelPoints, s5Nr(widmungData), s5Nr(neighbourData), neighbourData ? neighbourData.items.length : 0, tirol, S5.strassenAbstand]);
+  const fG = parseFloat((document.getElementById('factor') || {}).value), sG = parseFloat((document.getElementById('setback') || {}).value);
+  const key = JSON.stringify([parcelPoints, s5Nr(widmungData), s5Nr(neighbourData), neighbourData ? neighbourData.items.length : 0, tirol, S5.strassenAbstand, fG, sG]);
   if (key === s5KantenTbo.key) return s5KantenTbo.vals;
   const sg = signedArea(parcelPoints) >= 0 ? 1 : -1, vals = [];
   for (let i = 0; i < n; i++) {
@@ -19268,6 +19269,15 @@ function s5TboKanten() {
     else if (kat && !nbText) nbText = kat.text;
     if (!tirol || (!eigen && nb !== 'verkehr')) { vals.push(null); continue; }
     const r = s5TboRegel(eigen, nb);
+    // Grundwert der eigenen Widmung (gegenüber übrigem Bauland) kommt aus den Reglern
+    // „Mindestabstand“ und „Höhenfaktor“ — so lässt er sich verändern; nur Paarungen mit
+    // anderem Wert laut Tabelle (z. B. gegenüber Vorbehaltsflächen) behalten ihren Wert
+    const grund = s5TboRegel(eigen, 'bauland');
+    if (!r.strasse && r.factor === grund.factor && r.setback === grund.setback) {
+      if (isFinite(fG)) r.factor = fG;
+      if (isFinite(sG)) r.setback = sG;
+      r.regler = true;
+    }
     vals.push(Object.assign(r, { eigen, nb, nbText }));
   }
   s5KantenTbo = { key, vals };
@@ -19458,10 +19468,19 @@ function rebuild() {
       const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % nE];
       const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy) || 1, sg = signedArea(parcelPoints) >= 0 ? 1 : -1;
       const nx = -dy / len * sg, ny = dx / len * sg, mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-      const req = edgeReq(p1, p2, i), reach = (topY - K.bezugH(i)) * req.factor, need = Math.max(req.setback, reach);
-      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(mid[0], heightFn(mid[0], mid[1]), mid[1]), new THREE.Vector3(mid[0] + nx * need, topY, mid[1] + ny * need)]),
-        new THREE.LineDashedMaterial({ color: reach > req.setback ? 0xf0bf7c : 0xd8d8d8, dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.6 }));
+      const req = edgeReq(p1, p2, i);
+      if (!(req.factor > 0.001)) continue;                        // Straße (§ 5): kein Höhenfaktor
+      // Bezugshöhe H = Urgelände an der Wand, waagrecht auf die Grenze gezogen; von dort steigt
+      // die Linie genau mit 1 m Höhe je Faktor-Meter Abstand (Winkel = Regler „Höhenfaktor“)
+      const H = K.bezugH(i), reach = (topY - H) * req.factor;
+      const pts = [new THREE.Vector3(mid[0], H, mid[1]), new THREE.Vector3(mid[0] + nx * reach, topY, mid[1] + ny * reach)];
+      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineDashedMaterial({ color: 0xf0bf7c, dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.7 }));
       l.computeLineDistances(); lightLineGroup.add(l);
+      // Mindestabstand waagrecht auf der Bezugshöhe
+      const m = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(mid[0], H, mid[1]), new THREE.Vector3(mid[0] + nx * req.setback, H, mid[1] + ny * req.setback)]),
+        new THREE.LineDashedMaterial({ color: 0xd8d8d8, dashSize: 0.25, gapSize: 0.2, transparent: true, opacity: 0.5 }));
+      m.computeLineDistances(); lightLineGroup.add(m);
     } }
   scene.add(lightLineGroup);
   { let bestLen = -1, bestI = 0;
@@ -26705,7 +26724,9 @@ function draw2DOverlays() {
   // nur neu zeichnen, wenn sich etwas geändert hat (render2DViews läuft in jedem Frame)
   const key = [plan2DFloor, dark, view2DSize, view2DCenterX, view2DCenterY, view2DCenterZ, p2dState.dir, p2dState.sec,
     ...Object.values(view2D).map(v => v.renderer.domElement.clientWidth + 'x' + v.renderer.domElement.clientHeight),
-    livePlanFloors.length, (livePlanFloors[0] || []).length, planDataStamp].join('|');
+    livePlanFloors.length, (livePlanFloors[0] || []).length, planDataStamp,
+    (document.getElementById('factor') || {}).value, (document.getElementById('setback') || {}).value,
+    typeof window.s5TboKanten === 'function' ? window.s5TboKanten().map(t => t ? t.factor + '/' + t.setback : '-').join(',') : ''].join('|');
   if (key === last2DOverlayKey) return;
   last2DOverlayKey = key;
   try { drawPlanMeasure(); } catch (e) {}
@@ -33857,7 +33878,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.21';
+  const VERSION = 'v5.22';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
