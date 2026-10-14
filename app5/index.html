@@ -19293,12 +19293,18 @@ function s5PlanDaten(e) {
     const alle = [];
     e.koerper.forEach((k, ki) => (k._geschosse || []).forEach((g, gi) => alle.push({ k, ki, g, gi })));
     const ebenen = [...new Set(alle.map(x => Math.round(x.g.y0 * 100) / 100))].sort((a, b) => a - b);
+    // Achse je Baukörper: längste Kante des Grundrisses — Maßketten laufen parallel zu den Wänden
+    const achse = k => { const o = (k.fp && k.fp.o) || []; let best = [1, 0], bl = 0;
+      o.forEach((p, i) => { const q = o[(i + 1) % o.length], dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz); if (L > bl) { bl = L; best = [dx / L, dz / L]; } });
+      if (Math.abs(best[0]) < Math.abs(best[1])) best = [best[1], -best[0]];   // eher waagrecht lesen
+      if (best[0] < 0) best = [-best[0], -best[1]];
+      return { ux: best[0], uy: best[1] }; };
     alle.forEach(({ k, ki, g, gi }) => {
       const f = ebenen.indexOf(Math.round(g.y0 * 100) / 100), oben = (k._geschosse || [])[gi + 1];
       (g.regs || []).forEach(r => {
         if (!r || !r.o || r.o.length < 3) return;
         const ring = r.o.map(p => [p[0], p[1]]); ring.holes = (r.h || []).map(h => h.map(p => [p[0], p[1]]));
-        (floors[f] = floors[f] || []).push({ fp: ring, units: [], core: null, terraces: null, balconies: [] });
+        (floors[f] = floors[f] || []).push({ fp: ring, units: [], core: achse(k), terraces: null, balconies: [] });
         viz.push({ fp: ring, baseY: g.y0, floorH: g.h, f, pieceIdx: ki, top: !oben, upperFp: oben && oben.regs && oben.regs[0] ? oben.regs[0].o : null });
       });
     });
@@ -24947,8 +24953,9 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
         const formel = fx * hWand > sb + 0.005;
         const yM = Math.min(yRef, typeof gAt === 'function' ? Math.min(gAt(s), gAt(sW)) : yRef) - 1.4;
         const sE = s + innen * erf;
+        const strasse = !!(ee && ee.tbo && ee.tbo.strasse);
         bruch([Math.min(s, sE), yM], [Math.max(s, sE), yM],
-          formel ? fmtNum(hWand, 2) + ' × ' + fmtNum(fx, 2) : 'Mindestabstand',
+          strasse ? 'Straße (§ 5 TBO)' : formel ? fmtNum(hWand, 2) + ' × ' + fmtNum(fx, 2) : 'Mindestabstand',
           fmtNum(erf, 2) + ' m', orange);
         // steht der Baukörper weiter innen: tatsächlicher Abstand grau darunter
         if (Math.abs(dIst - erf) > 0.05) bruch([Math.min(s, sW), yM - 3.0], [Math.max(s, sW), yM - 3.0], 'Abstand Baukörper', fmtNum(dIst, 2) + ' m', grau);
@@ -33903,7 +33910,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.24';
+  const VERSION = 'v5.25';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
