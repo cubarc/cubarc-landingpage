@@ -29866,8 +29866,9 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
     gs.forEach((s, i) => {
       vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0);
       // nach innen zeigt die Richtung, in der der Punkt im Grundstück liegt
-      const eps = Math.max(0.05, (sHi - sLo) / 2000);
-      const innen = pointInPolygon(weltAt(s + eps), parcelPoints) ? 1 : -1;
+      const probe = Math.max(0.6, Math.abs(sHi - sLo) / 200);
+      const innen = pointInPolygon(weltAt(s + probe), parcelPoints) ? 1
+                  : pointInPolygon(weltAt(s - probe), parcelPoints) ? -1 : 1;
       const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
       // Werte der getroffenen Kante — eine Kante mit eigenen Werten zählt ihre eigenen
       const ki = naechsteParcelKante(weltAt(s));
@@ -29878,10 +29879,34 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
           'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
       }
       if (isFinite(f) && f > 0.001) {
-        // Die Linie beginnt auf der Bezugshöhe dieser Grundstücksseite — demselben Wert,
-        // mit dem auch gerechnet wird. (Vorgabe Ozan 14.10.2026)
-        const bez = (window.__lichtBezugH || [])[ki];
-        const yRef = (bez != null && isFinite(bez)) ? bez : (y0 - 0.15);
+        // Bezugshöhe GENAU IN DIESER SCHNITTEBENE: von der Grundgrenze nach innen bis zur
+        // ersten Wand des Baukörpers, dort die Höhe des Urgeländes, waagrecht zurück auf
+        // die Grenze. Von dort steigt die Linie mit dem Faktor.
+        // (Vorgabe Ozan 14.10.2026, dritte Skizze — maßgeblich ist die echte Wand,
+        //  nicht das Mindestabstandsband.)
+        let yRef = null;
+        try {
+          const hf = (typeof liveHeightFn === 'function') ? liveHeightFn : null;
+          const fps = (typeof liveVizArgs !== 'undefined' ? liveVizArgs : [])
+            .filter(a => a && a.f === 0 && a.fp && a.fp.length >= 3).map(a => a.fp);
+          if (hf && fps.length) {
+            const weit = Math.abs(sHi - sLo);
+            const schritt = Math.max(0.1, weit / 1200);
+            const suche = ri => {
+              for (let t = 0; t <= weit; t += schritt) {
+                const w = weltAt(s + ri * t);
+                if (fps.some(fp => fpContains(fp, w))) return hf(w[0], w[1]);
+              }
+              return null;
+            };
+            yRef = suche(innen);
+            if (yRef == null) yRef = suche(-innen);
+          }
+        } catch (e) { yRef = null; }
+        if (yRef == null || !isFinite(yRef)) {
+          const bez = (window.__lichtBezugH || [])[ki];
+          yRef = (bez != null && isFinite(bez)) ? bez : (y0 - 0.15);
+        }
         const L = Math.min(Math.max(2, f * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
         vecMarkeSchraeg(ctx, M, [s, yRef], [s + innen * L, yRef + L / f], grau,
           'Höhenfaktor ' + fmtNum(f, 2), 0.9);
@@ -39613,7 +39638,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.31';
+  const VERSION = 'v3.32';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
