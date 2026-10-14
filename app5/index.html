@@ -14310,6 +14310,7 @@ function edgeEditorIsOpen() { const m = document.getElementById('edge-modal'); r
 function edgeDefaults() { return { setback: parseFloat(document.getElementById('setback').value) || 0, factor: parseFloat(document.getElementById('factor').value) || 0 }; }
 function edgeEff(i) {
   const o = parcelEdgeOverrides[i];
+  if (!(o && o.active && !o.ausWidmung) && typeof window.s5TboKanten === 'function') { const t = window.s5TboKanten()[i]; if (t) return { setback: t.setback, factor: t.factor, own: false, tbo: t }; }
   const r = o && o.active ? { setback: o.setback, factor: o.factor, own: true } : Object.assign(edgeDefaults(), { own: false });
   return r;
 }
@@ -14454,7 +14455,7 @@ function renderEdgeSide() {
   const anyOwnAll = parcelEdgeOverrides.some((o, i) => i < n && o && o.active);
   hs += `<div class="em-list"><div class="em-list-h">Alle Kanten (${n})</div>` + parcelPoints.map((p, i) => {
     const m = edgeMeta(i), e = edgeEff(i);
-    return `<div class="em-row${e.own ? ' own' : ''}${edgeEditorSel.has(i) ? ' sel' : ''}" data-idx="${i}"><span class="n">${i + 1}</span><span>${m.dir} · ${fmt(m.len, 1)} m<br><span class="d">${m.nb ? escapeHtml(m.nb.text) : '–'}</span></span><span class="v">${fmt(e.setback, 1)} m · ${fmt(e.factor, 2)}${parcelEdgeOverrides[i] && parcelEdgeOverrides[i].line ? '<br>' + (parcelEdgeOverrides[i].line === 'flucht' ? 'Baufluchtl.' : 'Baugrenzl.') + ' ' + fmt(parcelEdgeOverrides[i].lineDist || 0, 1) + ' m' : ''}</span></div>`;
+    return `<div class="em-row${e.own ? ' own' : ''}${edgeEditorSel.has(i) ? ' sel' : ''}" data-idx="${i}"><span class="n">${i + 1}</span><span>${m.dir} · ${fmt(m.len, 1)} m<br><span class="d">${m.nb ? escapeHtml(m.nb.text) : '–'}</span></span><span class="v">${e.tbo && e.tbo.strasse ? fmt(e.setback, 1) + ' m · § 5' : fmt(e.setback, 1) + ' m · ' + fmt(e.factor, 2)}${e.tbo ? '<br>' + e.tbo.lit : ''}${parcelEdgeOverrides[i] && parcelEdgeOverrides[i].line ? '<br>' + (parcelEdgeOverrides[i].line === 'flucht' ? 'Baufluchtl.' : 'Baugrenzl.') + ' ' + fmt(parcelEdgeOverrides[i].lineDist || 0, 1) + ' m' : ''}</span></div>`;
   }).join('') + `</div>`;
   { const wm = (document.getElementById('bundesland').value === 'tirol' && widmungData && widmungData.own && widmungData.own.length);
     hs += `<div class="em-actions">${wm ? '<button type="button" id="em-widmung">Abstände aus der Widmung</button>' : ''}`
@@ -19090,6 +19091,105 @@ function s5Zeichne(K, ziel, markerGroup) {
 var s5Umgebung = { key: null, obj: null, grp: null };
 const s5ObjNr = new WeakMap(); let s5ObjZ = 0;
 function s5Nr(o) { if (!o || typeof o !== 'object') return 0; if (!s5ObjNr.has(o)) s5ObjNr.set(o, ++s5ObjZ); return s5ObjNr.get(o); }
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  Abstände je Kante nach Tiroler Bauordnung 2022 — automatisch aus der Flächenwidmung
+//  § 6 Abs. 1 TBO 2022 (Grenzen zu angrenzenden Grundstücken):
+//   lit. a  eigener Bauplatz Gewerbe-/Industriegebiet oder Kerngebiet:
+//           0,4 × H, mind. 3 m — gegenüber Vorbehaltsflächen 0,6 × H, mind. 4 m
+//   lit. b  übriges Bauland, Sonderflächen §§ 47a, 48, 48a, 49, 49b, Vorbehaltsflächen:
+//           0,6 × H, mind. 4 m (gegenüber allen)
+//   lit. c  Sonderflächen §§ 43–47, 49a, 50, 50a TROG: 0,4 × H, mind. 3 m gegenüber Bauland
+//           (außer Gewerbe/Industrie/Kern) und Sonderflächen §§ 47a–49b;
+//           gegenüber Vorbehaltsflächen 0,6 × H, mind. 4 m
+//   lit. d  Freiland: 0,4 × H, mind. 3 m gegenüber Bauland und Sonderflächen §§ 47a–49b;
+//           gegenüber Vorbehaltsflächen 0,6 × H, mind. 4 m
+//   § 51 TROG (Teilfestlegungen): nach der jeweiligen Widmungsart
+//   Nicht ausdrücklich genannte Paarungen: sicherheitshalber 0,6 × H, mind. 4 m (Hinweis).
+//  § 5 TBO 2022 (Verkehrsflächen): kein Höhenfaktor; Baufluchtlinie/Bebauungsplan,
+//   ohne Plan Orts- und Straßenbild, Landesstraßen mind. 5 m (§ 5 Abs. 4).
+// ══════════════════════════════════════════════════════════════════════════════════════
+function s5WidKlasse(w) {
+  if (!w) return null;
+  const t = [w.text, w.code, w.extra].filter(Boolean).join(' ');
+  const m = t.match(/§\s*(\d+)\s?([a-z])?(?=[\s(,;.]|$)/);
+  const par = m ? m[1] + (m[2] || '') : '';
+  if (/^53/.test(par) || /Verkehrsfl|Straße|Strasse|Bahn/i.test(t)) return 'verkehr';
+  if (par === '52' || par === '52a' || /Vorbehalt/i.test(t)) return 'vorbehalt';
+  if (['47a', '48', '48a', '49', '49b'].includes(par)) return 'sonderB';
+  if (['43', '44', '45', '46', '47', '49a', '50', '50a'].includes(par)) return 'sonderA';
+  if (/Sonderfl/i.test(t)) return /Chalet|Beherberg|Handel|Einkauf|Tankst/i.test(t) ? 'sonderB' : 'sonderA';
+  if (par === '39' || /Gewerbe|Industrie|Kerngeb/i.test(t)) return 'gik';
+  if (/^4[12]/.test(par) || (/Freiland|Wald|Gewässer|Ödland/i.test(t) && !/Misch|Wohn/i.test(t))) return 'freiland';
+  if (/^3[78]$|^40$|^37a$/.test(par) || /Wohn|Misch|Tourism|Bauland/i.test(t)) return 'bauland';
+  if (/^\s*F/.test(w.code || '')) return 'freiland';
+  if (/^\s*S/.test(w.code || '')) return 'sonderA';
+  if (/^\s*V/.test(w.code || '')) return 'vorbehalt';
+  return 'bauland';
+}
+const S5_KLASSE_NAME = { bauland: 'Bauland', gik: 'Gewerbe-/Industrie-/Kerngebiet', sonderA: 'Sonderfläche §§ 43–47, 49a, 50, 50a', sonderB: 'Sonderfläche §§ 47a–49b', vorbehalt: 'Vorbehaltsfläche', freiland: 'Freiland', verkehr: 'Verkehrsfläche' };
+function s5TboRegel(eigen, nb) {
+  const r = (factor, setback, lit, hinweis) => ({ factor, setback, lit, hinweis: hinweis || '' });
+  const minEigen = (eigen === 'gik' || eigen === 'freiland' || eigen === 'sonderA') ? 3 : 4;
+  if (nb === 'verkehr') {
+    const sb = S5.strassenAbstand != null ? S5.strassenAbstand : minEigen;
+    return { factor: 0, setback: sb, lit: '§ 5 TBO', strasse: true, hinweis: 'Verkehrsfläche: kein Höhenfaktor. Maßgeblich sind Baufluchtlinie bzw. Bebauungsplan; ohne Plan Orts- und Straßenbild, zu Landesstraßen mind. 5 m.' };
+  }
+  const unbekannt = nb ? '' : 'Widmung des Nachbarn unbekannt';
+  if (eigen === 'gik') return nb === 'vorbehalt' ? r(0.6, 4, '§ 6 Abs. 1 lit. a', 'gegenüber Vorbehaltsfläche') : r(0.4, 3, '§ 6 Abs. 1 lit. a', unbekannt || (nb === 'gik' || nb === 'sonderA' ? 'Paarung im Gesetz nicht ausdrücklich genannt' : ''));
+  if (eigen === 'sonderA') {
+    if (nb === 'vorbehalt') return r(0.6, 4, '§ 6 Abs. 1 lit. c', 'gegenüber Vorbehaltsfläche');
+    if (nb === 'bauland' || nb === 'sonderB') return r(0.4, 3, '§ 6 Abs. 1 lit. c');
+    return r(0.6, 4, '§ 6 Abs. 1 lit. c', unbekannt || 'Paarung im Gesetz nicht ausdrücklich genannt — sicherheitshalber 0,6 / 4 m');
+  }
+  if (eigen === 'freiland') {
+    if (nb === 'vorbehalt') return r(0.6, 4, '§ 6 Abs. 1 lit. d', 'gegenüber Vorbehaltsfläche');
+    if (nb === 'bauland' || nb === 'gik' || nb === 'sonderB') return r(0.4, 3, '§ 6 Abs. 1 lit. d');
+    return r(0.6, 4, '§ 6 Abs. 1 lit. d', unbekannt || 'Paarung im Gesetz nicht ausdrücklich genannt — sicherheitshalber 0,6 / 4 m');
+  }
+  return r(0.6, 4, '§ 6 Abs. 1 lit. b');   // übriges Bauland, Sonderflächen §§ 47a–49b, Vorbehaltsflächen
+}
+// wirksame Widmung an einer Stelle (kleinste, genaueste Fläche gewinnt — wie in der Widmungsansicht)
+function s5WidmungAn(pt) {
+  const ps = widmungData && widmungData.polys; if (!ps || !ps.length) return null;
+  let best = null, ba = Infinity;
+  ps.forEach(p => {
+    if (!p.ring || !pointInPolygon(pt, p.ring) || (p.holes || []).some(h => pointInPolygon(pt, h))) return;
+    const a = typeof widPolyArea === 'function' ? widPolyArea(p) : Math.abs(polygonArea(p.ring));
+    if (a < ba) { ba = a; best = p; }
+  });
+  return best;
+}
+let s5KantenTbo = { key: null, vals: [] };
+function s5TboKanten() {
+  const n = parcelPoints.length, tirol = (document.getElementById('bundesland') || {}).value === 'tirol';
+  const key = JSON.stringify([parcelPoints, s5Nr(widmungData), s5Nr(neighbourData), neighbourData ? neighbourData.items.length : 0, tirol, S5.strassenAbstand]);
+  if (key === s5KantenTbo.key) return s5KantenTbo.vals;
+  const sg = signedArea(parcelPoints) >= 0 ? 1 : -1, vals = [];
+  for (let i = 0; i < n; i++) {
+    const a = parcelPoints[i], b = parcelPoints[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1;
+    const nx = -dz / L * sg, nz = dx / L * sg;   // nach innen
+    const zaehle = (dist) => { const c = {}; let w0 = null;
+      [0.2, 0.4, 0.5, 0.6, 0.8].forEach(t => { const w = s5WidmungAn([a[0] + dx * t + nx * dist, a[1] + dz * t + nz * dist]); if (w) { const k = s5WidKlasse(w); c[k] = (c[k] || 0) + 1; if (!w0) w0 = w; } });
+      const top = Object.entries(c).sort((x, y) => y[1] - x[1])[0]; return { kl: top ? top[0] : null, w: w0 }; };
+    // eigene Widmung: die überwiegende des Bauplatzes; nur bei echt geteilter Widmung (≥ 10 %
+    // Anteil, § 51 TROG) die an dieser Kante — Widmungs- und Katastergrenzen decken sich nie genau
+    const own = (widmungData && widmungData.own) || [], geteilt = own.filter(o => o.share >= 0.1).length > 1;
+    const innen = geteilt ? zaehle(3.0) : { kl: own.length ? s5WidKlasse(own[0]) : null }, aussen = zaehle(-1.5);
+    let eigen = innen.kl, nb = aussen.kl, nbText = aussen.w ? ((aussen.w.code ? aussen.w.code + ' ' : '') + (aussen.w.text || '')) : '';
+    if (!eigen && widmungData && widmungData.own && widmungData.own.length) eigen = s5WidKlasse(widmungData.own[0]);
+    // Kataster: Straßen- und Bahngrundstücke sind Verkehrsflächen, auch ohne Widmungsdaten
+    let kat = null; try { kat = typeof edgeNeighbourInfo === 'function' ? edgeNeighbourInfo(i) : null; } catch (e) {}
+    if (kat && (kat.kind === 'road' || kat.kind === 'rail')) { nb = 'verkehr'; nbText = kat.text; }
+    else if (!nb && kat && kat.item && kat.item.fn) nb = { wohnen: 'bauland', misch: 'bauland', gruen: 'freiland', verkehr: 'verkehr', sonder: 'sonderA' }[kat.item.fn] || null;
+    else if (kat && !nbText) nbText = kat.text;
+    if (!tirol || (!eigen && nb !== 'verkehr')) { vals.push(null); continue; }
+    const r = s5TboRegel(eigen, nb);
+    vals.push(Object.assign(r, { eigen, nb, nbText }));
+  }
+  s5KantenTbo = { key, vals };
+  return vals;
+}
+window.s5TboKanten = s5TboKanten;
 // Pläne 2D (Grundriss, Draufsicht, Ansicht, Schnitt) aus der gewählten Variante: je Geschoß-
 // ebene die Umrisse; die Zeichenroutinen der Projektmappe lesen livePlanFloors und liveVizArgs
 let s5PlanKey = '';
@@ -19162,9 +19262,13 @@ function rebuild() {
   if (selectedParcelEdgeIdx !== null && selectedParcelEdgeIdx >= parcelPoints.length) selectedParcelEdgeIdx = null;
   renderParcelEdgeList();
   const parcelCentroidForEdges = polygonCentroid(parcelPoints);
+  // Reihenfolge: von Hand je Kante gesetzt → TBO aus der Widmung (Tirol) → Grundwerte
+  const tboK = s5TboKanten();
   function edgeReq(p1, p2, i) {
-    const ov = (i != null && parcelEdgeOverrides[i] && parcelEdgeOverrides[i].active) ? parcelEdgeOverrides[i]
-      : (i == null ? findEdgeOverride(edgeAngleFromCentroid(p1, p2, parcelCentroidForEdges)) : null);
+    const o = i != null ? parcelEdgeOverrides[i] : null;
+    if (o && o.active && !o.ausWidmung) return { setback: o.setback, factor: o.factor };
+    if (i != null && tboK[i]) return { setback: tboK[i].setback, factor: tboK[i].factor };
+    const ov = i == null ? findEdgeOverride(edgeAngleFromCentroid(p1, p2, parcelCentroidForEdges)) : null;
     return ov ? { setback: ov.setback, factor: ov.factor } : { setback, factor };
   }
 
@@ -19638,6 +19742,10 @@ function widmungKantenRegel(i, eigenNiedrig) {
 }
 // belegt alle Kanten vor; gibt zurück, wie viele Kanten eine eigene Festlegung bekamen
 function widmungKantenVorbelegen(nurNeue) {
+  // v5: die Abstände je Kante ermittelt s5TboKanten() bei jedem Neuaufbau direkt aus der Widmung;
+  // früher hier gesetzte Werte werden aufgehoben
+  (parcelEdgeOverrides || []).forEach(o => { if (o && o.ausWidmung) { o.active = false; o.ausWidmung = false; } });
+  return { gesetzt: 0, zeilen: [] };
   if (document.getElementById('bundesland').value !== 'tirol') return { gesetzt: 0, grund: 'nur für Tirol hinterlegt' };
   if (!widmungData || !widmungData.own || !widmungData.own.length) return { gesetzt: 0, grund: 'keine Widmungsdaten geladen' };
   if (!parcelPoints || parcelPoints.length < 3) return { gesetzt: 0, grund: 'kein Grundstück' };
@@ -19666,7 +19774,7 @@ function widmungKantenVorbelegen(nurNeue) {
 function applyWidmungAbstand() {
   const note = document.getElementById('abstand-widmung-note');
   if (document.getElementById('bundesland').value !== 'tirol' || !widmungData || !widmungData.own || !widmungData.own.length) { if (note) note.style.display = 'none'; return; }
-  const top = widmungData.own[0], low = top.cat === 'misch' || top.cat === 'gruen';
+  const top = widmungData.own[0], kl = typeof s5WidKlasse === 'function' ? s5WidKlasse(top) : null, low = kl ? (kl === 'gik' || kl === 'freiland' || kl === 'sonderA') : (top.cat === 'misch' || top.cat === 'gruen');
   const f = low ? 0.4 : 0.6, sb = low ? 3 : 4;
   const fe = document.getElementById('factor'), se = document.getElementById('setback');
   fe.value = f; se.value = sb;
@@ -33655,7 +33763,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.14';
+  const VERSION = 'v5.15';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34084,6 +34192,15 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
 .b-pop { background: var(--panel-solid, var(--panel)) !important; }
 
 .s5-import { width: 100%; margin: 8px 0 2px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+/* Abstände je Kante nach TBO */
+.s5-tbo { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
+.s5-tbo-z { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 7px 9px; border-radius: 10px; background: color-mix(in srgb, var(--text, #fff) 4%, transparent); font-size: 12px; }
+.s5-tbo-z .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: color-mix(in srgb, var(--text, #fff) 9%, transparent); }
+.s5-tbo-z .t { line-height: 1.3; min-width: 0; }
+.s5-tbo-z .t em { display: block; font-style: normal; opacity: .6; font-size: 11px; }
+.s5-tbo-z b { font-weight: 600; white-space: nowrap; font-size: 12px; }
+.s5-tbo-z.hw .t em { color: #e0a458; opacity: .9; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34216,6 +34333,21 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         <div><span>− Abstände zur Grundgrenze${linien ? ' und ' + linien + (linien === 1 ? ' Baulinie' : ' Baulinien') : ''}</span><b>${f0(abAbstand)} m²</b></div>
         <div><span>− Schutzzonen</span><b>${f0(abSchutz)} m²</b></div>
         <div class="sum"><span>= bebaubar</span><b>${f0(L.flaecheM2)} m²</b></div></div>
+      ${(() => {   // Abstände je Kante nach TBO — automatisch aus Widmung und Kataster
+        const tbo = window.s5TboKanten ? window.s5TboKanten() : [];
+        if (!tbo.some(Boolean)) return `<div class="s5-info">Abstände: Grundwerte ${fmtNum(+($('setback') || {}).value || 0, 1)} m und Faktor ${fmtNum(+($('factor') || {}).value || 0, 2)} — für die automatische Regel nach Tiroler Bauordnung die Flächenwidmung laden (Grundstück aus dem Kataster).</div>`;
+        const zeilen = parcelPoints.map((p, i) => {
+          const t = tbo[i], o = parcelEdgeOverrides[i], hand = o && o.active && !o.ausWidmung;
+          const wert = hand ? fmtNum(o.setback, 1) + ' m · ' + fmtNum(o.factor, 2) + ' × H' : !t ? '–' : t.strasse ? fmtNum(t.setback, 1) + ' m · ohne Höhenfaktor' : fmtNum(t.factor, 1) + ' × H · mind. ' + fmtNum(t.setback, 0) + ' m';
+          return `<div class="s5-tbo-z${t && t.hinweis && !t.strasse ? ' hw' : ''}" title="${esc(t && t.hinweis || '')}"><span class="n">${i + 1}</span><span class="t">${esc(t && t.nbText || (t && t.nb ? S5_KLASSE_NAME[t.nb] : 'Nachbar unbekannt'))}<em>${hand ? 'von Hand gesetzt' : t ? esc(t.lit) + (t.strasse ? ' · Verkehrsfläche' : t.hinweis ? ' · ' + esc(t.hinweis) : '') : ''}</em></span><b>${wert}</b></div>`;
+        }).join('');
+        const eigen = tbo.find(Boolean);
+        const strasse = tbo.some(t => t && t.strasse);
+        return `<div class="mp-sec">Abstände nach Tiroler Bauordnung</div>
+          <div class="s5-info">Eigene Widmung: <b>${esc(S5_KLASSE_NAME[eigen.eigen] || '–')}</b>. Je Kante nach § 6 Abs. 1 TBO 2022 (Faktor × Höhe über dem Urgelände darunter, mindestens 3 bzw. 4 m) — zur Straße nach § 5 TBO ohne Höhenfaktor.</div>
+          <div class="s5-tbo">${zeilen}</div>
+          ${strasse ? regler('s5-strasse', 'Abstand zu Verkehrsflächen (ohne Baufluchtlinie)', S5.strassenAbstand != null ? S5.strassenAbstand : (tbo.find(t => t && t.strasse) || {}).setback || 4, 0, 10, 0.5, 'm', 1) + '<div class="s5-info">§ 5 Abs. 4 TBO: ohne Bebauungsplan so weit, dass Orts- und Straßenbild und Verkehr nicht beeinträchtigt werden; zu Landesstraßen mindestens 5 m. Eine Baufluchtlinie im Kanten-Editor geht vor.</div>' : ''}`;
+      })()}
       <button type="button" class="viz-btn s5-kanten">Abstände & Baulinien je Kante bearbeiten</button>
       <div class="mp-sec">Schutzzonen aus tiris</div>
       ${schalter('s5-tiris-rot', 'Rote Gefahrenzonen (Bauverbot)', t.aktiv && t.rot)}
@@ -34232,6 +34364,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       ${schalter('s5-z-suchraum', 'Suchraum auch bei den Varianten zeigen', S5.zeige.suchraum)}
       <button type="button" class="viz-btn primary s5-weiter" data-zu="menu-varianten">Weiter zu den Varianten</button>`;
     host.querySelector('.s5-kanten').addEventListener('click', () => { const b = $('edge-editor-open'); if (b) b.click(); });
+    if ($('s5-strasse')) bindRegler(host, r => { if (r.id === 's5-strasse') { S5.strassenAbstand = +r.value; neuZeichnenBald(); } });
     $('s5-tiris-rot').addEventListener('change', e => { S5.tiris.aktiv = true; S5.tiris.rot = e.target.checked; neu(); });
     $('s5-tiris-gelb').addEventListener('change', e => { S5.tiris.aktiv = true; S5.tiris.gelb = e.target.checked; neu(); });
     host.querySelector('.s5-tiris-laden').addEventListener('click', () => tirisLaden(true));
