@@ -33642,7 +33642,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.10';
+  const VERSION = 'v5.11';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -35566,11 +35566,22 @@ const s5ModellCache = new Map();     // id → Float32Array (entpackt)
 const s5ModellGeoCache = new Map();  // id → { g, e } fertige Geometrie (wird nicht bei jedem Neuaufbau neu gerechnet)
 function s5B64aus(f32) { const u8 = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
 function s5B64ein(b64) { const s = atob(b64), u8 = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); return new Float32Array(u8.buffer); }
+function s5B64Bytes(b64) { const s = atob(b64), u8 = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); return u8; }
+// Eckpunkte des Modells (Float32, x/Höhe/z) — kompakt gespeichert als Int16-Raster mit Index,
+// ältere Projekte als einfache Float32-Liste
 function s5ModellPos(id) {
-  if (s5ModellCache.has(id)) return s5ModellCache.get(id);
+  if (s5ModellCache.has(id)) return s5ModellCache.get(id).pos;
   const m = s5Modelle[id]; if (!m) return null;
-  const f = s5B64ein(m.pos); s5ModellCache.set(id, f); return f;
+  let pos, idx = null;
+  if (m.v) {
+    const q = new Int16Array(s5B64Bytes(m.v).buffer).subarray(0, m.nv * 3), st = m.q || 0.01;
+    pos = new Float32Array(q.length); for (let i = 0; i < q.length; i++) pos[i] = q[i] * st;
+    const ib = s5B64Bytes(m.i).buffer; idx = m.i32 ? new Uint32Array(ib) : new Uint16Array(ib); idx = idx.subarray(0, m.n * 3);
+  } else pos = s5B64ein(m.pos);
+  s5ModellCache.set(id, { pos, idx }); return pos;
 }
+function s5ModellIdx(id) { s5ModellPos(id); const c = s5ModellCache.get(id); return c ? c.idx : null; }
+function s5B64Arr(a) { return s5B64aus(new Float32Array(a.buffer, a.byteOffset, a.byteLength / 4)); }
 // Modell aus Dreiecken [[x, yNord, zOben] × 3] anlegen: Ursprung = Mitte des Fußabdrucks, Höhe ab Unterkante
 function s5ModellAnlegen(name, tris) {
   let zMin = Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -35614,8 +35625,25 @@ function s5ModellAnlegen(name, tris) {
   const hoehen = [...hist.entries()].map(([h, a]) => [h, Math.round(a * 100) / 100]);
   vol = hoehen.reduce((q, [h, a]) => q + h * a, 0);
   const id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  s5Modelle[id] = { name, pos: s5B64aus(pos), fp: fp.map(r => r.o.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000])), hMax, vol: Math.abs(vol), hoehen, n: tris.length };
-  s5ModellCache.set(id, pos);
+  // kompakt speichern: Punkte auf ein feines Raster (1 cm, bei sehr großen Modellen gröber),
+  // gleiche Punkte zusammenlegen, entartete und doppelte Dreiecke weglassen
+  let ext = 0; for (let t = 0; t < pos.length; t++) ext = Math.max(ext, Math.abs(pos[t]));
+  const st = Math.max(0.01, Math.ceil(ext / 32000 * 100) / 100);
+  const vmap = new Map(), vq = [], ind = [], tset = new Set();
+  const vid = t => { const a = Math.round(pos[t] / st), b = Math.round(pos[t + 1] / st), c = Math.round(pos[t + 2] / st), key = a + ',' + b + ',' + c; let i = vmap.get(key); if (i === undefined) { i = vq.length / 3; vmap.set(key, i); vq.push(a, b, c); } return i; };
+  for (let t = 0; t < pos.length; t += 9) {
+    const a = vid(t), b = vid(t + 3), c = vid(t + 6); if (a === b || b === c || a === c) continue;
+    const srt = [a, b, c].sort((x, y) => x - y), key = srt[0] + '_' + srt[1] + '_' + srt[2]; if (tset.has(key)) continue; tset.add(key);
+    ind.push(a, b, c);
+  }
+  const v16 = Int16Array.from(vq), nv = vq.length / 3, i32 = nv > 65535;
+  let iArr = i32 ? Uint32Array.from(ind) : Uint16Array.from(ind);
+  if (iArr.byteLength % 4) { const t2 = new Uint16Array(iArr.length + 1); t2.set(iArr); iArr = t2; }   // Base64-Helfer arbeitet in 4-Byte-Schritten
+  const v4 = v16.byteLength % 4 ? (() => { const t2 = new Int16Array(v16.length + 1); t2.set(v16); return t2; })() : v16;
+  const posQ = new Float32Array(nv * 3); for (let k3 = 0; k3 < nv * 3; k3++) posQ[k3] = vq[k3] * st;
+  const idxQ = i32 ? iArr : iArr.subarray(0, ind.length);
+  s5Modelle[id] = { name, v: s5B64Arr(v4), nv, q: st, i: s5B64Arr(iArr), i32, fp: fp.map(r => r.o.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000])), hMax, vol: Math.abs(vol), hoehen, n: ind.length / 3, nRoh: tris.length };
+  s5ModellCache.set(id, { pos: posQ, idx: idxQ });
   return id;
 }
 // Lage einer Modell-Variante: Drehung um den Ursprung, dann Verschiebung
@@ -35678,12 +35706,13 @@ function s5ModellMesh(v, basis) {
   if (!c) {
     const g0 = new THREE.BufferGeometry();
     g0.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const idx = s5ModellIdx(v.p.modellId); if (idx) g0.setIndex(new THREE.BufferAttribute(idx, 1));
     g0.computeVertexNormals();
     c = { g: g0, e: m.n <= 250000 ? new THREE.EdgesGeometry(g0, 30) : null };
     s5ModellGeoCache.set(v.p.modellId, c);
   }
   const g = c.g;
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: S5_FARBE.weiss, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, shadowSide: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: S5_FARBE.weiss, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, flatShading: true, shadowSide: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
   mesh.castShadow = true; mesh.receiveShadow = false;   // keine Schattenstreifen auf beliebig orientierten Flächen
   if (c.e) {
     const e = new THREE.LineSegments(c.e, new THREE.LineBasicMaterial({ color: S5_FARBE.kante, transparent: true, opacity: 0.5 }));
@@ -35882,7 +35911,10 @@ function s5ModellMesh(v, basis) {
   async function lader(name) {
     if (name === 'FBXLoader') { await skript(T_CDN + 'libs/fflate.min.js'); await skript(T_CDN + 'curves/NURBSUtils.js'); await skript(T_CDN + 'curves/NURBSCurve.js'); }
     await skript(T_CDN + 'loaders/' + name + '.js');
-    return new THREE[name]();
+    // Texturen braucht das Weißmodell nicht: statt sie nachzuladen ein leeres Bild
+    const mg = new THREE.LoadingManager();
+    mg.setURLModifier(u => !/^(data|blob):/.test(u) && !/\.(bin|gltf|glb)(\?|$)/i.test(u) ? 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' : u);
+    return new THREE[name](mg);
   }
   // alle Dreiecke einer three.js-Szene in Weltkoordinaten (Y oben) → [x, −z, y]
   function dreieckeAus(obj) {
