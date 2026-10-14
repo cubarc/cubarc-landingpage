@@ -19113,6 +19113,33 @@ function s5Zeichne(K, ziel, markerGroup) {
   return holes;
 }
 
+// Grundstücksgrenzen der Nachbarn: klare Linien knapp über Gelände und Grundstücksflächen
+function s5Grenzen(heightFn) {
+  if (typeof neighbourData === 'undefined' || !neighbourData || !(neighbourData.items || []).length) return null;
+  if (typeof nbVisible === 'function' && !nbVisible()) return null;
+  // ein zusammengefasstes Band (echte Breite 15 cm) für alle Grenzen — 1-px-Linien gehen am Bildschirm unter
+  const pos = [], w = 0.075, lift = 0.1;
+  const band = (a, b) => {
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz); if (L < 0.01) return;
+    const nx = -dz / L * w, nz = dx / L * w;
+    const ya = heightFn(a[0], a[1]) + lift, yb = heightFn(b[0], b[1]) + lift;
+    const A = [a[0] + nx, ya, a[1] + nz], B = [a[0] - nx, ya, a[1] - nz], C = [b[0] - nx, yb, b[1] - nz], D = [b[0] + nx, yb, b[1] + nz];
+    pos.push(...A, ...B, ...C, ...A, ...C, ...D);
+  };
+  neighbourData.items.forEach(o => {
+    if (!o || !o.ring || o.ring.length < 3) return;
+    let teile = [o.ring];
+    try { teile = aufAusschnitt(o.ring); } catch (e) {}
+    teile.forEach(r => { if (!r || r.length < 3) return; const d = dgmDensify(r, true); for (let i = 0; i < d.length; i++) band(d[i], d[(i + 1) % d.length]); });
+  });
+  if (!pos.length) return null;
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const hell = document.documentElement.getAttribute('data-theme') === 'light';
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: hell ? 0x4a463f : 0x34322e, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -12 }));
+  m.renderOrder = 5; m.raycast = () => {};
+  return m;
+}
+
 // =============================================================== Neuaufbau (v5) ======
 function rebuild() {
   try { if (typeof neuZeichnen === 'function') neuZeichnen(500, 'rebuild'); } catch (e) {}
@@ -19197,6 +19224,7 @@ function rebuild() {
   { const sg = toSiteLayer(buildSiteGround(terrainFn, showViz)); if (sg) terrainMesh.add(sg); }
   { const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz)); if (nb) terrainMesh.add(nb); }
   { const pl = toSiteLayer(buildSitePlinth(heightFn, showViz)); if (pl) terrainMesh.add(pl); }
+  { const gg = toSiteLayer(s5Grenzen(heightFn)); if (gg) terrainMesh.add(gg); }   // Grundstücksgrenzen der Nachbarn immer sichtbar
   applyGroundGlass(showViz);
   window.__v2HeightFn = heightFn;
   { let px0 = Infinity, px1 = -Infinity, pz0 = Infinity, pz1 = -Infinity;
@@ -19215,7 +19243,11 @@ function rebuild() {
   applySceneMood(showViz);
 
   // ---- Grundgrenze, Kanten, Baulinien, Mindestabstand ----
-  parcelLine = makeLoop(parcelPoints, 0xededed, false, heightFn, 0.06);
+  const hellesThema = document.documentElement.getAttribute('data-theme') === 'light';
+  parcelLine = makeLoop(parcelPoints, hellesThema ? 0x2a211a : 0xf1efe9, false, heightFn, 0.14);
+  parcelLine.renderOrder = 6;
+  // eigene Grundgrenze immer gut sichtbar: ein Band mit echter Breite statt einer 1-px-Linie
+  parcelPoints.forEach((p1, i) => { try { const rb = buildEdgeHighlightRibbon(p1, parcelPoints[(i + 1) % parcelPoints.length], heightFn, 0.32, hellesThema ? 0x2a211a : 0xf1efe9); rb.renderOrder = 6; rb.raycast = () => {}; parcelLine.add(rb); } catch (e) {} });
   scene.add(parcelLine);
   scene.add(setbackLine);
   parcelPoints.forEach((p1, i) => { if (selectedParcelEdgeIdx === i) parcelLine.add(buildEdgeHighlightRibbon(p1, parcelPoints[(i + 1) % parcelPoints.length], heightFn, 0.5, 0xe98f6c)); });
@@ -19258,7 +19290,7 @@ function rebuild() {
   scene.add(buildingGroup); scene.add(markerGroup); scene.add(dimensionGroup); scene.add(floorLineGroup);
   lightLineGroup.visible = document.getElementById('toggle-lightlines').checked;
   minSetbackLine.visible = document.getElementById('toggle-minsetback').checked;
-  parcelLine.visible = document.getElementById('toggle-parcelline').checked;
+  parcelLine.visible = true;   // Grundgrenze ist immer zu sehen (Vorgabe Ozan, 14.10.2026)
   buildingGroup.visible = document.getElementById('toggle-building').checked;
   document.getElementById('compass-widget').style.display = document.getElementById('toggle-compass').checked ? 'block' : 'none';
 
@@ -33620,7 +33652,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.03';
+  const VERSION = 'v5.04';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -33970,7 +34002,9 @@ function sprSetzen(code, still) {
 .cad-svg * { vector-effect: non-scaling-stroke; }
 .cad-svg .cad-gr { stroke: var(--line); stroke-width: .5; opacity: .45; fill: none; }
 .cad-svg .cad-gr2 { stroke: var(--line-strong, var(--line)); stroke-width: .8; opacity: .55; fill: none; }
-.cad-svg .cad-grund { fill: none; stroke: var(--ink); stroke-width: 1.4; opacity: .8; }
+.cad-svg .cad-nb { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .55; }
+.cad-svg .cad-nbt { fill: var(--muted); font-family: var(--f-body); font-weight: 500; text-anchor: middle; opacity: .8; pointer-events: none; }
+.cad-svg .cad-grund { fill: none; stroke: var(--ink); stroke-width: 2.2; opacity: .95; }
 .cad-svg .cad-fl { fill: #e98f45; fill-opacity: .07; stroke: #e98f45; stroke-width: 1.2; stroke-dasharray: 6 4; }
 .cad-svg .cad-schutz { fill: #d9534f; fill-opacity: .16; stroke: #d9534f; stroke-width: 1; stroke-dasharray: 4 3; }
 .cad-svg .cad-k-aus { fill: #e0584a; fill-opacity: .16; stroke: none; cursor: move; }
@@ -35032,6 +35066,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         for (let i = -n; i <= n; i++) { const st = (i * g) % (g * 5) === 0 ? 'cad-gr2' : 'cad-gr'; lines += `<path d="M${-R},${i * g}H${R}M${i * g},${-R}V${R}" class="${st}"/>`; }
         const cs = Math.cos(achsW()), sn = Math.sin(achsW()), cu = c[0] * cs + c[1] * sn, cv = -c[0] * sn + c[1] * cs, gu = Math.round(cu / g) * g, gv = Math.round(cv / g) * g;
         s += `<g transform="rotate(${w}) translate(${gu},${gv})">${lines}</g>`; }
+      try { if (typeof neighbourData !== 'undefined' && neighbourData && neighbourData.items) neighbourData.items.forEach(o => { if (!o || !o.ring || o.ring.length < 3) return; s += `<path d="${pd(o.ring)}" class="cad-nb"/>`; if (o.gnr && Math.abs(signedArea(o.ring)) > 60) { const c = innenPunkt(o.ring); s += T(c[0], c[1], (o.kind === 'parcel' ? 'Gst. ' : '') + o.gnr, 'cad-nbt', 10.5); } }); } catch (e) {}
       s += `<path d="${pd(parcelPoints)}" class="cad-grund"/>`;
       L.flaeche.forEach(r => { s += `<path d="${pd(r.o)}${(r.h || []).map(pd).join('')}" class="cad-fl" fill-rule="evenodd"/>`; });
       L.schutz.liste.forEach(z => { s += `<path d="${pd(z.reg.o)}" class="cad-schutz"/>`; });
