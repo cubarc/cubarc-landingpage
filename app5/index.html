@@ -24932,12 +24932,26 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       const fx = isFinite(f) ? f : 0, sb = isFinite(ab) ? ab : 0, erf = Math.max(sb, fx * hWand);
       if (sW != null) {
         const dIst = Math.abs(sW - s), orange = '#f0bf7c', k2 = Object.assign({}, M, { pxPerM: M.k || M.pxPerM, ts: 0.9 });
-        let text;
-        if (Math.abs(dIst - sb) < 0.05 && fx * hWand <= sb + 0.01) text = 'Mindestabstand = ' + fmtNum(sb, 2) + ' m';
-        else if (Math.abs(dIst - erf) < 0.05) text = fmtNum(fx, 1) + ' × ' + fmtNum(hWand, 2) + ' m = ' + fmtNum(erf, 2) + ' m';
-        else text = fmtNum(dIst, 2) + ' m (' + (fx * hWand > sb ? fmtNum(fx, 1) + ' × ' + fmtNum(hWand, 2) + ' = ' + fmtNum(erf, 2) : 'mind. ' + fmtNum(sb, 2)) + ' m)';
-        const yM = Math.min(yRef, typeof gAt === 'function' ? Math.min(gAt(s), gAt(sW)) : yRef) - 0.9;
-        try { planMass(ctx, k2, [Math.min(s, sW), yM], [Math.max(s, sW), yM], 0, text, orange, true); } catch (e) {}
+        // Maßkette als Bruch (Skizze Ozan): oben „Wandhöhe × Höhenfaktor“, die Maßlinie ist der
+        // Bruchstrich, unten der Abstand — bzw. oben „Mindestabstand“, unten der Wert
+        const bruch = (a0, a1, oben, unten, farbe) => {
+          try { planMass(ctx, k2, a0, a1, 0, '', farbe, true); } catch (e) { return; }
+          const pa = M.toPx(a0), pb = M.toPx(a1), mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
+          ctx.save(); ctx.fillStyle = farbe; ctx.textAlign = 'center';
+          ctx.font = planFont(k2, 'klein');
+          ctx.textBaseline = 'bottom'; ctx.fillText(oben, mx, my - 2.5);
+          ctx.font = planFont(k2, 'normal');
+          ctx.textBaseline = 'top'; ctx.fillText(unten, mx, my + 2.5);
+          ctx.restore();
+        };
+        const formel = fx * hWand > sb + 0.005;
+        const yM = Math.min(yRef, typeof gAt === 'function' ? Math.min(gAt(s), gAt(sW)) : yRef) - 1.4;
+        const sE = s + innen * erf;
+        bruch([Math.min(s, sE), yM], [Math.max(s, sE), yM],
+          formel ? fmtNum(hWand, 2) + ' × ' + fmtNum(fx, 2) : 'Mindestabstand',
+          fmtNum(erf, 2) + ' m', orange);
+        // steht der Baukörper weiter innen: tatsächlicher Abstand grau darunter
+        if (Math.abs(dIst - erf) > 0.05) bruch([Math.min(s, sW), yM - 3.0], [Math.max(s, sW), yM - 3.0], 'Abstand Baukörper', fmtNum(dIst, 2) + ' m', grau);
       }
       if (fx > 0.001) {
         // Bezugshöhe: Urgelände an der Wand, waagrecht auf die Grundgrenze gezogen; von dort
@@ -33889,7 +33903,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.23';
+  const VERSION = 'v5.24';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
