@@ -19119,8 +19119,14 @@ function s5Zeichne(K, ziel, markerGroup) {
 
 
 // =============================================================== Neuaufbau (v5) ======
+// Nachbargrundstücke (Gelände-Drapierung) sind teuer und hängen nicht von den Varianten ab —
+// sie werden nur neu gebaut, wenn sich Gelände, Ausschnitt, Ansicht oder Nachbardaten ändern
+var s5Umgebung = { key: null, obj: null, grp: null };
+const s5ObjNr = new WeakMap(); let s5ObjZ = 0;
+function s5Nr(o) { if (!o || typeof o !== 'object') return 0; if (!s5ObjNr.has(o)) s5ObjNr.set(o, ++s5ObjZ); return s5ObjNr.get(o); }
 function rebuild() {
   try { if (typeof neuZeichnen === 'function') neuZeichnen(500, 'rebuild'); } catch (e) {}
+  if (s5Umgebung.obj && s5Umgebung.obj.parent) s5Umgebung.obj.parent.remove(s5Umgebung.obj);   // vor dem Aufräumen retten
   const num = id => parseFloat((document.getElementById(id) || {}).value);
   const setback = num('setback'), gfz = num('gfz'), maxH = num('maxh'), slopePct = num('slope'), aspectDeg = num('aspect'), factor = num('factor');
   setzWert('v-setback', setback.toFixed(1) + ' m');
@@ -19200,7 +19206,17 @@ function rebuild() {
   const toSiteLayer = o => { if (o) o.traverse(c => c.layers.set(SITE_LAYER)); return o; };
   if (dgmActive() && document.getElementById('toggle-contours-site').checked) { const cs = toSiteLayer(buildSiteContours(showViz)); if (cs) terrainMesh.add(cs); }
   { const sg = toSiteLayer(buildSiteGround(terrainFn, showViz)); if (sg) terrainMesh.add(sg); }
-  { const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz)); if (nb) terrainMesh.add(nb); }
+  {
+    const el = id => document.getElementById(id);
+    const key = JSON.stringify([slopePct, aspectDeg, s5Nr(terrainDgm), dgmActive() ? [terrainDgm.ref, terrainDgm.h.length, terrainDgm.step] : 0, viewMode(), document.documentElement.getAttribute('data-theme'),
+      nbVisible(), !!(el('toggle-nb-volumes') && el('toggle-nb-volumes').checked), s5Nr(neighbourData), neighbourData ? [neighbourData.items.length, neighbourData.buildings.length] : 0, s5Nr(widmungData), siteWindow, showViz]);
+    if (key !== s5Umgebung.key) {
+      if (s5Umgebung.obj) disposeGeometries(s5Umgebung.obj);
+      const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz));
+      s5Umgebung = { key, obj: nb, grp: neighbourLayerGroup };
+    } else neighbourLayerGroup = s5Umgebung.grp;
+    if (s5Umgebung.obj) terrainMesh.add(s5Umgebung.obj);
+  }
   { const pl = toSiteLayer(buildSitePlinth(heightFn, showViz)); if (pl) terrainMesh.add(pl); }
   applyGroundGlass(showViz);
   window.__v2HeightFn = heightFn;
@@ -21283,15 +21299,22 @@ function reglerHinweis(an) {
 }
 {
   const echterAufbau = rebuild;
+  let dauer = 0, zuletzt = 0, geplant = null;
+  const rechne = () => { const t = performance.now(); echterAufbau(); dauer = performance.now() - t; zuletzt = performance.now(); };
   rebuild = function () {
-    if (reglerZieht) { reglerOffen = echterAufbau; reglerHinweis(true); return; }
-    echterAufbau.apply(this, arguments);
+    if (!reglerZieht) { const t = performance.now(); echterAufbau.apply(this, arguments); dauer = performance.now() - t; zuletzt = performance.now(); return; }
+    reglerOffen = echterAufbau;
+    if (geplant) return;
+    const warte = Math.max(0, zuletzt + Math.min(400, dauer * 1.5) - performance.now());
+    if (dauer > 300) reglerHinweis(true);
+    geplant = setTimeout(() => requestAnimationFrame(() => { geplant = null; if (!reglerOffen) return; reglerOffen = null; rechne(); }), warte);
   };
   const los = () => {
     if (!reglerZieht) return;
     reglerZieht = false; reglerHinweis(false);
+    if (geplant) { clearTimeout(geplant); geplant = null; }
     const f = reglerOffen; reglerOffen = null;
-    if (f) requestAnimationFrame(() => f());
+    if (f) requestAnimationFrame(() => rechne());
   };
   document.addEventListener('pointerdown', e => {
     const r = e.target && e.target.closest && e.target.closest('input[type=range]');
@@ -33642,7 +33665,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.12';
+  const VERSION = 'v5.13';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34170,7 +34193,9 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     weiterKnopf(host);
   }
   let bald = null;
-  function neuZeichnenBald() { clearTimeout(bald); bald = setTimeout(() => rebuild(), 60); }
+  // während ein Regler gezogen wird: so oft neu rechnen, wie das Bild es zulässt (je Bildschirmbild
+  // höchstens einmal) — nicht erst warten, bis der Regler stillsteht
+  function neuZeichnenBald() { if (bald) return; bald = requestAnimationFrame(() => { bald = null; rebuild(); }); }
   function weiterKnopf(host) {
     host.querySelectorAll('.s5-weiter').forEach(b => b.addEventListener('click', () => oeffne(b.dataset.zu)));
   }
@@ -34595,7 +34620,27 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
 
   // ----------------------------------------------------------- Zusammenspiel ----------
   let offenes = null;
+  // Solange ein Regler gezogen wird, bleiben die Menüs stehen (sonst würde der Regler unter der
+  // Maus ersetzt) — nur Zahlen rechts und in der Variantenliste laufen live mit
+  let zieht = false;
+  const istS5Regler = t => t && t.type === 'range' && t.closest && t.closest('#menu-nutzung, #menu-flaeche, #menu-varianten, #menu-vergleich, .b-pop');
+  document.addEventListener('pointerdown', ev => { if (istS5Regler(ev.target)) zieht = true; }, true);
+  document.addEventListener('input', ev => { if (istS5Regler(ev.target)) zieht = true; }, true);
+  const loslassen = () => { if (!zieht) return; zieht = false; setTimeout(() => { if (!zieht) s5Aenderung(); }, 0); };
+  document.addEventListener('pointerup', loslassen, true);
+  document.addEventListener('pointercancel', loslassen, true);
+  document.addEventListener('change', ev => { if (istS5Regler(ev.target)) loslassen(); }, true);
+  window.s5Zieht = () => zieht;
+  function zahlenLive() {
+    rechteSpalte();
+    document.querySelectorAll('.s5-karte[data-id]').forEach(b => {
+      const z = s5Live.erg[b.dataset.id] && s5Live.erg[b.dataset.id].z, em = b.querySelector('em'); if (!z || !em) return;
+      const bad = z.pruefung.some(q => !q.ok && !q.warn);
+      em.innerHTML = f0(z.bgf) + ' m² BGF · ' + (z.ausnutzung != null ? pct(z.ausnutzung) : z.geschosse + ' G.') + (bad ? ' · <i class="s5-warn">⚠</i>' : '');
+    });
+  }
   s5Aenderung = () => {
+    if (zieht) { zahlenLive(); return; }
     // Schritt merken, damit die Darstellung passt (Fläche betont in Schritt 3)
     renderNutzung(); renderFlaeche(); renderVarianten(); renderVergleich(); rechteSpalte();
     try { bandNachRebuild(); } catch (e) { console.warn('Menüband', e); }
@@ -35737,7 +35782,11 @@ function s5ModellAuswerten(rez, K) {
     const pos = s5ModellPos(p.modellId), idx = s5ModellIdx(p.modellId), T = s5ModellTrafo(p);
     // nur Punkte des Gebäudes (Gelände & Außenanlagen liegen hinten im Index)
     let punkte = null;
-    if (idx && m0.nGeb != null && !p.mitGelaende && m0.nGeb < m0.n) { const set = new Uint8Array(pos.length / 3); for (let i = 0; i < m0.nGeb * 3; i++) set[idx[i]] = 1; punkte = []; for (let i = 0; i < set.length; i++) if (set[i]) punkte.push(i); }
+    if (idx && m0.nGeb != null && !p.mitGelaende && m0.nGeb < m0.n) {
+      const c = s5ModellCache.get(p.modellId);
+      if (!c.gebPunkte) { const set = new Uint8Array(pos.length / 3); for (let i = 0; i < m0.nGeb * 3; i++) set[idx[i]] = 1; c.gebPunkte = []; for (let i = 0; i < set.length; i++) if (set[i]) c.gebPunkte.push(i); }
+      punkte = c.gebPunkte;
+    }
     const nP = punkte ? punkte.length : pos.length / 3, schritt = Math.max(1, Math.floor(nP / 4000));
     const drin = (pt, regs) => regs.some(r => { let c = false; const o = r.o; for (let i = 0, j = o.length - 1; i < o.length; j = i++) { if ((o[i][1] > pt[1]) !== (o[j][1] > pt[1]) && pt[0] < (o[j][0] - o[i][0]) * (pt[1] - o[i][1]) / (o[j][1] - o[i][1]) + o[i][0]) c = !c; } return c; });
     let raus = 0, n = 0; const huellen = new Map();
