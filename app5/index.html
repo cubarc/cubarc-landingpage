@@ -33636,7 +33636,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.08';
+  const VERSION = 'v5.09';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34317,7 +34317,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     const host = $('s5-varianten'); const L = K(); if (!host || !L) return;
     const v = s5AktiveVariante(), e = v && s5Live.erg[v.id];
     let h = `<button type="button" class="viz-btn primary s5-erzeugen">${ico('punkt', 16)} Varianten erzeugen</button>
-      <button type="button" class="viz-btn s5-import"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg> Baukörper importieren · IFC, DXF, OBJ</button>
+      <button type="button" class="viz-btn s5-import"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg> Baukörper importieren · IFC, Rhino, SketchUp, DXF …</button>
       <div class="s5-info">cubarc rechnet für jede Typologie die Werte, die die zulässige Dichte am besten ausnutzen. Alles bleibt innerhalb der bebaubaren Fläche.</div>
       ${schalter('s5-dichte', 'Zulässige Dichte einhalten', S5.dichteEinhalten)}`;
     if (S5.varianten.length) {
@@ -34966,7 +34966,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
           <button type="button" data-a="undo" title="Rückgängig (Strg+Z)">${ico('undo')}</button><button type="button" data-a="redo" title="Wiederholen (Strg+Y)">${ico('redo')}</button>
           <span class="cad-sep"></span>
           <button type="button" data-a="zin" title="Vergrößern">${ico('plus')}</button><button type="button" data-a="zout" title="Verkleinern">${ico('minus')}</button><button type="button" data-a="fit" title="Einpassen (F)">${ico('fit')}</button>
-          ${modus === 'frei' ? `<span class="cad-sep"></span><button type="button" data-a="imp" title="Baukörper importieren (IFC, DXF, OBJ)">${ico('import')}</button><input type="file" class="cad-datei" accept=".ifc,.dxf,.obj,.dwg" hidden>` : ''}
+          ${modus === 'frei' ? `<span class="cad-sep"></span><button type="button" data-a="imp" title="Baukörper importieren (IFC, Rhino 3DM, SketchUp-DAE, DXF, OBJ, FBX, glTF, STL)">${ico('import')}</button><input type="file" class="cad-datei" accept=".ifc,.3dm,.dae,.skp,.dxf,.obj,.fbx,.3ds,.glb,.gltf,.stl,.dwg" hidden>` : ''}
         </div>
         <div class="cad-flaeche"><svg class="cad-svg" preserveAspectRatio="xMidYMid meet"></svg><div class="cad-nord">N</div><div class="cad-tip"></div></div>
         <div class="cad-panel"></div>
@@ -35408,6 +35408,86 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
   window.s5Zeichenfenster = s5Cad;
 })();
 
+// ===== cubarc v5 — Rhino 3DM lesen (rhino3dm, McNeel, MIT) =====
+// liefert Dreiecke [x, y, z] mit z oben (Rhino ist Z-oben) in Metern
+function s5RhinoDreiecke(rhino, bytes) {
+  const doc = rhino.File3dm.fromByteArray(bytes);
+  if (!doc) throw new Error('Die 3DM-Datei konnte nicht gelesen werden.');
+  // Einheit → Meter
+  let f = 1;
+  try {
+    const u = doc.settings().modelUnitSystem, U = rhino.UnitSystem;
+    const tab = [[U.Millimeters, 0.001], [U.Centimeters, 0.01], [U.Meters, 1], [U.Inches, 0.0254], [U.Feet, 0.3048], [U.Decimeters, 0.1]];
+    const t = tab.find(([k]) => k && (k === u || (k.value != null && u && k.value === u.value)));
+    if (t) f = t[1];
+  } catch (e) {}
+  const tris = [], hinweise = { umriss: 0, uebersprungen: 0 };
+  const P = p => [p[0] * f, p[1] * f, p[2] * f];
+  const ausMesh = m => {
+    if (!m) return false;
+    const vs = m.vertices(), fs = m.faces(), n = fs.count;
+    for (let i = 0; i < n; i++) {
+      const q = fs.get(i), a = P(vs.get(q[0])), b = P(vs.get(q[1])), c = P(vs.get(q[2]));
+      tris.push([a, b, c]);
+      if (q[3] !== q[2]) tris.push([a, c, P(vs.get(q[3]))]);
+    }
+    return n > 0;
+  };
+  // Ersatz, wenn keine Darstellungsnetze gespeichert sind: oberer Umriss aus den Kanten
+  const ausKanten = brep => {
+    const kanten = brep.edges(); let zMin = Infinity, zMax = -Infinity; const seg = [];
+    for (let i = 0; i < kanten.count; i++) {
+      const e = kanten.get(i), d = e.domain, pts = [];
+      for (let k = 0; k <= 8; k++) pts.push(P(e.pointAt(d[0] + (d[1] - d[0]) * k / 8)));
+      pts.forEach(p => { zMin = Math.min(zMin, p[2]); zMax = Math.max(zMax, p[2]); });
+      seg.push(pts);
+    }
+    const oben = seg.filter(s => s.every(p => Math.abs(p[2] - zMax) < 0.02));
+    if (!oben.length || zMax - zMin < 0.3) return false;
+    // Kantenstücke zu einem Ring verketten
+    const ring = oben.shift().slice(), eps = 0.01;
+    let guard = 0;
+    while (oben.length && guard++ < 500) {
+      const end = ring[ring.length - 1];
+      const i = oben.findIndex(s => Math.hypot(s[0][0] - end[0], s[0][1] - end[1]) < eps || Math.hypot(s[s.length - 1][0] - end[0], s[s.length - 1][1] - end[1]) < eps);
+      if (i < 0) break;
+      let s = oben.splice(i, 1)[0];
+      if (Math.hypot(s[0][0] - end[0], s[0][1] - end[1]) >= eps) s = s.slice().reverse();
+      ring.push(...s.slice(1));
+    }
+    if (ring.length < 4) return false;
+    const flach = ring.map(p => new THREE.Vector2(p[0], p[1]));
+    const dreiecke = THREE.ShapeUtils.triangulateShape(flach, []);
+    dreiecke.forEach(([a, b, c]) => {
+      tris.push([[flach[a].x, flach[a].y, zMax], [flach[b].x, flach[b].y, zMax], [flach[c].x, flach[c].y, zMax]]);
+      tris.push([[flach[a].x, flach[a].y, zMin], [flach[c].x, flach[c].y, zMin], [flach[b].x, flach[b].y, zMin]]);
+    });
+    hinweise.umriss++;
+    return true;
+  };
+  const ausBrep = brep => {
+    if (!brep) return false;
+    const fl = brep.faces(); let ok = true; const vorher = tris.length;
+    for (let i = 0; i < fl.count; i++) { const m = fl.get(i).getMesh(rhino.MeshType.Any); if (!m) { ok = false; break; } ausMesh(m); }
+    if (ok && tris.length > vorher) return true;
+    tris.length = vorher;
+    return ausKanten(brep);
+  };
+  const objs = doc.objects();
+  for (let i = 0; i < objs.count; i++) {
+    const o = objs.get(i), g = o && o.geometry(); if (!g) continue;
+    try {
+      let ok = false;
+      if (g instanceof rhino.Mesh) ok = ausMesh(g);
+      else if (g instanceof rhino.Brep) ok = ausBrep(g);
+      else if (rhino.Extrusion && g instanceof rhino.Extrusion) { const m = g.getMesh(rhino.MeshType.Any); ok = m ? ausMesh(m) : ausBrep(g.toBrep(true)); }
+      else if (rhino.SubD && g instanceof rhino.SubD) { const m = rhino.Mesh.createFromSubDControlNet ? null : null; ok = false; void m; }
+      if (!ok && !(g instanceof rhino.Curve) && !(g instanceof rhino.Point)) hinweise.uebersprungen++;
+    } catch (e) { hinweise.uebersprungen++; }
+  }
+  return { tris, einheit: f, hinweise };
+}
+
 // ═════════════════════════════════════════════════════════════════════════════════════
 //  cubarc v5 — Baukörper importieren (IFC aus Archicad/Revit, DXF/DWG-Export, OBJ)
 //  Aus jedem Modell wird ein Weißmodell aus prismatischen Baukörpern: von oben gesehen
@@ -35581,6 +35661,44 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     return tris;
   }
 
+  // ---------------------------------------------------------------- Three.js-Lader -------
+  // SketchUp, Rhino, Blender & Co.: DAE (Collada), glTF/GLB, FBX, 3DS, STL. Die Lader passen
+  // genau zur eingebetteten three.js r128 und werden erst beim ersten Import nachgeladen.
+  const T_CDN = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/';
+  const geladen = {};
+  function skript(url) {
+    if (geladen[url]) return geladen[url];
+    geladen[url] = new Promise((ok, fehler) => { const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = () => { delete geladen[url]; fehler(new Error('Lader konnte nicht geladen werden (Internet?)')); }; document.head.appendChild(s); });
+    return geladen[url];
+  }
+  async function lader(name) {
+    if (name === 'FBXLoader') { await skript(T_CDN + 'libs/fflate.min.js'); await skript(T_CDN + 'curves/NURBSUtils.js'); await skript(T_CDN + 'curves/NURBSCurve.js'); }
+    await skript(T_CDN + 'loaders/' + name + '.js');
+    return new THREE[name]();
+  }
+  // alle Dreiecke einer three.js-Szene in Weltkoordinaten (Y oben) → [x, −z, y]
+  function dreieckeAus(obj) {
+    const tris = [], v = new THREE.Vector3();
+    obj.updateMatrixWorld(true);
+    obj.traverse(o => {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+      const pos = o.geometry.attributes.position, idx = o.geometry.index, m = o.matrixWorld;
+      const P = i => { v.fromBufferAttribute(pos, i).applyMatrix4(m); return [v.x, -v.z, v.y]; };
+      const n = idx ? idx.count : pos.count;
+      for (let t = 0; t + 2 < n; t += 3) tris.push(idx ? [P(idx.getX(t)), P(idx.getX(t + 1)), P(idx.getX(t + 2))] : [P(t), P(t + 1), P(t + 2)]);
+    });
+    return tris;
+  }
+  async function ladeThree(datei, end, status) {
+    status('Lader wird geladen …');
+    if (end === 'stl') { const l = await lader('STLLoader'); const g = l.parse(await datei.arrayBuffer()); return { tris: dreieckeAus(new THREE.Mesh(g)), yUp: false }; }
+    if (end === 'dae') { const l = await lader('ColladaLoader'); const r = l.parse(await datei.text(), ''); return { tris: dreieckeAus(r.scene), yUp: true }; }
+    if (end === 'glb' || end === 'gltf') { const l = await lader('GLTFLoader'); const buf = end === 'glb' ? await datei.arrayBuffer() : await datei.text(); const r = await new Promise((ok, f) => l.parse(buf, '', ok, f)); return { tris: dreieckeAus(r.scene), yUp: true }; }
+    if (end === 'fbx') { const l = await lader('FBXLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r), yUp: true }; }
+    if (end === '3ds') { const l = await lader('TDSLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r), yUp: true }; }
+    throw new Error('Format nicht unterstützt');
+  }
+
   // ---------------------------------------------------------------- Einheiten -------------
   function massstab(punkte, einheit) {
     if (einheit === 4) return 0.001; if (einheit === 5) return 0.01; if (einheit === 6) return 1;
@@ -35599,11 +35717,25 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     else if (end === 'obj') tris = ladeOBJ(await datei.text());
     else if (end === 'dxf') { const r = ladeDXF(await datei.text()); tris = r.tris; polys = r.polys; einheit = r.einheit; }
     else if (end === 'dwg') throw new Error('DWG ist ein geschlossenes Format. Bitte in Archicad oder AutoCAD als DXF oder besser als IFC speichern.');
-    else throw new Error('Dieses Format kennt cubarc noch nicht. Möglich sind IFC, DXF und OBJ.');
+    else if (end === '3dm') {
+      status('Rhino-Leser wird geladen …');
+      if (!window.__rhino) { const mod = await import('https://cdn.jsdelivr.net/npm/rhino3dm@8.17.0/rhino3dm.module.min.js'); window.__rhino = await mod.default(); }
+      status('Modell wird gelesen …');
+      const r = s5RhinoDreiecke(window.__rhino, new Uint8Array(await datei.arrayBuffer()));
+      tris = r.tris; einheit = 6;   // schon in Metern umgerechnet
+      if (r.hinweise.umriss) status(r.hinweise.umriss + ' Körper ohne gespeichertes Netz — aus dem oberen Umriss gebildet');
+    }
+    else if (end === 'skp') throw new Error('SKP ist ein geschlossenes SketchUp-Format. Bitte in SketchUp „Datei → Exportieren → 3D-Modell“ wählen und als DAE (Collada) speichern — in SketchUp Free als STL.');
+    else if (['stl', 'dae', 'glb', 'gltf', 'fbx', '3ds'].includes(end)) {
+      const r = await ladeThree(datei, end, status);
+      // STL hat keine Achsangabe: SketchUp und die meisten CAD-Programme exportieren Z oben
+      tris = r.yUp ? r.tris : r.tris.map(t => t.map(p => [p[0], -p[1], p[2]]));
+    }
+    else throw new Error('Dieses Format kennt cubarc noch nicht. Möglich sind IFC, Rhino 3DM, DAE (SketchUp), DXF, OBJ, FBX, 3DS, glTF/GLB und STL.');
     status('Baukörper werden erkannt …');
     const alle = tris.length ? tris.flat() : polys.flatMap(p => p.pts);
     if (!alle.length) throw new Error('In der Datei wurden keine Bauteile gefunden.');
-    const f = end === 'ifc' ? 1 : massstab(alle, einheit);
+    const f = (end === 'ifc' || end === 'dae' || end === 'glb' || end === 'gltf' || end === '3dm') ? 1 : massstab(alle, einheit);
     if (f !== 1) { tris = tris.map(t => t.map(p => [p[0] * f, p[1] * f, p[2] * f])); polys = polys.map(p => Object.assign({}, p, { pts: p.pts.map(q => [q[0] * f, q[1] * f, q[2] * f]), dicke: (p.dicke || 0) * f })); }
     let koerper = [];
     if (tris.length) koerper = ausDreiecken(tris);
