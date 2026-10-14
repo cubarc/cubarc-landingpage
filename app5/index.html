@@ -33642,7 +33642,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.11';
+  const VERSION = 'v5.12';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34342,7 +34342,11 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         ${v.typ === 'winkel' ? `<div class="group"><label>Ecke</label><select class="s5-sel" data-k="ecke"><option value="auto">Automatisch (Garten nach Süden)</option><option value="v0u0">Ecke 1</option><option value="v0u1">Ecke 2</option><option value="v1u0">Ecke 3</option><option value="v1u1">Ecke 4</option></select></div>` : ''}
         ${v.typ === 'uform' ? `<div class="group"><label>Offene Seite</label><select class="s5-sel" data-k="offen"><option value="auto">Automatisch (nach Süden offen)</option><option value="v1">Seite 1</option><option value="v0">Seite 2</option><option value="u1">Seite 3</option><option value="u0">Seite 4</option></select></div>` : ''}
         ${v.typ === 'frei' ? `<button type="button" class="viz-btn s5-zeichnen">Baukörper zeichnen und bearbeiten</button>` : ''}
-        ${v.typ === 'modell' ? `<button type="button" class="viz-btn s5-platzieren">Im Plan verschieben & drehen</button><div class="s5-info">${esc((s5Modelle[v.p.modellId] || {}).name || '')} · ${f0((s5Modelle[v.p.modellId] || {}).n)} Dreiecke · unverändert übernommen</div>` : ''}
+        ${v.typ === 'modell' ? (() => { const m = s5Modelle[v.p.modellId] || {}, g = m.gelaende;
+          return `<button type="button" class="viz-btn s5-platzieren">Im Plan verschieben & drehen</button>`
+            + (g ? `<div class="s5-info">Gelände & Außenanlagen erkannt: ${f0(g.teile)} Teile${g.flaeche ? ', ca. ' + f0(g.flaeche) + ' m² außerhalb des Gebäudes' : ''} (Gras, Erde, Pflaster, Geländenetze)</div>`
+              + schalter('s5-gel-raus', 'Aus den Kennzahlen herausnehmen', !v.p.mitGelaende) + schalter('s5-gel-zeigen', 'Gelände & Außenanlagen anzeigen', v.p.gelaendeZeigen !== false) : '')
+            + `<div class="s5-info">${esc(m.name || '')} · ${f0(m.n)} Dreiecke · unverändert übernommen</div>`; })() : ''}
         <div class="s5-akt-knoepfe">${v.typ !== 'modell' ? '<button type="button" data-a="frei">Frei weiterbearbeiten</button>' : ''}<button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
     }
     h += `<div class="mp-sec">Typologie einzeln hinzufügen</div>` + S5_FAMILIEN.map(fm => `<div class="s5-fam"><span>${esc(fm.name)}</span><div>${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" class="s5-typ" data-t="${t}" title="${esc(S5_TYPEN[t].text)}">${ico(t, 20)}<em>${esc(S5_TYPEN[t].kurz)}</em></button>`).join('')}</div></div>`).join('');
@@ -34362,6 +34366,8 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       host.querySelectorAll('.s5-sel').forEach(s => { s.value = v.p[s.dataset.k] || 'auto'; s.addEventListener('change', () => { v.p[s.dataset.k] = s.value; v.eigen = true; neu(); }); });
       const zb = host.querySelector('.s5-zeichnen'); if (zb) zb.addEventListener('click', () => (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: v }));
       const pb = host.querySelector('.s5-platzieren'); if (pb) pb.addEventListener('click', () => window.s5ModellPlatzieren(v));
+      const gr = $('s5-gel-raus'); if (gr) gr.addEventListener('change', () => { v.p.mitGelaende = !gr.checked; v.eigen = true; neu(); });
+      const gz = $('s5-gel-zeigen'); if (gz) gz.addEventListener('change', () => { v.p.gelaendeZeigen = gz.checked; v.eigen = true; neu(); });
       host.querySelectorAll('.s5-akt-knoepfe button').forEach(b => b.addEventListener('click', () => {
         const a = b.dataset.a;
         if (a === 'weg') { S5.varianten = S5.varianten.filter(x => x !== v); if (S5.favorit === v.id) S5.favorit = null; S5.aktiv = (S5.varianten[0] || {}).id || null; neu(); }
@@ -34873,12 +34879,13 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
   // ---- Import: Modelle unverändert, reine 2D-Umrisse als freie Baukörper ----
   window.s5ModellAusImport = (r) => {
     const L = K();
-    const id = s5ModellAnlegen(r.name, r.tris);
+    const id = s5ModellAnlegen(r.name, r.tris, r.teile);
     const v = s5NeueVariante('modell', L, false); v.eigen = true; v.name = 'Import · ' + r.name.replace(/\.[^.]+$/, ''); v.p.modellId = id;
     const ziel = L && L.flaeche.length ? polygonCentroid(L.flaeche.slice().sort((a, b) => s5RegArea(b) - s5RegArea(a))[0].o) : polygonCentroid(parcelPoints);
     v.p.x = Math.round(ziel[0] * 100) / 100; v.p.z = Math.round(ziel[1] * 100) / 100;
     S5.aktiv = v.id; neu();
-    appToast('„' + r.name + '“ unverändert übernommen (' + f0(r.tris.length) + ' Dreiecke, Einheit ' + r.info.einheit + '). Lage und Drehung jetzt im Plan anpassen.');
+    const gm = s5Modelle[id].gelaende;
+    appToast('„' + r.name + '“ unverändert übernommen (' + f0(r.tris.length) + ' Dreiecke, Einheit ' + r.info.einheit + ')' + (gm ? ' — ' + f0(gm.teile) + ' Teile Gelände & Außenanlagen erkannt, sie zählen nicht zu den Kennzahlen' : '') + '. Lage und Drehung jetzt im Plan anpassen.');
     window.s5ModellPlatzieren(v);
   };
   window.s5ImportStarten = () => {
@@ -35540,9 +35547,11 @@ function s5RhinoDreiecke(rhino, bytes) {
     tris.length = vorher;
     return ausKanten(brep);
   };
-  const objs = doc.objects();
+  const objs = doc.objects(), teile = [];
+  const ebene = o => { try { const l = doc.layers().get(o.attributes().layerIndex); return (l && (l.fullPath || l.name)) || ''; } catch (e) { return ''; } };
   for (let i = 0; i < objs.count; i++) {
     const o = objs.get(i), g = o && o.geometry(); if (!g) continue;
+    const von = tris.length;
     try {
       let ok = false;
       if (g instanceof rhino.Mesh) ok = ausMesh(g);
@@ -35551,8 +35560,9 @@ function s5RhinoDreiecke(rhino, bytes) {
       else if (rhino.SubD && g instanceof rhino.SubD) { const m = rhino.Mesh.createFromSubDControlNet ? null : null; ok = false; void m; }
       if (!ok && !(g instanceof rhino.Curve) && !(g instanceof rhino.Point)) hinweise.uebersprungen++;
     } catch (e) { hinweise.uebersprungen++; }
+    if (tris.length > von) teile.push({ von, bis: tris.length, hinweis: ebene(o) + ' ' + (((o.attributes && o.attributes()) || {}).name || '') });
   }
-  return { tris, einheit: f, hinweise };
+  return { tris, teile, einheit: f, hinweise };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -35582,24 +35592,40 @@ function s5ModellPos(id) {
 }
 function s5ModellIdx(id) { s5ModellPos(id); const c = s5ModellCache.get(id); return c ? c.idx : null; }
 function s5B64Arr(a) { return s5B64aus(new Float32Array(a.buffer, a.byteOffset, a.byteLength / 4)); }
-// Modell aus Dreiecken [[x, yNord, zOben] × 3] anlegen: Ursprung = Mitte des Fußabdrucks, Höhe ab Unterkante
-function s5ModellAnlegen(name, tris) {
-  let zMin = Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-  tris.forEach(t => t.forEach(p => { zMin = Math.min(zMin, p[2]); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, -p[1]); z1 = Math.max(z1, -p[1]); }));
-  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-  const pos = new Float32Array(tris.length * 9);
-  let k = 0, hMax = 0, vol = 0;
-  const proj = [];
-  tris.forEach(t => {
-    const q = t.map(p => [p[0] - cx, p[2] - zMin, -p[1] - cz]);   // Modellkoordinaten: x, Höhe, z
-    q.forEach(p => { pos[k++] = p[0]; pos[k++] = p[1]; pos[k++] = p[2]; hMax = Math.max(hMax, p[1]); });
-    // Volumen über Tetraeder zum Ursprung (Vorzeichen egal, Summe zählt)
-    const [a, b, c] = q;
-    vol += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
-    // Fußabdruck: alle nicht senkrechten Flächen von oben gesehen
-    const ux = b[0] - a[0], uz = b[2] - a[2], vx = c[0] - a[0], vz = c[2] - a[2], ar = Math.abs(ux * vz - uz * vx) / 2;
-    if (ar > 0.01) proj.push({ o: s5Norm([[a[0], a[2]], [b[0], b[2]], [c[0], c[2]]]), h: [] });
+// Gelände und Außenanlagen erkennen — je Bauteil über den Namen (Material, Ebene, Textur:
+// Gras, Erde, Pflaster …) oder über die Form (unregelmäßig geneigte Fläche wie ein Geländenetz)
+const S5_GELAENDE_WORT = /gras|rasen|wiese|erde|humus|terrain|gel(ä|ae|a)nde|landscape|topo|site|vegetation|pflanz|baum|tree|plant|hecke|strauch|pflaster|asphalt|schotter|split|rasengitter|weg(platte)?n?\b|stra(ß|ss)e|parkplatz|au(ß|ss)enanlage|freifl/i;
+function s5GelaendeErkennen(tris, teile) {
+  const flag = new Uint8Array(tris.length);
+  if (!teile || !teile.length) return flag;
+  teile.forEach(tl => {
+    let ja = S5_GELAENDE_WORT.test(tl.hinweis || '');
+    if (!ja) {   // Form: viel geneigte Fläche in vielen Richtungen → Geländenetz
+      let up = 0, tilt = 0; const bins = new Set();
+      for (let i = tl.von; i < tl.bis; i++) {
+        const [a, b, c] = tris[i];
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, A = Math.hypot(nx, ny, nz) / 2; if (A < 1e-6) continue;
+        const cz = Math.abs(nz) / 2 / A; if (cz < 0.2) continue;
+        up += Math.abs(nz) / 2;
+        if (cz < 0.9986 && cz > 0.5) { tilt += Math.abs(nz) / 2; const sg = Math.sign(nz); bins.add(Math.round(Math.acos(cz) * 60) + '_' + Math.round(Math.atan2(ny * sg, nx * sg) * 18 / Math.PI)); }
+      }
+      ja = tilt >= 30 && bins.size >= 8 && tilt >= up * 0.3;
+    }
+    if (ja) for (let i = tl.von; i < tl.bis; i++) flag[i] = 1;
   });
+  return flag;
+}
+// Kennwerte aus einem Teil der Dreiecke (Modellkoordinaten): Fußabdruck, Höhenraster, Volumen
+function s5ModellKennwerte(pos, von, bis) {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, hMax = 0;
+  for (let t = von * 9; t < bis * 9; t += 3) { x0 = Math.min(x0, pos[t]); x1 = Math.max(x1, pos[t]); z0 = Math.min(z0, pos[t + 2]); z1 = Math.max(z1, pos[t + 2]); hMax = Math.max(hMax, pos[t + 1]); }
+  if (!(x1 > x0)) return { fp: [], hoehen: [], hMax: 0, vol: 0 };
+  const proj = [];
+  for (let t = von * 9; t < bis * 9; t += 9) {
+    const ux = pos[t + 3] - pos[t], uz = pos[t + 5] - pos[t + 2], vx = pos[t + 6] - pos[t], vz = pos[t + 8] - pos[t + 2];
+    if (Math.abs(ux * vz - uz * vx) / 2 > 0.01) proj.push({ o: s5Norm([[pos[t], pos[t + 2]], [pos[t + 3], pos[t + 5]], [pos[t + 6], pos[t + 8]]]), h: [] });
+  }
   let fp = [];
   for (let i = 0; i < proj.length; i += 500) fp = s5Union(fp.concat(proj.slice(i, i + 500)));
   fp = s5Offset(s5Offset(fp, 0.05), -0.05).filter(r => s5RegArea(r) >= 1);
@@ -35608,8 +35634,8 @@ function s5ModellAnlegen(name, tris) {
   const W = x1 - x0, D = z1 - z0, zelle = Math.max(0.25, Math.sqrt(Math.max(1, W * D) / 160000));
   const nx = Math.max(1, Math.ceil(W / zelle)), nz = Math.max(1, Math.ceil(D / zelle));
   const top = new Float32Array(nx * nz).fill(-1);
-  for (let t = 0; t < pos.length; t += 9) {
-    const ax = pos[t] + cx - x0, ay = pos[t + 1], az = pos[t + 2] + cz - z0, bx = pos[t + 3] + cx - x0, by = pos[t + 4], bz = pos[t + 5] + cz - z0, qx = pos[t + 6] + cx - x0, qy = pos[t + 7], qz = pos[t + 8] + cz - z0;
+  for (let t = von * 9; t < bis * 9; t += 9) {
+    const ax = pos[t] - x0, ay = pos[t + 1], az = pos[t + 2] - z0, bx = pos[t + 3] - x0, by = pos[t + 4], bz = pos[t + 5] - z0, qx = pos[t + 6] - x0, qy = pos[t + 7], qz = pos[t + 8] - z0;
     const den = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz); if (Math.abs(den) < 1e-9) continue;
     const i0 = Math.max(0, Math.floor(Math.min(ax, bx, qx) / zelle)), i1 = Math.min(nx - 1, Math.floor(Math.max(ax, bx, qx) / zelle));
     const j0 = Math.max(0, Math.floor(Math.min(az, bz, qz) / zelle)), j1 = Math.min(nz - 1, Math.floor(Math.max(az, bz, qz) / zelle));
@@ -35623,7 +35649,28 @@ function s5ModellAnlegen(name, tris) {
   const hist = new Map(), za = zelle * zelle;
   for (let k2 = 0; k2 < top.length; k2++) { if (top[k2] < 0.3) continue; const h = Math.round(top[k2] * 10) / 10; hist.set(h, (hist.get(h) || 0) + za); }
   const hoehen = [...hist.entries()].map(([h, a]) => [h, Math.round(a * 100) / 100]);
-  vol = hoehen.reduce((q, [h, a]) => q + h * a, 0);
+  const vol = hoehen.reduce((q, [h, a]) => q + h * a, 0);
+  return { fp: fp.map(r => r.o.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000])), hoehen, hMax, vol };
+}
+// Modell aus Dreiecken [[x, yNord, zOben] × 3] anlegen: Ursprung = Mitte des Gebäudes, Höhe ab
+// seiner Unterkante. Mit „teile“ werden Gelände und Außenanlagen erkannt und getrennt geführt.
+function s5ModellAnlegen(name, tris, teile) {
+  const gel = s5GelaendeErkennen(tris, teile);
+  let nG = 0; for (let i = 0; i < gel.length; i++) nG += gel[i];
+  const nurGel = nG === tris.length;   // alles Gelände? dann doch alles als Gebäude zählen
+  const istGeb = i => nurGel || !gel[i];
+  let zMin = Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  tris.forEach((t, i) => { if (istGeb(i)) t.forEach(p => { zMin = Math.min(zMin, p[2]); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, -p[1]); z1 = Math.max(z1, -p[1]); }); });
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  // Reihenfolge: zuerst das Gebäude, dahinter Gelände und Außenanlagen
+  const pos = new Float32Array(tris.length * 9);
+  let k = 0;
+  const schreib = t => t.forEach(p => { pos[k++] = p[0] - cx; pos[k++] = p[2] - zMin; pos[k++] = -p[1] - cz; });
+  tris.forEach((t, i) => { if (istGeb(i)) schreib(t); });
+  const nGeb = k / 9;
+  tris.forEach((t, i) => { if (!istGeb(i)) schreib(t); });
+  const kw = s5ModellKennwerte(pos, 0, nGeb);
+  const kwAlle = nGeb < tris.length ? s5ModellKennwerte(pos, 0, tris.length) : null;
   const id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   // kompakt speichern: Punkte auf ein feines Raster (1 cm, bei sehr großen Modellen gröber),
   // gleiche Punkte zusammenlegen, entartete und doppelte Dreiecke weglassen
@@ -35631,18 +35678,22 @@ function s5ModellAnlegen(name, tris) {
   const st = Math.max(0.01, Math.ceil(ext / 32000 * 100) / 100);
   const vmap = new Map(), vq = [], ind = [], tset = new Set();
   const vid = t => { const a = Math.round(pos[t] / st), b = Math.round(pos[t + 1] / st), c = Math.round(pos[t + 2] / st), key = a + ',' + b + ',' + c; let i = vmap.get(key); if (i === undefined) { i = vq.length / 3; vmap.set(key, i); vq.push(a, b, c); } return i; };
+  let nGebQ = 0;
   for (let t = 0; t < pos.length; t += 9) {
+    if (t === nGeb * 9) nGebQ = ind.length / 3;
     const a = vid(t), b = vid(t + 3), c = vid(t + 6); if (a === b || b === c || a === c) continue;
     const srt = [a, b, c].sort((x, y) => x - y), key = srt[0] + '_' + srt[1] + '_' + srt[2]; if (tset.has(key)) continue; tset.add(key);
     ind.push(a, b, c);
   }
+  if (nGeb * 9 >= pos.length) nGebQ = ind.length / 3;
   const v16 = Int16Array.from(vq), nv = vq.length / 3, i32 = nv > 65535;
   let iArr = i32 ? Uint32Array.from(ind) : Uint16Array.from(ind);
   if (iArr.byteLength % 4) { const t2 = new Uint16Array(iArr.length + 1); t2.set(iArr); iArr = t2; }   // Base64-Helfer arbeitet in 4-Byte-Schritten
   const v4 = v16.byteLength % 4 ? (() => { const t2 = new Int16Array(v16.length + 1); t2.set(v16); return t2; })() : v16;
   const posQ = new Float32Array(nv * 3); for (let k3 = 0; k3 < nv * 3; k3++) posQ[k3] = vq[k3] * st;
   const idxQ = i32 ? iArr : iArr.subarray(0, ind.length);
-  s5Modelle[id] = { name, v: s5B64Arr(v4), nv, q: st, i: s5B64Arr(iArr), i32, fp: fp.map(r => r.o.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000])), hMax, vol: Math.abs(vol), hoehen, n: ind.length / 3, nRoh: tris.length };
+  s5Modelle[id] = { name, v: s5B64Arr(v4), nv, q: st, i: s5B64Arr(iArr), i32, fp: kw.fp, hMax: kw.hMax, vol: kw.vol, hoehen: kw.hoehen, n: ind.length / 3, nRoh: tris.length,
+    nGeb: nGebQ, gelaende: kwAlle ? { teile: (teile || []).filter(tl => gel[tl.von]).length, fp: kwAlle.fp, hMax: kwAlle.hMax, vol: kwAlle.vol, hoehen: kwAlle.hoehen, flaeche: Math.round(s5Area(s5Minus(kwAlle.fp.map(r => ({ o: r, h: [] })), kw.fp.map(r => ({ o: r, h: [] }))))) } : null };
   s5ModellCache.set(id, { pos: posQ, idx: idxQ });
   return id;
 }
@@ -35651,13 +35702,15 @@ function s5ModellTrafo(p) {
   const w = (p.dreh || 0) * Math.PI / 180, cs = Math.cos(w), sn = Math.sin(w);
   return q => [p.x + q[0] * cs - q[1] * sn, p.z + q[0] * sn + q[1] * cs];
 }
+// Kennwert-Satz: nur Gebäude (Standard) oder mit Gelände & Außenanlagen
+function s5ModellSatz(p) { const m = s5Modelle[p.modellId]; if (!m) return null; return p.mitGelaende && m.gelaende ? m.gelaende : m; }
 function s5ModellFussabdruck(p) {
-  const m = s5Modelle[p.modellId]; if (!m) return [];
+  const m = s5ModellSatz(p); if (!m) return [];
   const T = s5ModellTrafo(p);
   return m.fp.map(r => ({ o: s5Norm(r.map(T)), h: [] }));
 }
 function s5ModellAuswerten(rez, K) {
-  const p = rez.p, m = s5Modelle[p.modellId];
+  const p = rez.p, m = s5ModellSatz(p), m0 = s5Modelle[p.modellId];
   if (!m) return { koerper: [], z: { koerper: 0, bebaut: 0, bgf: 0, bm: 0, vol: 0, nf: 0, gfz: 0, bmd: 0, bd: 0, nfd: 0, frei: K.lotArea, freiAnteil: 1, hoehe: 0, geschosse: 0, av: 0, tiefe: 0, ausnutzung: null, pruefung: [{ ok: false, t: 'Das Modell fehlt in dieser Projektdatei' }] } };
   const fp = s5ModellFussabdruck(p);
   const basis = (fp.length ? Math.min(...fp.map(r => s5Tiefster(K.heightFn, r.o))) : 0) + (p.versatz || 0);
@@ -35681,12 +35734,17 @@ function s5ModellAuswerten(rez, K) {
   if (isFinite(K.grenzen.bm)) pr.push({ ok: vol <= K.grenzen.bm + 0.5, t: 'Baumassendichte ' + fmtNum(z.bmd, 2) + ' von max. ' + fmtNum(K.bmd, 2) });
   if (isFinite(K.grenzen.bgf)) pr.push({ ok: bgf <= K.grenzen.bgf + 0.5, warn: true, t: String(K.regel.kurz || 'Dichte').replace(' max.', '') + ' ca. ' + dichteWert(z.gfz) + ' von max. ' + dichteWert(K.gfz) + ' (geschätzt)' });
   { // Lichtabstand: Eckpunkte des Modells gegen den Suchraum in ihrer Höhe
-    const pos = s5ModellPos(p.modellId), T = s5ModellTrafo(p), schritt = Math.max(1, Math.floor(pos.length / 3 / 4000));
+    const pos = s5ModellPos(p.modellId), idx = s5ModellIdx(p.modellId), T = s5ModellTrafo(p);
+    // nur Punkte des Gebäudes (Gelände & Außenanlagen liegen hinten im Index)
+    let punkte = null;
+    if (idx && m0.nGeb != null && !p.mitGelaende && m0.nGeb < m0.n) { const set = new Uint8Array(pos.length / 3); for (let i = 0; i < m0.nGeb * 3; i++) set[idx[i]] = 1; punkte = []; for (let i = 0; i < set.length; i++) if (set[i]) punkte.push(i); }
+    const nP = punkte ? punkte.length : pos.length / 3, schritt = Math.max(1, Math.floor(nP / 4000));
     const drin = (pt, regs) => regs.some(r => { let c = false; const o = r.o; for (let i = 0, j = o.length - 1; i < o.length; j = i++) { if ((o[i][1] > pt[1]) !== (o[j][1] > pt[1]) && pt[0] < (o[j][0] - o[i][0]) * (pt[1] - o[i][1]) / (o[j][1] - o[i][1]) + o[i][0]) c = !c; } return c; });
     let raus = 0, n = 0; const huellen = new Map();
     const tol = s5Offset;   // nur Verweis, damit der Aufräumer die Funktion behält
     void tol;
-    for (let i = 0; i < pos.length / 3; i += schritt) {
+    for (let j = 0; j < nP; j += schritt) {
+      const i = punkte ? punkte[j] : j;
       const y = basis + pos[i * 3 + 1]; if (pos[i * 3 + 1] < 0.5) continue;
       const pt = T([pos[i * 3], pos[i * 3 + 2]]); n++;
       const key = Math.ceil(y * 2) / 2;
@@ -35695,6 +35753,7 @@ function s5ModellAuswerten(rez, K) {
     }
     pr.push(raus ? { ok: false, t: raus + ' Modellpunkte liegen außerhalb des Lichtabstands' } : { ok: true, t: 'Lichtabstand an allen Modellpunkten eingehalten' });
   }
+  if (m0.gelaende) pr.push({ ok: true, warn: !p.mitGelaende ? false : true, t: p.mitGelaende ? 'Gelände & Außenanlagen zählen mit' : 'Gelände & Außenanlagen (' + fmtNum(m0.gelaende.teile, 0) + ' Teile) nicht mitgezählt' });
   pr.push({ ok: false, warn: true, t: 'BGF aus Gebäudehöhe und Geschoßhöhe geschätzt' });
   z.pruefung = pr;
   return { koerper: [{ fp: fp[0] || null, rolle: 'modell', nurPlan: true, geschosse: geschosse, _geschosse: [{ f: 0, y0: basis, h: m.hMax, regs: fp, flaeche: bebaut }] }], z, basis };
@@ -35708,11 +35767,15 @@ function s5ModellMesh(v, basis) {
     g0.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     const idx = s5ModellIdx(v.p.modellId); if (idx) g0.setIndex(new THREE.BufferAttribute(idx, 1));
     g0.computeVertexNormals();
+    if (idx && m.nGeb != null && m.nGeb < m.n) { g0.addGroup(0, m.nGeb * 3, 0); g0.addGroup(m.nGeb * 3, (m.n - m.nGeb) * 3, 1); }
     c = { g: g0, e: m.n <= 250000 ? new THREE.EdgesGeometry(g0, 30) : null };
     s5ModellGeoCache.set(v.p.modellId, c);
   }
   const g = c.g;
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: S5_FARBE.weiss, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, flatShading: true, shadowSide: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  const weiss = new THREE.MeshStandardMaterial({ color: S5_FARBE.weiss, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, flatShading: true, shadowSide: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  // Gelände & Außenanlagen: zurückhaltend grau-grün, leicht durchscheinend — oder ausgeblendet
+  const gel = new THREE.MeshStandardMaterial({ color: 0xc9cbbd, roughness: 1, metalness: 0, side: THREE.DoubleSide, flatShading: true, transparent: true, opacity: 0.55, depthWrite: false, visible: v.p.gelaendeZeigen !== false, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+  const mesh = new THREE.Mesh(g, g.groups.length ? [weiss, gel] : weiss);
   mesh.castShadow = true; mesh.receiveShadow = false;   // keine Schattenstreifen auf beliebig orientierten Flächen
   if (c.e) {
     const e = new THREE.LineSegments(c.e, new THREE.LineBasicMaterial({ color: S5_FARBE.kante, transparent: true, opacity: 0.5 }));
@@ -35917,7 +35980,9 @@ function s5ModellMesh(v, basis) {
     return new THREE[name](mg);
   }
   // alle Dreiecke einer three.js-Szene in Weltkoordinaten (Y oben) → [x, −z, y]
-  function dreieckeAus(obj) {
+  // dazu die Bauteile (je Netz bzw. je Material) mit einem Namenshinweis — daraus wird später
+  // erkannt, was Gelände und Außenanlage ist
+  function dreieckeAus(obj, teile) {
     const tris = [], v = new THREE.Vector3();
     obj.updateMatrixWorld(true);
     obj.traverse(o => {
@@ -35925,17 +35990,34 @@ function s5ModellMesh(v, basis) {
       const pos = o.geometry.attributes.position, idx = o.geometry.index, m = o.matrixWorld;
       const P = i => { v.fromBufferAttribute(pos, i).applyMatrix4(m); return [v.x, -v.z, v.y]; };
       const n = idx ? idx.count : pos.count;
-      for (let t = 0; t + 2 < n; t += 3) tris.push(idx ? [P(idx.getX(t)), P(idx.getX(t + 1)), P(idx.getX(t + 2))] : [P(t), P(t + 1), P(t + 2)]);
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const namen = []; for (let q = o; q; q = q.parent) if (q.name) namen.push(q.name);
+      const gruppen = Array.isArray(o.material) && o.geometry.groups && o.geometry.groups.length ? o.geometry.groups : [{ start: 0, count: n, materialIndex: 0 }];
+      gruppen.forEach(gr => {
+        const von = tris.length, ende = Math.min(n, gr.start + gr.count);
+        for (let t = gr.start; t + 2 < ende; t += 3) tris.push(idx ? [P(idx.getX(t)), P(idx.getX(t + 1)), P(idx.getX(t + 2))] : [P(t), P(t + 1), P(t + 2)]);
+        const mt = mats[gr.materialIndex] || mats[0];
+        if (teile && tris.length > von) teile.push({ von, bis: tris.length, hinweis: [(mt && mt.name) || ''].concat(namen).join(' ') });
+      });
     });
     return tris;
   }
+  // Collada: Materialnamen fehlen oft (Archicad) — als Namen den Dateinamen der Textur einsetzen,
+  // z. B. „Gras3DMittel“, „Erde01“, „PflasterungAsphalt“
+  function daeNamen(text) {
+    const bild = {}, eff = {};
+    text.replace(/<image\b[^>]*\bid="([^"]+)"[^>]*>[\s\S]*?<init_from>([^<]*)<\/init_from>/g, (_, id, f) => { bild[id] = (() => { try { return decodeURIComponent(f); } catch (e) { try { return unescape(f); } catch (e2) { return f; } } })().split('/').pop().replace(/^texture_\d+_/, '').replace(/\.[a-z]+$/i, ''); return _; });
+    text.replace(/<effect\b[^>]*\bid="([^"]+)"[\s\S]*?<\/effect>/g, (blk, id) => { const m = blk.match(/<surface\b[\s\S]*?<init_from>([^<]*)<\/init_from>/); if (m && bild[m[1]]) eff[id] = bild[m[1]]; return ''; });
+    return text.replace(/<material\b([^>]*?)\bid="([^"]+)"([^>]*)>(\s*<instance_effect url="#([^"]+)")/g, (all, a, id, b, rest, e) => /\bname=/.test(a + b) || !eff[e] ? all : '<material' + a + 'id="' + id + '" name="' + eff[e].replace(/[<>&"]/g, '') + '"' + b + '>' + rest);
+  }
   async function ladeThree(datei, end, status) {
     status('Lader wird geladen …');
-    if (end === 'stl') { const l = await lader('STLLoader'); const g = l.parse(await datei.arrayBuffer()); return { tris: dreieckeAus(new THREE.Mesh(g)), yUp: false }; }
-    if (end === 'dae') { const l = await lader('ColladaLoader'); const r = l.parse(await datei.text(), ''); return { tris: dreieckeAus(r.scene), yUp: true }; }
-    if (end === 'glb' || end === 'gltf') { const l = await lader('GLTFLoader'); const buf = end === 'glb' ? await datei.arrayBuffer() : await datei.text(); const r = await new Promise((ok, f) => l.parse(buf, '', ok, f)); return { tris: dreieckeAus(r.scene), yUp: true }; }
-    if (end === 'fbx') { const l = await lader('FBXLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r), yUp: true }; }
-    if (end === '3ds') { const l = await lader('TDSLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r), yUp: true }; }
+    const teile = [];
+    if (end === 'stl') { const l = await lader('STLLoader'); const g = l.parse(await datei.arrayBuffer()); return { tris: dreieckeAus(new THREE.Mesh(g), teile), teile, yUp: false }; }
+    if (end === 'dae') { const l = await lader('ColladaLoader'); status('Modell wird gelesen …'); const r = l.parse(daeNamen(await datei.text()), ''); return { tris: dreieckeAus(r.scene, teile), teile, yUp: true }; }
+    if (end === 'glb' || end === 'gltf') { const l = await lader('GLTFLoader'); const buf = end === 'glb' ? await datei.arrayBuffer() : await datei.text(); const r = await new Promise((ok, f) => l.parse(buf, '', ok, f)); return { tris: dreieckeAus(r.scene, teile), teile, yUp: true }; }
+    if (end === 'fbx') { const l = await lader('FBXLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r, teile), teile, yUp: true }; }
+    if (end === '3ds') { const l = await lader('TDSLoader'); const r = l.parse(await datei.arrayBuffer(), ''); return { tris: dreieckeAus(r, teile), teile, yUp: true }; }
     throw new Error('Format nicht unterstützt');
   }
 
@@ -35952,7 +36034,7 @@ function s5ModellMesh(v, basis) {
   async function importieren(datei, status) {
     const name = datei.name || 'Import', end = (name.split('.').pop() || '').toLowerCase();
     status = status || (() => {});
-    let tris = [], polys = [], einheit = null;
+    let tris = [], polys = [], einheit = null, teile = null;
     if (end === 'ifc') tris = await ladeIFC(await datei.arrayBuffer(), status);
     else if (end === 'obj') tris = ladeOBJ(await datei.text());
     else if (end === 'dxf') { const r = ladeDXF(await datei.text()); tris = r.tris; polys = r.polys; einheit = r.einheit; }
@@ -35962,12 +36044,12 @@ function s5ModellMesh(v, basis) {
       if (!window.__rhino) { const mod = await import('https://cdn.jsdelivr.net/npm/rhino3dm@8.17.0/rhino3dm.module.min.js'); window.__rhino = await mod.default(); }
       status('Modell wird gelesen …');
       const r = s5RhinoDreiecke(window.__rhino, new Uint8Array(await datei.arrayBuffer()));
-      tris = r.tris; einheit = 6;   // schon in Metern umgerechnet
+      tris = r.tris; teile = r.teile; einheit = 6;   // schon in Metern umgerechnet
       if (r.hinweise.umriss) status(r.hinweise.umriss + ' Körper ohne gespeichertes Netz — aus dem oberen Umriss gebildet');
     }
     else if (end === 'skp') throw new Error('SKP ist ein geschlossenes SketchUp-Format. Bitte in SketchUp „Datei → Exportieren → 3D-Modell“ wählen und als DAE (Collada) speichern — in SketchUp Free als STL.');
     else if (['stl', 'dae', 'glb', 'gltf', 'fbx', '3ds'].includes(end)) {
-      const r = await ladeThree(datei, end, status);
+      const r = await ladeThree(datei, end, status); teile = r.teile;
       // STL hat keine Achsangabe: SketchUp und die meisten CAD-Programme exportieren Z oben
       tris = r.yUp ? r.tris : r.tris.map(t => t.map(p => [p[0], -p[1], p[2]]));
     }
@@ -35978,7 +36060,7 @@ function s5ModellMesh(v, basis) {
     const f = (end === 'ifc' || end === 'dae' || end === 'glb' || end === 'gltf' || end === '3dm') ? 1 : massstab(alle, einheit);
     if (f !== 1) { tris = tris.map(t => t.map(p => [p[0] * f, p[1] * f, p[2] * f])); polys = polys.map(p => Object.assign({}, p, { pts: p.pts.map(q => [q[0] * f, q[1] * f, q[2] * f]), dicke: (p.dicke || 0) * f })); }
     if (tris.length) {   // Modell unverändert übernehmen (Vorgabe Ozan, 14.10.2026)
-      return { name, tris, info: { dreiecke: tris.length, einheit: f === 0.001 ? 'mm' : f === 0.01 ? 'cm' : 'm' } };
+      return { name, tris, teile, info: { dreiecke: tris.length, einheit: f === 0.001 ? 'mm' : f === 0.01 ? 'cm' : 'm' } };
     }
     let koerper = [];
     if (!koerper.length && polys.length) {   // reine Grundrisse (2D): Höhe aus der Objekthöhe, sonst Standard
