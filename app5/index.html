@@ -18506,6 +18506,12 @@ function s5WinkelAbstand(a, b) { const d = Math.abs(((a - b) % 360 + 540) % 360 
 
 // ------------------------------------------------------------------ Gelände ------------
 function s5Tiefster(heightFn, poly) { try { return lowestTerrainUnder(heightFn, poly); } catch (e) { return 0; } }
+function s5Hoechster(heightFn, poly) {
+  let m = -Infinity;
+  const pts = dgmDensify ? dgmDensify(poly, true) : poly;
+  pts.forEach(p => { m = Math.max(m, heightFn(p[0], p[1])); });
+  return isFinite(m) ? m : 0;
+}
 // Gefälle über der Fläche: Ebene durch Stichproben, Richtung bergab
 function s5Gefaelle(heightFn, regs) {
   const F = s5Frame(regs, 0), pts = [];
@@ -18802,13 +18808,21 @@ function s5Erzeuge(rez, K) {
 // Körper → Geschoße (jedes Geschoß auf den Suchraum seiner Wandoberkante zugeschnitten)
 function s5Geschosse(k, K) {
   const hf = K.heightFn, out = [];
-  let basis = s5Tiefster(hf, k.fp.o);
-  if (k.gelaende) {   // Split-Level: auf halbe Geschoßhöhen gerundet über dem tiefsten Punkt
+  // EIN Geschoßraster für alle Baukörper und den Suchraum: Ebene 0 = tiefster Punkt der
+  // bebaubaren Fläche, darüber EG-Höhe, dann OG-Höhen. Jeder Körper steht auf der höchsten
+  // Ebene, die nicht über seinem tiefsten Geländepunkt liegt — so passen Geschoßober- und
+  // -unterkanten aller Körper genau zu den Umrissen des Suchraums.
+  const ebene = i => i <= 0 ? K.base : K.base + S5.hEG + (i - 1) * S5.hOG;
+  const ebeneUnter = y => { if (y < K.base + S5.hEG - 1e-6) return 0; return 1 + Math.max(0, Math.floor((y - K.base - S5.hEG) / S5.hOG + 1e-6)); };
+  const tief = s5Tiefster(hf, k.fp.o);
+  let basis, hoehe0;
+  if (k.aufSockel && k._sockelOben != null) { basis = k._sockelOben; hoehe0 = S5.hOG; }
+  else if (k.gelaende) {   // Split-Level (Hangstaffelung): halbe Geschoßhöhen, immer abgerundet
     const raster = S5.hOG / 2;
-    basis = K.base + Math.max(0, Math.round((basis - K.base) / raster) * raster);
-  } else if (k.rolle === 'sockel' || !k.aufSockel) basis = Math.min(basis, s5Tiefster(hf, k.fp.o));
-  if (k.aufSockel && k._sockelOben != null) basis = k._sockelOben;
-  const geschossOf = f => (k.aufSockel ? S5.hOG : (f === 0 ? S5.hEG : S5.hOG));
+    basis = K.base + Math.max(0, Math.floor((tief - K.base) / raster + 1e-6) * raster);
+    hoehe0 = basis <= K.base + 1e-6 ? S5.hEG : S5.hOG;
+  } else { const i = ebeneUnter(tief); basis = ebene(i); hoehe0 = i === 0 ? S5.hEG : S5.hOG; }
+  const geschossOf = f => (f === 0 ? hoehe0 : S5.hOG);
   const startOf = f => { let y = basis; for (let q = 0; q < f; q++) y += geschossOf(q); return y; };
   const bezug = k.aufSockel ? (k._sockelBasis != null ? k._sockelBasis : basis) : basis;
   for (let f = 0; f < k.geschosse; f++) {
@@ -18830,6 +18844,22 @@ function s5Geschosse(k, K) {
   return out;
 }
 
+// Aufsatz-Geschoße auf die Fläche des Sockels zuschneiden; was nichts mehr trägt, fällt weg
+function s5AufSockelBeschneiden(koerper) {
+  const sockelEG = [];
+  koerper.forEach(k => { if (k.rolle === 'sockel' && k._geschosse.length) sockelEG.push(...k._geschosse[0].regs); });
+  koerper.forEach(k => {
+    if (!k.aufSockel) return;
+    if (!sockelEG.length) { k._geschosse = []; return; }
+    const neu = [];
+    for (const g of k._geschosse) {
+      const r = s5Teile(s5And(g.regs, sockelEG), 8);
+      if (!r.length) break;
+      g.regs = r; g.flaeche = s5Area(r); neu.push(g);
+    }
+    k._geschosse = neu;
+  });
+}
 // Variante auswerten: Körper, Geschoße, Dichte einhalten, Kennzahlen
 function s5Auswerten(rez, K) {
   const t0 = performance.now();
@@ -18845,6 +18875,7 @@ function s5Auswerten(rez, K) {
     const sTop = Math.max(...sockel.map(k => k._geschosse.length ? k._geschosse[k._geschosse.length - 1].y0 + k._geschosse[k._geschosse.length - 1].h : -Infinity));
     const sBas = Math.min(...sockel.map(k => k._geschosse.length ? k._geschosse[0].y0 : Infinity));
     koerper.filter(k => k.aufSockel).forEach(k => { k._sockelOben = sTop; k._sockelBasis = sBas; k._geschosse = s5Geschosse(k, K); });
+    s5AufSockelBeschneiden(koerper);
   }
   if (rez.typ === 'traufe') {
     const tops = koerper.map(k => k._geschosse.length ? k._geschosse[0].y0 : 0);
@@ -18905,6 +18936,8 @@ function s5Auswerten(rez, K) {
       if (verkleinern(g, r * 0.995, false)) { k._geschosse.push(g); s = summe(); if (ueber(s)) { k._geschosse.pop(); s = summe(); } }
     });
   }
+  // Aufsätze stehen nie über den Sockel hinaus — auch nicht, nachdem der Sockel gekürzt wurde
+  if (sockel.length) { s5AufSockelBeschneiden(koerper); s = summe(); }
   // Kennzahlen
   const alle = []; koerper.forEach(k => k._geschosse.forEach(g => alle.push(g)));
   const hoehe = koerper.reduce((m, k) => { if (!k._geschosse.length) return m; const top = k._geschosse[k._geschosse.length - 1]; const b = k.aufSockel ? (k._sockelBasis || 0) : k._geschosse[0].y0; return Math.max(m, top.y0 + top.h - b); }, 0);
@@ -19051,10 +19084,12 @@ function s5Zeichne(K, ziel, markerGroup) {
   });
   // Suchraum: zulässige Umrisse je Geschoß, ganz zurückgenommen
   if ((zeig.suchraum || schritt === 'flaeche') && K.flaeche.length) {
-    let y = K.base, f = 0;
+    const y0 = K.base;   // gleiches Geschoßraster wie alle Baukörper
+    const hoch = Math.max(...K.flaeche.map(r => s5Hoechster(K.heightFn, r.o)));
+    let y = y0, f = 0;
     while (f < 40) {
       const h = f === 0 ? S5.hEG : S5.hOG, top = y + h;
-      if (top - K.base > K.maxH + 1e-6) break;
+      if (top - hoch > K.maxH + 1e-6) break;   // auch am höchsten Geländepunkt schon über der Höchsthöhe
       if (K.topAbsY != null && top > K.topAbsY + 1e-6) break;
       const regs = K.huelleBei(top); if (!regs.length) break;
       regs.forEach(r => markerGroup.add(s5Mesh(r, y, h, S5_FARBE.suchraum, { basic: true, opacity: schritt === 'flaeche' ? 0.10 : 0.05, kanten: true, kantenFarbe: S5_FARBE.suchraum, kantenDeckkraft: schritt === 'flaeche' ? 0.45 : 0.18 })));
@@ -33585,7 +33620,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.0';
+  const VERSION = 'v5.01';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
