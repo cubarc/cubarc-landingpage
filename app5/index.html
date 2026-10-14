@@ -18325,7 +18325,7 @@ var S5 = s5Default();
 //  · Brüstung: Absturzsicherung von Terrasse/Balkon über einem zurückspringenden Geschoß
 //    (OIB-Richtlinie 4, Punkt 4.2.1: mind. 1,00 m, ab mehr als 12 m Absturzhöhe mind. 1,10 m)
 //  · Dachterrasse: auf dem obersten Geschoß gilt dann die Brüstung statt der Attika
-function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.3 : Math.max(0, +a); }
+function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.5 : Math.max(0, +a); }   // Rohdecke → Oberkante Attika: Dachaufbau + Aufkantung
 function s5Bruestung(absturz) { const b = S5 && S5.bruestung; const w = b == null || !isFinite(+b) ? 1.0 : Math.max(0, +b); return absturz > 12 ? Math.max(w, 1.1) : w; }
 function s5Oben(absturz) { return S5 && S5.dachterrasse ? s5Bruestung(absturz) : s5Attika(); }
 var s5Live = null;          // letzte Auswertung: Fläche, Suchraum, Varianten-Ergebnisse
@@ -18803,6 +18803,28 @@ function s5Geschosse(k, K) {
   const geschossOf = f => (f === 0 ? hoehe0 : S5.hOG);
   const startOf = f => { let y = basis; for (let q = 0; q < f; q++) y += geschossOf(q); return y; };
   const bezug = k.aufSockel ? (k._sockelBasis != null ? k._sockelBasis : basis) : basis;
+  // ── Gerade Wand (Regelfall) ─────────────────────────────────────────────────────────────
+  // Die Wandhöhe ergibt sich aus den Geschoßen plus Attika (bzw. Brüstung, wenn auf dem Körper
+  // eine Terrasse liegt — beim Sockel). Daraus folgt nach § 6 TBO der Abstand für die GANZE
+  // Wand: max(Mindestabstand, Faktor × Höhe über dem Urgelände). Mehr Geschoße → höhere Wand →
+  // die ganze Fassade rückt nach innen. Gestaffelt wird nur, wo die Typologie es vorsieht
+  // (Staffelgeschoß, Terrassenhaus) oder die Dichte ein Staffelgeschoß verlangt.
+  if (!(k.ruecksprung > 0) && !k.terrasse) {
+    for (let n = k.geschosse; n > 0; n--) {
+      const yTop = startOf(n - 1) + geschossOf(n - 1);
+      const yA = yTop + (k.rolle === 'sockel' ? s5Bruestung(yTop - bezug) : s5Oben(yTop - bezug));
+      if (yA - bezug > K.maxH + 1e-6) continue;                    // höchstzulässige Gebäudehöhe
+      if (K.topAbsY != null && yA > K.topAbsY + 1e-6) continue;     // höchster Punkt absolut
+      const fp = s5Teile(s5And([k.fp], K.huelleBei(yA)), 8);
+      if (!fp.length) continue;
+      for (let f = 0; f < n; f++) {
+        const regs = fp.map(r => ({ o: r.o.map(p => p.slice()), h: (r.h || []).map(h => h.map(p => p.slice())) }));
+        out.push({ f, y0: startOf(f), h: geschossOf(f), regs, flaeche: s5Area(regs) });
+      }
+      return out;
+    }
+    return out;
+  }
   const roh = [];
   for (let f = 0; f < k.geschosse; f++) {
     const y0 = startOf(f), h = geschossOf(f), y1 = y0 + h;
@@ -18927,7 +18949,16 @@ function s5Auswerten(rez, K) {
       const darfWeg = ziel.k._geschosse.length > 1 || mitGeschoss() > 1;
       // zuerst als Staffelgeschoß (Rücksprung 1,5–8 m), sonst Geschoß weg, sonst Fußabdruck verkleinern
       if (darfWeg && ziel.k._geschosse.length > 1 && bleibt >= 60 && verkleinern(ziel.top, bleibt, false)) { s = summe(); gekuerzt++; continue; }
-      if (darfWeg) { ziel.k._weg = ziel.k._geschosse.pop(); s = summe(); gekuerzt++; continue; }
+      if (darfWeg) {
+        ziel.k._weg = ziel.k._geschosse.pop();
+        // gerade Wand: niedrigere Wand → kleinerer Abstand → Geschoße darunter wieder größer
+        if (!(ziel.k.ruecksprung > 0) && !ziel.k.terrasse && !ziel.k._geschosse.some(g => g.staffel) && ziel.k._geschosse.length) {
+          const n0 = ziel.k.geschosse; ziel.k.geschosse = ziel.k._geschosse.length;
+          const neuG = s5Geschosse(ziel.k, K);
+          if (neuG.length === ziel.k._geschosse.length) ziel.k._geschosse = neuG; else ziel.k.geschosse = n0;
+        }
+        s = summe(); gekuerzt++; continue;
+      }
       if (bleibt >= 20 && verkleinern(ziel.top, bleibt, true)) { s = summe(); gekuerzt++; continue; }
       break;
     }
@@ -18997,8 +19028,12 @@ function s5Optimieren(typ, K) {
   } else if (typ === 'riegel_punkt') {
     [14, 16, 18].forEach(s => kand.push(Object.assign({}, basis, { seite: s })));
   } else kand.push(basis);
+  // Geschoßzahl mitsuchen: bei gerader Wand kostet jedes Geschoß mehr Abstand (Faktor × Höhe) —
+  // die beste Variante ist daher nicht automatisch die höchste
+  const maxG = basis.geschosse || 1, alle = [];
+  kand.forEach(p => { for (let g = 1; g <= maxG; g++) alle.push(Object.assign({}, p, { geschosse: g })); });
   let best = null;
-  kand.forEach(p => {
+  alle.forEach(p => {
     const rez = { typ, p };
     const e = s5Auswerten(rez, K);
     if (!e.z.koerper) return;
@@ -33797,7 +33832,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.18';
+  const VERSION = 'v5.19';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34319,11 +34354,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       <div class="mp-sec">Geschoßhöhen</div>
       ${regler('s5-heg', 'Erdgeschoß', S5.hEG, 2.6, 6, 0.1, 'm', 2)}
       ${regler('s5-hog', 'Obergeschoße', S5.hOG, 2.6, 5, 0.1, 'm', 2)}
-      <div class="mp-sec">Wandhöhe über der Decke</div>
-      ${regler('s5-attika', 'Attika (Flachdach oben)', s5Attika(), 0, 1.5, 0.05, 'm', 2)}
-      ${regler('s5-bruestung', 'Brüstung (Terrasse / Balkon)', S5.bruestung != null ? S5.bruestung : 1.0, 0.85, 1.5, 0.05, 'm', 2)}
-      ${schalter('s5-dachterrasse', 'Dachterrasse auf dem obersten Geschoß', !!S5.dachterrasse)}
-      <div class="s5-info">Attika und Brüstung machen die Wand darunter höher — der Abstand nach § 6 TBO (Faktor × Wandhöhe) wächst automatisch mit. Attika: Rand des Flachdachs, meist 0,3–0,5 m. Brüstung: über Terrassen zurückspringender Geschoße, nach OIB-Richtlinie 4 mind. 1,00 m, ab 12 m Absturzhöhe 1,10 m (wird automatisch erhöht). Mit Dachterrasse gilt auch oben die Brüstung.</div>
+      <div class="s5-info">Wandhöhe = Geschoße + Attika 0,50 m (Flachdach); über Terrassen Brüstung 1,00 m, ab 12 m Absturzhöhe 1,10 m (OIB-Richtlinie 4). Daraus folgt der Abstand nach § 6 TBO: mindestens 4 m (bzw. 3 m), sonst Faktor × Wandhöhe.</div>
       <div class="mp-sec">Typische Bautiefe</div>
       ${regler('s5-tiefe', 'Bautiefe für Riegel & Flügel', S5.tiefe, 8, 24, 0.5, 'm', 1)}
       <div class="s5-info">Diese Werte gelten für alle neu erzeugten Varianten. Für ${esc(N.kurz)} sind ${fmtNum(N.tiefe, 1)} m Bautiefe üblich.</div>
@@ -34332,7 +34363,6 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       const n = S5_NUTZUNG[b.dataset.n]; S5.nutzung = b.dataset.n; S5.hEG = n.hEG; S5.hOG = n.hOG; S5.tiefe = n.tiefe;
       renderNutzung(); neu();
     }));
-    { const dt = $('s5-dachterrasse'); if (dt) dt.addEventListener('change', () => { S5.dachterrasse = dt.checked; neu(); }); }
     bindRegler(host, r => {
       if (r.id === 's5-heg') S5.hEG = +r.value; if (r.id === 's5-hog') S5.hOG = +r.value; if (r.id === 's5-tiefe') S5.tiefe = +r.value; if (r.id === 's5-attika') S5.attika = +r.value; if (r.id === 's5-bruestung') S5.bruestung = +r.value;
       if (r.id !== 's5-tiefe') neuZeichnenBald();
