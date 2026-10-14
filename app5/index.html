@@ -18391,7 +18391,8 @@ var S5_TYPEN = {
   hangstaffel:  { fam: 'topo',       name: 'Hangstaffelung',    kurz: 'Hangstaffel',  text: 'Riegel in Abschnitte geteilt, jeder folgt dem Gelände' },
   terrasse:     { fam: 'topo',       name: 'Terrassenhaus',     kurz: 'Terrassen',    text: 'Jedes Obergeschoß springt hangseitig zurück' },
   traufe:       { fam: 'topo',       name: 'Gleiche Traufhöhe', kurz: 'Traufe',       text: 'Stufen am Hang, Dachkante überall auf einer Höhe' },
-  frei:         { fam: 'frei',       name: 'Freie Variante',    kurz: 'Frei',         text: 'Selbst gezeichnete Baukörper' }
+  frei:         { fam: 'frei',       name: 'Freie Variante',    kurz: 'Frei',         text: 'Selbst gezeichnete Baukörper' },
+  modell:       { fam: 'import',     name: 'Importiertes Modell', kurz: 'Import',     text: 'Modell aus Archicad, SketchUp, Rhino … unverändert übernommen' }
 };
 var S5_FAMILIEN = [
   { key: 'grundform', name: 'Grundform-Varianten' },
@@ -18629,6 +18630,7 @@ function s5Standard(typ, K) {
   if (typ === 'terrasse') { p.terrasse = 3; }
   if (typ === 'traufe') { p.stufen = 3; }
   if (typ === 'frei') { p.koerper = []; }
+  if (typ === 'modell') { p.modellId = null; p.x = 0; p.z = 0; p.dreh = 0; p.versatz = 0; }
   return p;
 }
 // Bänder quer zur Achse verteilen (Riegel, Reihen) — zentriert im Ausmaß
@@ -18864,6 +18866,7 @@ function s5AufSockelBeschneiden(koerper) {
 function s5Auswerten(rez, K) {
   const t0 = performance.now();
   rez._hinweis = null;
+  if (rez.typ === 'modell') { const r = s5ModellAuswerten(rez, K); r.z.ms = performance.now() - t0; return r; }
   let koerper = [];
   try { koerper = s5Erzeuge(rez, K); } catch (e) { console.warn('Variante', rez.typ, e); koerper = []; }
   // Traufe: gleiche Dachkante über alle Stufen
@@ -19102,6 +19105,7 @@ function s5Zeichne(K, ziel, markerGroup) {
   if (v && s5Live && s5Live.erg && s5Live.erg[v.id]) {
     const { koerper } = s5Live.erg[v.id];
     koerper.forEach((k, ki) => {
+      if (k.nurPlan) { const mm = s5ModellMesh(v, k._geschosse[0].y0); if (mm) ziel.add(mm); k._geschosse[0].regs.forEach(r => holes.push(r.o)); return; }
       k._geschosse.forEach((g, gi) => g.regs.forEach(r => {
         const m = s5Mesh(r, g.y0, g.h, k.rolle === 'sockel' ? S5_FARBE.weissDunkel : S5_FARBE.weiss);
         m.userData.s5 = { variante: v.id, koerper: ki, geschoss: gi };
@@ -19433,6 +19437,7 @@ function getFullState() {
     projectId: hmProjectId || null,
     inputs,
     studie5: typeof S5 === 'object' && S5 ? JSON.parse(JSON.stringify(S5)) : null,
+    studie5Modelle: typeof s5Modelle === 'object' ? s5Modelle : null,
     parcelPoints: parcelPoints.map(p => p.slice()),
     parcelEdgeOverrides: parcelEdgeOverrides.map(o => ({ angleFromCentroid: o.angleFromCentroid, active: o.active, setback: o.setback, factor: o.factor, label: o.label, isStreet: !!o.isStreet, autoStreet: !!o.autoStreet, line: o.line || null, lineDist: o.lineDist != null ? o.lineDist : null, autoBauweise: !!o.autoBauweise })),
     exposeCoverPhotoDataUrl: exposeCoverPhotoDataUrl || null,
@@ -19486,6 +19491,7 @@ function applyFullState(state) {
   });
   parcelPoints.splice(0, parcelPoints.length, ...state.parcelPoints.map(p => p.slice()));
   if (typeof window.s5ZustandSetzen === 'function') window.s5ZustandSetzen(state.studie5 || null);
+  if (state.studie5Modelle && typeof s5Modelle === 'object') { Object.assign(s5Modelle, state.studie5Modelle); }
   parcelEdgeOverrides = Array.isArray(state.parcelEdgeOverrides) ? state.parcelEdgeOverrides.map(o => ({ ...o })) : [];
   setExposeCoverPhoto(state.exposeCoverPhotoDataUrl || null);
   customVolumes = []; // Objekte-Funktion vorerst entfernt — ältere Stände laden ohne sie
@@ -33636,7 +33642,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.09';
+  const VERSION = 'v5.10';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34135,7 +34141,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         const t = (gi + 1) / maxG;
         g.regs.forEach(r => { s += `<path d="${reg(r)}" class="s5p-k" style="fill-opacity:${(0.25 + 0.6 * t).toFixed(2)}" fill-rule="evenodd"/>`; });
       }));
-      if (opt.zahlen) e.koerper.forEach(k => { if (!k._geschosse.length || (k.rolle === 'sockel' && e.koerper.some(q => q.aufSockel && q._geschosse.length))) return; const c = polygonCentroid(k._geschosse[0].regs[0].o); s += `<text x="${((c[0] - x0) * sc + ox).toFixed(1)}" y="${((c[1] - z0) * sc + oz + 3).toFixed(1)}" class="s5p-t">${k._geschosse.length + (k.aufSockel ? 1 : 0)}</text>`; });
+      if (opt.zahlen) e.koerper.forEach(k => { if (k.nurPlan || !k._geschosse.length || (k.rolle === 'sockel' && e.koerper.some(q => q.aufSockel && q._geschosse.length))) return; const c = polygonCentroid(k._geschosse[0].regs[0].o); s += `<text x="${((c[0] - x0) * sc + ox).toFixed(1)}" y="${((c[1] - z0) * sc + oz + 3).toFixed(1)}" class="s5p-t">${k._geschosse.length + (k.aufSockel ? 1 : 0)}</text>`; });
     }
     return s + '</svg>';
   }
@@ -34289,14 +34295,16 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     kopf: { l: 'Hochpunkt: Länge', min: 8, max: 30, step: 0.5, e: 'm', nk: 1 },
     abschnitt: { l: 'Länge je Abschnitt', min: 6, max: 30, step: 0.5, e: 'm', nk: 1 },
     terrasse: { l: 'Terrassentiefe je Geschoß', min: 1, max: 6, step: 0.5, e: 'm', nk: 1 },
-    stufen: { l: 'Anzahl Stufen', min: 2, max: 6, step: 1, e: '', nk: 0 }
+    stufen: { l: 'Anzahl Stufen', min: 2, max: 6, step: 1, e: '', nk: 0 },
+    dreh: { l: 'Drehung', min: -180, max: 180, step: 1, e: '°', nk: 0 },
+    versatz: { l: 'Höhenlage zum Gelände', min: -9, max: 9, step: 0.1, e: 'm', nk: 1 }
   };
   const PARAMS_JE = {
     block: ['geschosse', 'ruecksprung'], riegel: ['geschosse', 'tiefe', 'abstand', 'drehung'], punkt: ['geschosse', 'seite', 'abstand', 'drehung'],
     winkel: ['geschosse', 'tiefe', 'drehung'], uform: ['geschosse', 'tiefe', 'drehung'], hof: ['geschosse', 'tiefe'],
     sockel_riegel: ['geschosse', 'tiefe', 'abstand', 'drehung'], sockel_punkt: ['geschosse', 'seite', 'abstand', 'drehung'],
     riegel_punkt: ['geschosse', 'tiefe', 'seite', 'abstand', 'drehung'], hochpunkt: ['geschosse', 'extra', 'kopf', 'tiefe', 'abstand', 'drehung'],
-    hangstaffel: ['geschosse', 'tiefe', 'abstand', 'abschnitt', 'drehung'], terrasse: ['geschosse', 'terrasse'], traufe: ['geschosse', 'stufen'], frei: ['geschosse']
+    hangstaffel: ['geschosse', 'tiefe', 'abstand', 'abschnitt', 'drehung'], terrasse: ['geschosse', 'terrasse'], traufe: ['geschosse', 'stufen'], frei: ['geschosse'], modell: ['dreh', 'versatz']
   };
   function variantenErzeugen() {
     const L = K(); if (!L || !L.flaecheM2) { appToast('Keine bebaubare Fläche — Abstände oder Schutzzonen prüfen.'); return; }
@@ -34334,16 +34342,14 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         ${v.typ === 'winkel' ? `<div class="group"><label>Ecke</label><select class="s5-sel" data-k="ecke"><option value="auto">Automatisch (Garten nach Süden)</option><option value="v0u0">Ecke 1</option><option value="v0u1">Ecke 2</option><option value="v1u0">Ecke 3</option><option value="v1u1">Ecke 4</option></select></div>` : ''}
         ${v.typ === 'uform' ? `<div class="group"><label>Offene Seite</label><select class="s5-sel" data-k="offen"><option value="auto">Automatisch (nach Süden offen)</option><option value="v1">Seite 1</option><option value="v0">Seite 2</option><option value="u1">Seite 3</option><option value="u0">Seite 4</option></select></div>` : ''}
         ${v.typ === 'frei' ? `<button type="button" class="viz-btn s5-zeichnen">Baukörper zeichnen und bearbeiten</button>` : ''}
-        <div class="s5-akt-knoepfe"><button type="button" data-a="frei">Frei weiterbearbeiten</button><button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
+        ${v.typ === 'modell' ? `<button type="button" class="viz-btn s5-platzieren">Im Plan verschieben & drehen</button><div class="s5-info">${esc((s5Modelle[v.p.modellId] || {}).name || '')} · ${f0((s5Modelle[v.p.modellId] || {}).n)} Dreiecke · unverändert übernommen</div>` : ''}
+        <div class="s5-akt-knoepfe">${v.typ !== 'modell' ? '<button type="button" data-a="frei">Frei weiterbearbeiten</button>' : ''}<button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
     }
     h += `<div class="mp-sec">Typologie einzeln hinzufügen</div>` + S5_FAMILIEN.map(fm => `<div class="s5-fam"><span>${esc(fm.name)}</span><div>${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" class="s5-typ" data-t="${t}" title="${esc(S5_TYPEN[t].text)}">${ico(t, 20)}<em>${esc(S5_TYPEN[t].kurz)}</em></button>`).join('')}</div></div>`).join('');
     h += `<button type="button" class="viz-btn primary s5-weiter" data-zu="menu-vergleich">Weiter zum Vergleich</button>`;
     host.innerHTML = h;
     host.querySelector('.s5-erzeugen').addEventListener('click', variantenErzeugen);
-    host.querySelector('.s5-import').addEventListener('click', () => {
-      const nv = s5NeueVariante('frei', L, false); nv.eigen = true; nv.name = 'Import'; S5.aktiv = nv.id; rebuild();
-      (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: nv, importStart: true });
-    });
+    host.querySelector('.s5-import').addEventListener('click', () => window.s5ImportStarten());
     $('s5-dichte').addEventListener('change', ev => { S5.dichteEinhalten = ev.target.checked; neu(); });
     host.querySelectorAll('.s5-karte').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); }));
     host.querySelectorAll('.s5-typ').forEach(b => b.addEventListener('click', () => {
@@ -34355,6 +34361,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       bindRegler(host, r => { if (!r.id.startsWith('p-')) return; v.p[r.id.slice(2)] = +r.value; v.eigen = true; if (v.typ === 'frei' && r.id === 'p-geschosse') (v.p.koerper || []).forEach(k => { if (k.rolle !== 'sockel') k.geschosse = +r.value; }); neuZeichnenBald(); });
       host.querySelectorAll('.s5-sel').forEach(s => { s.value = v.p[s.dataset.k] || 'auto'; s.addEventListener('change', () => { v.p[s.dataset.k] = s.value; v.eigen = true; neu(); }); });
       const zb = host.querySelector('.s5-zeichnen'); if (zb) zb.addEventListener('click', () => (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: v }));
+      const pb = host.querySelector('.s5-platzieren'); if (pb) pb.addEventListener('click', () => window.s5ModellPlatzieren(v));
       host.querySelectorAll('.s5-akt-knoepfe button').forEach(b => b.addEventListener('click', () => {
         const a = b.dataset.a;
         if (a === 'weg') { S5.varianten = S5.varianten.filter(x => x !== v); if (S5.favorit === v.id) S5.favorit = null; S5.aktiv = (S5.varianten[0] || {}).id || null; neu(); }
@@ -34451,7 +34458,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     if (e) {
       const z = e.z;
       h += `<div class="s5-rp-plan">${plan(v, 260, 170, { zahlen: true })}</div><div class="s5-tiles">
-        <div><span>BGF</span><b>${f0(z.bgf)}<i>m²</i></b></div>
+        <div><span>${z.geschaetzt ? 'BGF ca.' : 'BGF'}</span><b>${f0(z.bgf)}<i>m²</i></b></div>
         <div><span>${L.isTirol ? 'BMD' : String(L.regel.kurz || 'Dichte').replace(' max.', '')}</span><b>${L.isTirol ? f2(z.bmd) : dichteWert(z.gfz)}</b></div>
         <div><span>Ausnutzung</span><b>${pct(z.ausnutzung)}</b></div>
         <div><span>Geschoße</span><b>${z.geschosse}</b></div>
@@ -34863,6 +34870,52 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     else if (popAuf) popLage();
   }
 
+  // ---- Import: Modelle unverändert, reine 2D-Umrisse als freie Baukörper ----
+  window.s5ModellAusImport = (r) => {
+    const L = K();
+    const id = s5ModellAnlegen(r.name, r.tris);
+    const v = s5NeueVariante('modell', L, false); v.eigen = true; v.name = 'Import · ' + r.name.replace(/\.[^.]+$/, ''); v.p.modellId = id;
+    const ziel = L && L.flaeche.length ? polygonCentroid(L.flaeche.slice().sort((a, b) => s5RegArea(b) - s5RegArea(a))[0].o) : polygonCentroid(parcelPoints);
+    v.p.x = Math.round(ziel[0] * 100) / 100; v.p.z = Math.round(ziel[1] * 100) / 100;
+    S5.aktiv = v.id; neu();
+    appToast('„' + r.name + '“ unverändert übernommen (' + f0(r.tris.length) + ' Dreiecke, Einheit ' + r.info.einheit + '). Lage und Drehung jetzt im Plan anpassen.');
+    window.s5ModellPlatzieren(v);
+  };
+  window.s5ImportStarten = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc,.3dm,.dae,.skp,.dxf,.obj,.fbx,.3ds,.glb,.gltf,.stl,.dwg';
+    inp.addEventListener('change', async () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      appToast('„' + f.name + '“ wird gelesen …');
+      try {
+        const r = await window.s5Importieren(f, () => {});
+        if (r.tris && r.tris.length) { window.s5ModellAusImport(r); return; }
+        const L = K(); const nv = s5NeueVariante('frei', L, false); nv.eigen = true; nv.name = 'Import · ' + r.name.replace(/\.[^.]+$/, ''); nv.p.koerper = r.koerper; S5.aktiv = nv.id; neu();
+        (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: nv });
+      } catch (e) { console.warn('Import', e); appToast(e.message || 'Import fehlgeschlagen.'); }
+    });
+    inp.click();
+  };
+  // Lage eines Modells im Zeichenfenster: der Fußabdruck wird verschoben und gedreht
+  window.s5ModellPlatzieren = (v) => {
+    const m = s5Modelle[v.p.modellId]; if (!m) return;
+    const fp = s5ModellFussabdruck(v.p);
+    const temp = { name: v.name, p: { geschosse: 1, koerper: fp.map((r, i) => ({ id: 'mf' + i, ring: r.o.map(p => p.slice()), geschosse: Math.max(1, Math.round(m.hMax / S5.hOG)), rolle: null })) } };
+    const a0 = temp.p.koerper[0].ring[0].slice(), b0 = temp.p.koerper[0].ring[1].slice();
+    (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: temp, nurLage: true, fertigFrei: koerper => {
+      const k = koerper.find(x => x.id === 'mf0') || koerper[0]; if (!k) return;
+      const a1 = k.ring[0], b1 = k.ring[1];
+      const w = Math.atan2(b1[1] - a1[1], b1[0] - a1[0]) - Math.atan2(b0[1] - a0[1], b0[0] - a0[0]);
+      // neuer Ursprung: Punkt a0 muss nach a1 wandern
+      const T0 = s5ModellTrafo(v.p), inv = q => { const dx = q[0] - v.p.x, dz = q[1] - v.p.z, ww = -(v.p.dreh || 0) * Math.PI / 180; return [dx * Math.cos(ww) - dz * Math.sin(ww), dx * Math.sin(ww) + dz * Math.cos(ww)]; };
+      void T0;
+      const lokal = inv(a0);
+      v.p.dreh = Math.round(((((v.p.dreh || 0) + w * 180 / Math.PI) % 360 + 540) % 360 - 180) * 10) / 10;
+      const wn = v.p.dreh * Math.PI / 180;
+      v.p.x = a1[0] - (lokal[0] * Math.cos(wn) - lokal[1] * Math.sin(wn));
+      v.p.z = a1[1] - (lokal[0] * Math.sin(wn) + lokal[1] * Math.cos(wn));
+      neu();
+    } });
+  };
   // erster Aufbau der Oberfläche
   setTimeout(() => { try { if (s5Live) s5Aenderung(); } catch (e) {} }, 0);
 })();
@@ -34955,10 +35008,10 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     // ---------------------------------------------------------------- Oberfläche ------
     let ov = document.getElementById('s5-cad'); if (!ov) { ov = document.createElement('div'); ov.id = 's5-cad'; ov.className = 's5-ov s5-cad-ov'; document.body.appendChild(ov); }
     const titel = modus === 'frei' ? esc(v.name) : modus === 'kreis' ? 'Baum / Schutzkreis setzen' : 'Freihaltefläche zeichnen';
-    const tools = modus === 'frei' ? [['waehlen', 'Auswählen & verschieben (V)'], ['rechteck', 'Rechteck (R)'], ['vieleck', 'Vieleck (P)'], ['messen', 'Messen (M)']]
+    const tools = opt.nurLage ? [['waehlen', 'Verschieben & drehen (V)'], ['messen', 'Messen (M)']] : modus === 'frei' ? [['waehlen', 'Auswählen & verschieben (V)'], ['rechteck', 'Rechteck (R)'], ['vieleck', 'Vieleck (P)'], ['messen', 'Messen (M)']]
       : modus === 'zone' ? [['vieleck', 'Vieleck (P)'], ['rechteck', 'Rechteck (R)'], ['messen', 'Messen (M)']] : [['messen', 'Messen (M)']];
     ov.innerHTML = `<div class="cad">
-      <div class="cad-kopf"><div><h2>${modus === 'frei' ? 'Baukörper bearbeiten' : titel}</h2><span>${modus === 'frei' ? titel + ' · Draufsicht, Norden oben' : 'Draufsicht, Norden oben'}</span></div>
+      <div class="cad-kopf"><div><h2>${opt.nurLage ? 'Modell platzieren' : modus === 'frei' ? 'Baukörper bearbeiten' : titel}</h2><span>${modus === 'frei' ? titel + ' · Draufsicht, Norden oben' : 'Draufsicht, Norden oben'}</span></div>
         <div class="cad-kopf-r"><button type="button" class="cad-btn ghost" data-a="abbr">Abbrechen</button><button type="button" class="cad-btn primary" data-a="ok">Übernehmen</button></div></div>
       <div class="cad-body">
         <div class="cad-tools">${tools.map(t => `<button type="button" data-w="${t[0]}" title="${t[1]}">${ico(t[0])}</button>`).join('')}
@@ -34966,7 +35019,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
           <button type="button" data-a="undo" title="Rückgängig (Strg+Z)">${ico('undo')}</button><button type="button" data-a="redo" title="Wiederholen (Strg+Y)">${ico('redo')}</button>
           <span class="cad-sep"></span>
           <button type="button" data-a="zin" title="Vergrößern">${ico('plus')}</button><button type="button" data-a="zout" title="Verkleinern">${ico('minus')}</button><button type="button" data-a="fit" title="Einpassen (F)">${ico('fit')}</button>
-          ${modus === 'frei' ? `<span class="cad-sep"></span><button type="button" data-a="imp" title="Baukörper importieren (IFC, Rhino 3DM, SketchUp-DAE, DXF, OBJ, FBX, glTF, STL)">${ico('import')}</button><input type="file" class="cad-datei" accept=".ifc,.3dm,.dae,.skp,.dxf,.obj,.fbx,.3ds,.glb,.gltf,.stl,.dwg" hidden>` : ''}
+          ${modus === 'frei' && !opt.nurLage ? `<span class="cad-sep"></span><button type="button" data-a="imp" title="Baukörper importieren (IFC, Rhino 3DM, SketchUp-DAE, DXF, OBJ, FBX, glTF, STL)">${ico('import')}</button><input type="file" class="cad-datei" accept=".ifc,.3dm,.dae,.skp,.dxf,.obj,.fbx,.3ds,.glb,.gltf,.stl,.dwg" hidden>` : ''}
         </div>
         <div class="cad-flaeche"><svg class="cad-svg" preserveAspectRatio="xMidYMid meet"></svg><div class="cad-nord">N</div><div class="cad-tip"></div></div>
         <div class="cad-panel"></div>
@@ -35168,6 +35221,14 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
           <div class="cad-p-sec">Weiteres</div><div class="cad-p-row cad-2"><button type="button" data-p="clip">Auf Fläche zuschneiden</button><button type="button" data-p="weg" class="weg">Löschen</button></div>
           <div class="cad-p-sec">Live-Kennzahlen</div><div class="cad-live-kz"></div>`;
       }
+      if (opt.nurLage) {
+        const a2 = auswahl();
+        h = `<div class="cad-p-sec">Importiertes Modell</div><div class="cad-hint">Das Modell bleibt unverändert. Hier werden nur Lage und Drehung festgelegt: im Plan ziehen, oben am Griff drehen oder die Werte eingeben.</div>`
+          + (a2.length ? `<div class="cad-p-sec">Verschieben</div><div class="cad-p-grid">${feld('dx', 'X', 0, 'm')}${feld('dz', 'Y', 0, 'm')}</div><button type="button" class="cad-btn wide" data-p="move">Um diesen Wert verschieben</button>
+          <div class="cad-p-sec">Drehen</div><div class="cad-p-row cad-4"><button type="button" data-p="r-90">−90°</button><button type="button" data-p="r-15">−15°</button><button type="button" data-p="r15">+15°</button><button type="button" data-p="r90">+90°</button></div>
+          <div class="cad-p-grid">${feld('rw', 'Winkel', 0, '°', 1)}<button type="button" class="cad-btn" data-p="rot">Drehen</button></div>
+          <button type="button" class="cad-btn wide" data-p="achse">An der Achse der Fläche ausrichten</button>` : `<div class="cad-hint" style="margin-top:8px">Zuerst den Umriss anklicken (Strg+A wählt alles).</div>`);
+      }
       panel.innerHTML = h;
       const rs = panel.querySelector('[data-p=rolle]'); if (rs) { rs.value = a[0].rolle || ''; rs.addEventListener('change', () => { merke(); a[0].rolle = rs.value || null; if (a[0].rolle === 'sockel') a[0].geschosse = 1; alles(); }); }
       panel.querySelectorAll('button[data-p]').forEach(bt => bt.addEventListener('click', () => aktion(bt.dataset.p)));
@@ -35244,6 +35305,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       if (werkzeug === 'rechteck') { const p = fange(roh, ev); zug = { rechteck: true, a: p, b: p }; return; }
       // Auswählen
       if (t.dataset && t.dataset.dreh) { const am = auswahlMitte(); merke(); zug = { dreh: true, c: am.c, w0: Math.atan2(roh[1] - am.c[1], roh[0] - am.c[0]), orig: auswahl().map(k => [k, k.ring.map(q => q.slice())]), ids: new Set(sel) }; return; }
+      if (opt.nurLage && (t.classList.contains('cad-pt') || t.classList.contains('cad-kante'))) return;
       if (t.classList.contains('cad-pt') && t.dataset.k) { merke(); zug = { punkt: true, k: koerper.find(x => x.id === t.dataset.k), i: +t.dataset.i, ids: new Set([t.dataset.k]) }; return; }
       if (t.classList.contains('cad-kante') && t.dataset.k) {
         const k = koerper.find(x => x.id === t.dataset.k), i = +t.dataset.e, a = k.ring[i], b = k.ring[(i + 1) % k.ring.length], l = dist(a, b);
@@ -35251,6 +35313,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       }
       if (t.dataset && t.dataset.k) {
         const id = t.dataset.k;
+        if (opt.nurLage) { sel = new Set(koerper.map(x => x.id)); merke(); zug = { verschieben: true, a: roh, orig: auswahl().map(k => [k, k.ring.map(q => q.slice())]), ids: new Set(sel), bewegt: false }; alles(); return; }
         if (ev.shiftKey) { if (sel.has(id)) sel.delete(id); else sel.add(id); }
         else if (!sel.has(id)) sel = new Set([id]);
         merke(); zug = { verschieben: true, a: roh, orig: auswahl().map(k => [k, k.ring.map(q => q.slice())]), ids: new Set(sel), bewegt: false };
@@ -35344,6 +35407,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       if (k === 'escape') { stop(); if (poly.length) { poly = []; zeichne(); } else if (mess) { mess = null; zeichne(); } else if (sel.size) { sel.clear(); alles(); } else zu(); return; }
       if (k === 'enter' && poly.length >= 3) { stop(); schliessen(); return; }
       if (k === 'backspace' && poly.length) { stop(); poly.pop(); zeichne(); return; }
+      if (opt.nurLage && (k === 'delete' || k === 'backspace' || (strg && k === 'd') || k === 'r' || k === 'p')) { stop(); return; }
       if ((k === 'delete' || k === 'backspace') && sel.size) { stop(); aktion('weg'); return; }
       if (modus === 'frei' && !strg) {
         if (k === 'v') { werkzeug = 'waehlen'; poly = []; stop(); alles(); return; }
@@ -35382,6 +35446,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         tip.textContent = 'Datei wird gelesen …';
         try {
           const r = await window.s5Importieren(f, t => { tip.textContent = t; });
+          if (r.tris && r.tris.length) { zu(); window.s5ModellAusImport(r); return; }
           merke(); koerper.push(...r.koerper); sel = new Set(r.koerper.map(k => k.id)); werkzeug = 'waehlen';
           einpassen(); alles();
           if (v && /^(Import|Freie Variante|.* — frei)$/.test(v.name)) v.name = 'Import · ' + r.name.replace(/\.[^.]+$/, '');
@@ -35391,6 +35456,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       if (opt.importStart) setTimeout(() => datei.click(), 0);
     }
     ov.querySelector('[data-a=ok]').addEventListener('click', () => {
+      if (modus === 'frei' && opt.fertigFrei) { zu(); opt.fertigFrei(koerper); return; }
       if (modus === 'frei') { v.p.koerper = koerper; v.eigen = true; zu(); rebuild(); pushHistory(); return; }
       if (modus === 'zone' && poly.length >= 3) { schliessen(); return; }
       zu();
@@ -35400,6 +35466,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     }));
     ov.onclick = e => { if (e.target === ov) zu(); };
     ov.classList.add('open');
+    if (opt.nurLage) { sel = new Set(koerper.map(x => x.id)); werkzeug = 'waehlen'; }
     requestAnimationFrame(() => { einpassen(); alles(); });
     window.addEventListener('resize', () => { if (ov.classList.contains('open')) zeichne(); });
   }
@@ -35486,6 +35553,147 @@ function s5RhinoDreiecke(rhino, bytes) {
     } catch (e) { hinweise.uebersprungen++; }
   }
   return { tris, einheit: f, hinweise };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════
+//  cubarc v5 — importierte Modelle unverändert übernehmen
+//  Das Modell wird genau so gezeigt, wie es gezeichnet wurde (alle Dreiecke). cubarc legt
+//  es nur auf das Gelände, verschiebt und dreht es. Kennzahlen kommen aus dem Modell
+//  selbst: Volumen, Fußabdruck, Höhe — die BGF wird aus Volumen und Geschoßhöhe geschätzt.
+// ═════════════════════════════════════════════════════════════════════════════════════
+var s5Modelle = {};                  // id → { name, pos (Base64 Float32), fp: [ring…], hMax, vol, n }
+const s5ModellCache = new Map();     // id → Float32Array (entpackt)
+const s5ModellGeoCache = new Map();  // id → { g, e } fertige Geometrie (wird nicht bei jedem Neuaufbau neu gerechnet)
+function s5B64aus(f32) { const u8 = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+function s5B64ein(b64) { const s = atob(b64), u8 = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); return new Float32Array(u8.buffer); }
+function s5ModellPos(id) {
+  if (s5ModellCache.has(id)) return s5ModellCache.get(id);
+  const m = s5Modelle[id]; if (!m) return null;
+  const f = s5B64ein(m.pos); s5ModellCache.set(id, f); return f;
+}
+// Modell aus Dreiecken [[x, yNord, zOben] × 3] anlegen: Ursprung = Mitte des Fußabdrucks, Höhe ab Unterkante
+function s5ModellAnlegen(name, tris) {
+  let zMin = Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  tris.forEach(t => t.forEach(p => { zMin = Math.min(zMin, p[2]); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, -p[1]); z1 = Math.max(z1, -p[1]); }));
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const pos = new Float32Array(tris.length * 9);
+  let k = 0, hMax = 0, vol = 0;
+  const proj = [];
+  tris.forEach(t => {
+    const q = t.map(p => [p[0] - cx, p[2] - zMin, -p[1] - cz]);   // Modellkoordinaten: x, Höhe, z
+    q.forEach(p => { pos[k++] = p[0]; pos[k++] = p[1]; pos[k++] = p[2]; hMax = Math.max(hMax, p[1]); });
+    // Volumen über Tetraeder zum Ursprung (Vorzeichen egal, Summe zählt)
+    const [a, b, c] = q;
+    vol += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    // Fußabdruck: alle nicht senkrechten Flächen von oben gesehen
+    const ux = b[0] - a[0], uz = b[2] - a[2], vx = c[0] - a[0], vz = c[2] - a[2], ar = Math.abs(ux * vz - uz * vx) / 2;
+    if (ar > 0.01) proj.push({ o: s5Norm([[a[0], a[2]], [b[0], b[2]], [c[0], c[2]]]), h: [] });
+  });
+  let fp = [];
+  for (let i = 0; i < proj.length; i += 500) fp = s5Union(fp.concat(proj.slice(i, i + 500)));
+  fp = s5Offset(s5Offset(fp, 0.05), -0.05).filter(r => s5RegArea(r) >= 1);
+  // Höhenraster: je Zelle die Oberkante des Modells — daraus Volumen und BGF, auch bei offenen
+  // oder nicht sauber geschlossenen Exporten (Innendecken, doppelte Flächen)
+  const W = x1 - x0, D = z1 - z0, zelle = Math.max(0.25, Math.sqrt(Math.max(1, W * D) / 160000));
+  const nx = Math.max(1, Math.ceil(W / zelle)), nz = Math.max(1, Math.ceil(D / zelle));
+  const top = new Float32Array(nx * nz).fill(-1);
+  for (let t = 0; t < pos.length; t += 9) {
+    const ax = pos[t] + cx - x0, ay = pos[t + 1], az = pos[t + 2] + cz - z0, bx = pos[t + 3] + cx - x0, by = pos[t + 4], bz = pos[t + 5] + cz - z0, qx = pos[t + 6] + cx - x0, qy = pos[t + 7], qz = pos[t + 8] + cz - z0;
+    const den = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz); if (Math.abs(den) < 1e-9) continue;
+    const i0 = Math.max(0, Math.floor(Math.min(ax, bx, qx) / zelle)), i1 = Math.min(nx - 1, Math.floor(Math.max(ax, bx, qx) / zelle));
+    const j0 = Math.max(0, Math.floor(Math.min(az, bz, qz) / zelle)), j1 = Math.min(nz - 1, Math.floor(Math.max(az, bz, qz) / zelle));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const px = (i + 0.5) * zelle, pz = (j + 0.5) * zelle;
+      const l1 = ((bz - qz) * (px - qx) + (qx - bx) * (pz - qz)) / den, l2 = ((qz - az) * (px - qx) + (ax - qx) * (pz - qz)) / den, l3 = 1 - l1 - l2;
+      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+      const h = l1 * ay + l2 * by + l3 * qy, k2 = j * nx + i; if (h > top[k2]) top[k2] = h;
+    }
+  }
+  const hist = new Map(), za = zelle * zelle;
+  for (let k2 = 0; k2 < top.length; k2++) { if (top[k2] < 0.3) continue; const h = Math.round(top[k2] * 10) / 10; hist.set(h, (hist.get(h) || 0) + za); }
+  const hoehen = [...hist.entries()].map(([h, a]) => [h, Math.round(a * 100) / 100]);
+  vol = hoehen.reduce((q, [h, a]) => q + h * a, 0);
+  const id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  s5Modelle[id] = { name, pos: s5B64aus(pos), fp: fp.map(r => r.o.map(p => [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000])), hMax, vol: Math.abs(vol), hoehen, n: tris.length };
+  s5ModellCache.set(id, pos);
+  return id;
+}
+// Lage einer Modell-Variante: Drehung um den Ursprung, dann Verschiebung
+function s5ModellTrafo(p) {
+  const w = (p.dreh || 0) * Math.PI / 180, cs = Math.cos(w), sn = Math.sin(w);
+  return q => [p.x + q[0] * cs - q[1] * sn, p.z + q[0] * sn + q[1] * cs];
+}
+function s5ModellFussabdruck(p) {
+  const m = s5Modelle[p.modellId]; if (!m) return [];
+  const T = s5ModellTrafo(p);
+  return m.fp.map(r => ({ o: s5Norm(r.map(T)), h: [] }));
+}
+function s5ModellAuswerten(rez, K) {
+  const p = rez.p, m = s5Modelle[p.modellId];
+  if (!m) return { koerper: [], z: { koerper: 0, bebaut: 0, bgf: 0, bm: 0, vol: 0, nf: 0, gfz: 0, bmd: 0, bd: 0, nfd: 0, frei: K.lotArea, freiAnteil: 1, hoehe: 0, geschosse: 0, av: 0, tiefe: 0, ausnutzung: null, pruefung: [{ ok: false, t: 'Das Modell fehlt in dieser Projektdatei' }] } };
+  const fp = s5ModellFussabdruck(p);
+  const basis = (fp.length ? Math.min(...fp.map(r => s5Tiefster(K.heightFn, r.o))) : 0) + (p.versatz || 0);
+  const bebaut = s5Area(fp), vol = m.vol, hoehe = m.hMax + (p.versatz || 0) * 0;
+  const gAus = h => h < S5.hEG * 0.6 ? 0 : 1 + Math.max(0, Math.floor((h - S5.hEG) / S5.hOG + 0.35));   // Geschoße bei dieser Höhe
+  const geschosse = Math.max(1, gAus(m.hMax));
+  // BGF: je Stelle so viele Geschoße, wie bei der Gebäudehöhe dort Platz haben
+  const bgf = (m.hoehen || []).reduce((q, [h, a]) => q + a * gAus(h), 0) || vol / S5.hOG;
+  const N = S5_NUTZUNG[S5.nutzung] || S5_NUTZUNG.wohnen, L = K.lotArea || 1;
+  const z = { koerper: 1, bebaut, bgf, bm: vol, vol, nf: bgf * N.nf, gfz: bgf / L, bmd: vol / L, bd: bebaut / L, nfd: bgf * 0.8 / L,
+    frei: Math.max(0, L - bebaut), freiAnteil: Math.max(0, 1 - bebaut / L), hoehe: m.hMax, geschosse, av: 0, tiefe: 0, geschaetzt: true };
+  const max = [];
+  if (isFinite(K.grenzen.bgf)) max.push(bgf / K.grenzen.bgf);
+  if (isFinite(K.grenzen.bm)) max.push(vol / K.grenzen.bm);
+  z.ausnutzung = max.length ? Math.max(...max) : null;
+  // Prüfung: Fläche, Höhe, Dichte, Lichtabstand an den Modellecken
+  const pr = [];
+  const aussen = s5Area(s5Minus(fp, K.flaeche));
+  pr.push(aussen > 0.5 ? { ok: false, t: 'Ragt ' + fmtNum(aussen, 0) + ' m² über die maximal bebaubare Fläche' } : { ok: true, t: 'Innerhalb der maximal bebaubaren Fläche' });
+  pr.push({ ok: m.hMax <= K.maxH + 0.01, t: 'Gebäudehöhe ' + fmtNum(m.hMax, 1) + ' m von max. ' + fmtNum(K.maxH, 1) + ' m' });
+  if (isFinite(K.grenzen.bm)) pr.push({ ok: vol <= K.grenzen.bm + 0.5, t: 'Baumassendichte ' + fmtNum(z.bmd, 2) + ' von max. ' + fmtNum(K.bmd, 2) });
+  if (isFinite(K.grenzen.bgf)) pr.push({ ok: bgf <= K.grenzen.bgf + 0.5, warn: true, t: String(K.regel.kurz || 'Dichte').replace(' max.', '') + ' ca. ' + dichteWert(z.gfz) + ' von max. ' + dichteWert(K.gfz) + ' (geschätzt)' });
+  { // Lichtabstand: Eckpunkte des Modells gegen den Suchraum in ihrer Höhe
+    const pos = s5ModellPos(p.modellId), T = s5ModellTrafo(p), schritt = Math.max(1, Math.floor(pos.length / 3 / 4000));
+    const drin = (pt, regs) => regs.some(r => { let c = false; const o = r.o; for (let i = 0, j = o.length - 1; i < o.length; j = i++) { if ((o[i][1] > pt[1]) !== (o[j][1] > pt[1]) && pt[0] < (o[j][0] - o[i][0]) * (pt[1] - o[i][1]) / (o[j][1] - o[i][1]) + o[i][0]) c = !c; } return c; });
+    let raus = 0, n = 0; const huellen = new Map();
+    const tol = s5Offset;   // nur Verweis, damit der Aufräumer die Funktion behält
+    void tol;
+    for (let i = 0; i < pos.length / 3; i += schritt) {
+      const y = basis + pos[i * 3 + 1]; if (pos[i * 3 + 1] < 0.5) continue;
+      const pt = T([pos[i * 3], pos[i * 3 + 2]]); n++;
+      const key = Math.ceil(y * 2) / 2;
+      if (!huellen.has(key)) huellen.set(key, s5Offset(K.huelleBei(key), 0.15));
+      if (!drin(pt, huellen.get(key))) raus++;
+    }
+    pr.push(raus ? { ok: false, t: raus + ' Modellpunkte liegen außerhalb des Lichtabstands' } : { ok: true, t: 'Lichtabstand an allen Modellpunkten eingehalten' });
+  }
+  pr.push({ ok: false, warn: true, t: 'BGF aus Gebäudehöhe und Geschoßhöhe geschätzt' });
+  z.pruefung = pr;
+  return { koerper: [{ fp: fp[0] || null, rolle: 'modell', nurPlan: true, geschosse: geschosse, _geschosse: [{ f: 0, y0: basis, h: m.hMax, regs: fp, flaeche: bebaut }] }], z, basis };
+}
+// Darstellung: das Modell selbst, weiß, mit Kanten
+function s5ModellMesh(v, basis) {
+  const m = s5Modelle[v.p.modellId], pos = s5ModellPos(v.p.modellId); if (!m || !pos) return null;
+  let c = s5ModellGeoCache.get(v.p.modellId);
+  if (!c) {
+    const g0 = new THREE.BufferGeometry();
+    g0.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g0.computeVertexNormals();
+    c = { g: g0, e: m.n <= 250000 ? new THREE.EdgesGeometry(g0, 30) : null };
+    s5ModellGeoCache.set(v.p.modellId, c);
+  }
+  const g = c.g;
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: S5_FARBE.weiss, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, shadowSide: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  mesh.castShadow = true; mesh.receiveShadow = false;   // keine Schattenstreifen auf beliebig orientierten Flächen
+  if (c.e) {
+    const e = new THREE.LineSegments(c.e, new THREE.LineBasicMaterial({ color: S5_FARBE.kante, transparent: true, opacity: 0.5 }));
+    e.raycast = () => {}; mesh.add(e);
+  }
+  // Three.js dreht positiv gegen den Uhrzeigersinn von oben — Plan (x, z) dreht mit +w
+  mesh.rotation.y = -(v.p.dreh || 0) * Math.PI / 180;
+  mesh.position.set(v.p.x, basis, v.p.z);
+  mesh.userData.s5 = { variante: v.id };
+  return mesh;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -35737,8 +35945,10 @@ function s5RhinoDreiecke(rhino, bytes) {
     if (!alle.length) throw new Error('In der Datei wurden keine Bauteile gefunden.');
     const f = (end === 'ifc' || end === 'dae' || end === 'glb' || end === 'gltf' || end === '3dm') ? 1 : massstab(alle, einheit);
     if (f !== 1) { tris = tris.map(t => t.map(p => [p[0] * f, p[1] * f, p[2] * f])); polys = polys.map(p => Object.assign({}, p, { pts: p.pts.map(q => [q[0] * f, q[1] * f, q[2] * f]), dicke: (p.dicke || 0) * f })); }
+    if (tris.length) {   // Modell unverändert übernehmen (Vorgabe Ozan, 14.10.2026)
+      return { name, tris, info: { dreiecke: tris.length, einheit: f === 0.001 ? 'mm' : f === 0.01 ? 'cm' : 'm' } };
+    }
     let koerper = [];
-    if (tris.length) koerper = ausDreiecken(tris);
     if (!koerper.length && polys.length) {   // reine Grundrisse (2D): Höhe aus der Objekthöhe, sonst Standard
       koerper = polys.filter(p => polygonArea(p.pts.map(q => [q[0], q[1]])) >= 4).map(p => ({ ring: s5Norm(p.pts.map(q => [q[0], -q[1]])), hoehe: p.dicke > 0.5 ? p.dicke : null }));
     }
