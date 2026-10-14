@@ -33636,7 +33636,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.07';
+  const VERSION = 'v5.08';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34064,7 +34064,7 @@ function sprSetzen(code, still) {
 body.s5-band-an .tb-m-l { max-width: none !important; }
 .b-pop { background: var(--panel-solid, var(--panel)) !important; }
 
-.s5-import { width: 100%; margin: 4px 0 2px; }
+.s5-import { width: 100%; margin: 8px 0 2px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34317,6 +34317,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     const host = $('s5-varianten'); const L = K(); if (!host || !L) return;
     const v = s5AktiveVariante(), e = v && s5Live.erg[v.id];
     let h = `<button type="button" class="viz-btn primary s5-erzeugen">${ico('punkt', 16)} Varianten erzeugen</button>
+      <button type="button" class="viz-btn s5-import"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg> Baukörper importieren · IFC, DXF, OBJ</button>
       <div class="s5-info">cubarc rechnet für jede Typologie die Werte, die die zulässige Dichte am besten ausnutzen. Alles bleibt innerhalb der bebaubaren Fläche.</div>
       ${schalter('s5-dichte', 'Zulässige Dichte einhalten', S5.dichteEinhalten)}`;
     if (S5.varianten.length) {
@@ -34335,7 +34336,6 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         ${v.typ === 'frei' ? `<button type="button" class="viz-btn s5-zeichnen">Baukörper zeichnen und bearbeiten</button>` : ''}
         <div class="s5-akt-knoepfe"><button type="button" data-a="frei">Frei weiterbearbeiten</button><button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
     }
-    h += `<button type="button" class="viz-btn s5-import">Baukörper importieren · IFC, DXF, OBJ</button>`;
     h += `<div class="mp-sec">Typologie einzeln hinzufügen</div>` + S5_FAMILIEN.map(fm => `<div class="s5-fam"><span>${esc(fm.name)}</span><div>${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" class="s5-typ" data-t="${t}" title="${esc(S5_TYPEN[t].text)}">${ico(t, 20)}<em>${esc(S5_TYPEN[t].kurz)}</em></button>`).join('')}</div></div>`).join('');
     h += `<button type="button" class="viz-btn primary s5-weiter" data-zu="menu-vergleich">Weiter zum Vergleich</button>`;
     host.innerHTML = h;
