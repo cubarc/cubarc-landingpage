@@ -14027,47 +14027,57 @@ function parcelSeiten() {
 // also 0,24; drei bis fünf Durchgänge genügen.
 // Kanten einer geraden Seite bekommen denselben (ungünstigsten, also tiefsten) Wert, damit
 // an einer durchgehenden Grenze keine Stufen entstehen.
-function lichtBezugAlle(heightFn, topY, reqOf) {
+// Bezugshöhe AN EINER STELLE der Grundgrenze: von dort lotrecht ins Grundstück bis zur
+// Wand des Baukörpers, dort die Höhe des Urgeländes nehmen. Weil die Wandlage selbst vom
+// Abstand abhängt, wird der Abstand eingependelt.
+function lichtBezugPunkt(heightFn, pt, nx, ny, topY, req) {
+  const hAn = d => heightFn(pt[0] + nx * d, pt[1] + ny * d);
+  let d = Math.max(0, req.setback || 0), H = hAn(d);
+  if (req.factor > 0.001) {
+    for (let k = 0; k < 6; k++) {
+      H = hAn(d);
+      const neu = Math.max(req.setback, (topY - H) * req.factor);
+      if (Math.abs(neu - d) < 0.02) { d = neu; break; }
+      d = d + (neu - d) * 0.7;
+    }
+    H = hAn(d);
+  }
+  return { H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) };
+}
+// Je Grundstücksseite EINE Bezugshöhe, gemessen in der Mitte dieser Seite. Eine Seite ist
+// die Grenze, wie man sie sieht — mehrere fast gerade Katasterkanten gehören zu derselben.
+// Gemessen wird dort, wo die Wand steht, NICHT der tiefste Punkt der Umgebung: das war der
+// Fehler in v3.30, die Linie startete dadurch meterweit zu tief.
+// (Vorgabe Ozan 14.10.2026, zweite Skizze)
+function lichtBezugSeiten(heightFn, topY, reqOf) {
   const n = parcelPoints.length, sg = signedArea(parcelPoints) >= 0 ? 1 : -1;
-  const roh = [];
+  const side = parcelSeiten(), grp = {};
   for (let i = 0; i < n; i++) {
     const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
     const dx = p2[0] - p1[0], dy = p2[1] - p1[1], L = Math.hypot(dx, dy) || 1;
-    const nx = -dy / L * sg, ny = dx / L * sg;                       // nach innen
-    const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
-    // Gelände an der Wand: drei Stellen längs der Kante, die tiefste zählt
-    const hAn = d => {
-      let m = Infinity;
-      [0.15, 0.5, 0.85].forEach(t => {
-        const x = p1[0] + dx * t + nx * d, z = p1[1] + dy * t + ny * d;
-        m = Math.min(m, heightFn(x, z));
-      });
-      return m;
-    };
-    let d = Math.max(0, req.setback), H = hAn(d);
-    if (req.factor > 0.001) {
-      for (let k = 0; k < 6; k++) {
-        H = hAn(d);
-        const neu = Math.max(req.setback, (topY - H) * req.factor);
-        if (Math.abs(neu - d) < 0.02) { d = neu; break; }
-        d = d + (neu - d) * 0.7;
-      }
-      H = hAn(d);
-    }
-    roh.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
+    const g = grp[side[i]] || (grp[side[i]] = { len: 0, mx: 0, my: 0, nx: 0, ny: 0, kante: i });
+    g.len += L;
+    g.mx += ((p1[0] + p2[0]) / 2) * L; g.my += ((p1[1] + p2[1]) / 2) * L;
+    g.nx += (-dy / L * sg) * L;        g.ny += (dx / L * sg) * L;
   }
-  // je Seite den ungünstigsten Wert übernehmen
-  const side = parcelSeiten(), tief = {};
-  for (let i = 0; i < n; i++) tief[side[i]] = Math.min(tief[side[i]] == null ? Infinity : tief[side[i]], roh[i].H);
+  const werte = {};
+  Object.keys(grp).forEach(k => {
+    const g = grp[k], L = g.len || 1;
+    const m = [g.mx / L, g.my / L];
+    const nl = Math.hypot(g.nx, g.ny) || 1;
+    const i = g.kante, p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
+    werte[k] = lichtBezugPunkt(heightFn, m, g.nx / nl, g.ny / nl, topY, reqOf(p1, p2, i) || { setback: 0, factor: 0 });
+  });
   const out = [];
   for (let i = 0; i < n; i++) {
     const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
     const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
-    const H = tief[side[i]];
+    const H = werte[side[i]] ? werte[side[i]].H : 0;
     out.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
   }
   return out;
 }
+function lichtBezugAlle(heightFn, topY, reqOf) { return lichtBezugSeiten(heightFn, topY, reqOf); }
 function edgeMinTerrain(heightFn, p1, p2) {
   let m = Math.min(heightFn(p1[0], p1[1]),
     heightFn(p2[0], p2[1]));
@@ -29868,8 +29878,8 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
           'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
       }
       if (isFinite(f) && f > 0.001) {
-        // Die Linie beginnt auf der Bezugshöhe dieser Seite: das Urgelände dort, wo die
-        // Außenwand steht, waagrecht auf die Grundgrenze gezogen. (Vorgabe Ozan 14.10.2026)
+        // Die Linie beginnt auf der Bezugshöhe dieser Grundstücksseite — demselben Wert,
+        // mit dem auch gerechnet wird. (Vorgabe Ozan 14.10.2026)
         const bez = (window.__lichtBezugH || [])[ki];
         const yRef = (bez != null && isFinite(bez)) ? bez : (y0 - 0.15);
         const L = Math.min(Math.max(2, f * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
@@ -39603,7 +39613,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.30';
+  const VERSION = 'v3.31';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
