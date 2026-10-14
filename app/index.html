@@ -4675,7 +4675,7 @@ window.KUBATUR_ABO_SERVER = 'probe';
       Fassade, Balkone und Stellplatzlayout sind exemplarische Platzhalter, keine tatsächliche Grundriss- oder Tiefgaragenplanung.
     </div>
     <div class="note" style="margin-top:12px;">
-      <b>Grundstück aus dem Kataster:</b> Die Grenzen stammen aus der Digitalen Katastralmappe (DKM) des BEV. Nur Grundstücke im <b>Grenzkataster</b> sind rechtsverbindlich und cm-genau vermessen. Im <b>Grundsteuerkataster</b> ist die Mappe nur eine grafische Darstellung — die tatsächliche Grenze kann im Dezimeter- bis Meterbereich abweichen. Welcher Fall vorliegt, zeigt das Ergebnis der Abfrage an. Für die Einreichung ist eine Vermessung durch Ingenieurkonsulent:innen maßgeblich. Abgefragt werden nur Geometrie, KG- und Grundstücksnummer — keine Eigentümerdaten.<br><br><b>Nachbargrundstücke:</b> Geladen wird ein quadratischer, nach Norden ausgerichteter Ausschnitt um das Grundstück (Kompakt +25 m, Standard +45 m, Weit +80 m je Seite) — darin alle Grundstücke, Straßen, Gebäude, Widmung und Gelände, exakt an der Kante beschnitten. Ob ein Nachbar eine Straße ist, folgt aus der Nutzung laut Kataster (Straßenverkehrsanlage, Verkehrsrandfläche) . Nachbargebäude sind Fußabdrücke aus der Katastralmappe, ohne Höhe.<br><br><b>Flächenwidmung:</b> Für Grundstücke in Tirol (tiris) und Vorarlberg (VoGIS) wird die Widmung beim Kataster-Import live mitgeladen, färbt die Grundstücke im Ansichtsmodus „Flächenwidmung“ automatisch ein und wird für das eigene Grundstück mit Flächenanteilen aufgelistet. Nachbarflächen ohne selbst gesetzte Nutzung übernehmen die überwiegende Widmung. Planungsinformation, nicht rechtsverbindlich. Salzburg bietet derzeit keinen abfragbaren Dienst.<br><br><b>Nachbargebäude &amp; Nutzung:</b> Der Kataster enthält nur Gebäude-Grundrisse, keine Höhen. Ohne bekannte Höhe gilt die eingestellte Standard-Geschosszahl (× 3 m); mit der rechten Maustaste auf ein Gebäude lässt sich die Geschosszahl je Gebäude festlegen. Wo OpenStreetMap eine Höhe oder Geschosszahl kennt, wird sie automatisch übernommen (Quelle wird angezeigt). Die Nutzung der Nachbarflächen stammt aus dem Kataster bzw. aus der Flächenwidmung des Landes und wird nicht von Hand gesetzt.<br><br><b>Gelände:</b> Die Höhen stammen aus dem Digitalen Geländemodell des BEV (5-m-Raster, Gelände ohne Bewuchs und Gebäude) und werden im Modell dazwischen interpoliert. Kleinräumige Details — Stützmauern, Böschungskanten, Stufen unter 5 m — bildet das Raster nicht ab; für die Einreichung zählt die Geländeaufnahme der Vermessung. Der Lichtabstand wird bei echtem Gelände am tiefsten Punkt entlang der ganzen Kante gemessen, Aushub und Aufschüttung werden über das Gelände integriert.
+      <b>Grundstück aus dem Kataster:</b> Die Grenzen stammen aus der Digitalen Katastralmappe (DKM) des BEV. Nur Grundstücke im <b>Grenzkataster</b> sind rechtsverbindlich und cm-genau vermessen. Im <b>Grundsteuerkataster</b> ist die Mappe nur eine grafische Darstellung — die tatsächliche Grenze kann im Dezimeter- bis Meterbereich abweichen. Welcher Fall vorliegt, zeigt das Ergebnis der Abfrage an. Für die Einreichung ist eine Vermessung durch Ingenieurkonsulent:innen maßgeblich. Abgefragt werden nur Geometrie, KG- und Grundstücksnummer — keine Eigentümerdaten.<br><br><b>Nachbargrundstücke:</b> Geladen wird ein quadratischer, nach Norden ausgerichteter Ausschnitt um das Grundstück (Kompakt +25 m, Standard +45 m, Weit +80 m je Seite) — darin alle Grundstücke, Straßen, Gebäude, Widmung und Gelände, exakt an der Kante beschnitten. Ob ein Nachbar eine Straße ist, folgt aus der Nutzung laut Kataster (Straßenverkehrsanlage, Verkehrsrandfläche) . Nachbargebäude sind Fußabdrücke aus der Katastralmappe, ohne Höhe.<br><br><b>Flächenwidmung:</b> Für Grundstücke in Tirol (tiris) und Vorarlberg (VoGIS) wird die Widmung beim Kataster-Import live mitgeladen, färbt die Grundstücke im Ansichtsmodus „Flächenwidmung“ automatisch ein und wird für das eigene Grundstück mit Flächenanteilen aufgelistet. Nachbarflächen ohne selbst gesetzte Nutzung übernehmen die überwiegende Widmung. Planungsinformation, nicht rechtsverbindlich. Salzburg bietet derzeit keinen abfragbaren Dienst.<br><br><b>Nachbargebäude &amp; Nutzung:</b> Der Kataster enthält nur Gebäude-Grundrisse, keine Höhen. Ohne bekannte Höhe gilt die eingestellte Standard-Geschosszahl (× 3 m); mit der rechten Maustaste auf ein Gebäude lässt sich die Geschosszahl je Gebäude festlegen. Wo OpenStreetMap eine Höhe oder Geschosszahl kennt, wird sie automatisch übernommen (Quelle wird angezeigt). Die Nutzung der Nachbarflächen stammt aus dem Kataster bzw. aus der Flächenwidmung des Landes und wird nicht von Hand gesetzt.<br><br><b>Gelände:</b> Die Höhen stammen aus dem Digitalen Geländemodell des BEV (5-m-Raster, Gelände ohne Bewuchs und Gebäude) und werden im Modell dazwischen interpoliert. Kleinräumige Details — Stützmauern, Böschungskanten, Stufen unter 5 m — bildet das Raster nicht ab; für die Einreichung zählt die Geländeaufnahme der Vermessung. Der Lichtabstand wird vom Urgelände an der Stelle gemessen, an der die Außenwand des Erdgeschoßes steht; diese Höhe wird waagrecht auf die Grundgrenze gezogen und die Lichtabstandslinie steigt von dort mit dem Faktor an (§ 6 TBO 2022: lotrechter Abstand zum Geländeniveau darunter, maßgeblich ist das Gelände vor einer Veränderung). Kanten einer durchgehenden Grenze teilen sich die ungünstigste Bezugshöhe. Aushub und Aufschüttung werden über das Gelände integriert.
     </div>
   </div>
 
@@ -14001,6 +14001,73 @@ function edgeSideMinTerrain(heightFn, i) {
   }
   return sideMinTerrainCache.vals[i];
 }
+// Seitennummer je Kante (mehrere fast gerade Kanten gehören zu EINER Seite)
+var parcelSeitenCache = { key: null, vals: null };
+function parcelSeiten() {
+  const n = parcelPoints.length;
+  const key = parcelPoints.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(';');
+  if (parcelSeitenCache.key !== key) {
+    const dir = k => { const a = parcelPoints[k % n], b = parcelPoints[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; };
+    const gerade = k => { const u = dir(k - 1 + n), v = dir(k); return (u[0] * v[0] + u[1] * v[1]) > Math.cos(15 * Math.PI / 180); };
+    const side = new Array(n).fill(-1); let sid = 0;
+    let start = 0; for (let k = 0; k < n; k++) if (!gerade(k)) { start = k; break; }
+    for (let k = 0; k < n; k++) { const e = (start + k) % n; if (k > 0 && !gerade(e)) sid++; side[e] = sid; }
+    parcelSeitenCache = { key, vals: side };
+  }
+  return parcelSeitenCache.vals;
+}
+// ---- Lichtabstand: Bezugshöhe an der Wand, nicht an der Grenze ----------------------
+// Vorgabe Ozan 14.10.2026 (Skizze): Maßgeblich ist das URGELÄNDE an der Stelle, an der die
+// Außenwand steht. Diese Höhe wird waagrecht auf die Grundgrenze gezogen; von dort steigt
+// die Lichtabstandslinie mit dem Faktor an. Entspricht § 6 TBO 2022 — gemessen wird der
+// lotrechte Abstand zwischen dem betreffenden Punkt und dem Geländeniveau DARUNTER.
+//
+// Weil die Lage der Wand selbst vom Abstand abhängt, wird der Abstand eingependelt. Die
+// Abbildung ist eine Kontraktion, solange Faktor × Hangneigung < 1 — bei 0,6 und 40 % Hang
+// also 0,24; drei bis fünf Durchgänge genügen.
+// Kanten einer geraden Seite bekommen denselben (ungünstigsten, also tiefsten) Wert, damit
+// an einer durchgehenden Grenze keine Stufen entstehen.
+function lichtBezugAlle(heightFn, topY, reqOf) {
+  const n = parcelPoints.length, sg = signedArea(parcelPoints) >= 0 ? 1 : -1;
+  const roh = [];
+  for (let i = 0; i < n; i++) {
+    const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
+    const dx = p2[0] - p1[0], dy = p2[1] - p1[1], L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L * sg, ny = dx / L * sg;                       // nach innen
+    const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
+    // Gelände an der Wand: drei Stellen längs der Kante, die tiefste zählt
+    const hAn = d => {
+      let m = Infinity;
+      [0.15, 0.5, 0.85].forEach(t => {
+        const x = p1[0] + dx * t + nx * d, z = p1[1] + dy * t + ny * d;
+        m = Math.min(m, heightFn(x, z));
+      });
+      return m;
+    };
+    let d = Math.max(0, req.setback), H = hAn(d);
+    if (req.factor > 0.001) {
+      for (let k = 0; k < 6; k++) {
+        H = hAn(d);
+        const neu = Math.max(req.setback, (topY - H) * req.factor);
+        if (Math.abs(neu - d) < 0.02) { d = neu; break; }
+        d = d + (neu - d) * 0.7;
+      }
+      H = hAn(d);
+    }
+    roh.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
+  }
+  // je Seite den ungünstigsten Wert übernehmen
+  const side = parcelSeiten(), tief = {};
+  for (let i = 0; i < n; i++) tief[side[i]] = Math.min(tief[side[i]] == null ? Infinity : tief[side[i]], roh[i].H);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
+    const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
+    const H = tief[side[i]];
+    out.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
+  }
+  return out;
+}
 function edgeMinTerrain(heightFn, p1, p2) {
   let m = Math.min(heightFn(p1[0], p1[1]),
     heightFn(p2[0], p2[1]));
@@ -22301,6 +22368,12 @@ function rebuild() {
   // wenn Mindestabstand oder Lichtfaktor den Grundriss verändern
   const baseLevel = lowestTerrainUnder(heightFn, refFootprint.length >= 3 ? refFootprint : parcelPoints) + zOffset;
   liveBaseLevel = baseLevel; liveFloorH = floorH; liveHeightFn = heightFn;
+  // Bezugshöhe des Lichtabstands je Grundstücksseite: das Urgelände dort, wo die Außenwand
+  // des Erdgeschoßes steht. Einmal je Neuaufbau bestimmt — so bleibt der zulässige Umriss
+  // über die Geschoße hinweg sauber gestaffelt. (Vorgabe Ozan 14.10.2026, Skizze)
+  const lichtBezug = lichtBezugAlle(heightFn, baseLevel, edgeReq);
+  const bezugH = i => (lichtBezug[i] ? lichtBezug[i].H : 0);
+  window.__lichtBezugH = lichtBezug.map(x => x.H);
   const floorsByGfz = isTirol ? 99 : Math.max(1, Math.floor((gfz * lotArea) / polygonArea(refFootprint)));
 
   // Geschoss-Hüllen für eine Basishöhe: Lichtabstand je Geschoss aus der echten Höhe über
@@ -22356,7 +22429,7 @@ function rebuild() {
       const edgeDistances = parcelPoints.map((p1, i) => {
         const p2 = parcelPoints[(i + 1) % parcelPoints.length];
         const req = edgeReq(p1, p2, i);
-        return Math.max(req.setback, (floorTopY - edgeSideMinTerrain(heightFn, i)) * req.factor);
+        return Math.max(req.setback, (floorTopY - bezugH(i)) * req.factor);
       });
       const fp = offsetPolygonVariable(parcelPoints, edgeDistances);
       const a = polygonArea(fp);
@@ -22543,7 +22616,7 @@ function rebuild() {
   const ugJobs = [];
   const roofOpts = roofOptions(), roofInfos = [], courtyardHoles = [];
   // Regelprüfung für Dachpunkte: liegt p in Höhe z innerhalb der Abstandsregel aller Kanten?
-  const roofEdgeMins = parcelPoints.map((p1, i) => edgeSideMinTerrain(heightFn, i));
+  const roofEdgeMins = parcelPoints.map((p1, i) => bezugH(i));
   const roofPolyCache = new Map();
   // Regel-Ebenen je Kante: zulässige Höhe = tiefstes Gelände der Kante + Abstand / Faktor
   const roofEnvs = [];
@@ -23195,7 +23268,7 @@ function rebuild() {
         const topY = baseLevel + y;
         const edgeDistances = parcelPoints.map((p1, i) => {
           const p2 = parcelPoints[(i + 1) % parcelPoints.length];
-          const minTerrain = edgeSideMinTerrain(heightFn, i);
+          const minTerrain = bezugH(i);
           const req = edgeReq(p1, p2, i);
           return Math.max(req.setback, (topY - minTerrain) * req.factor);
         });
@@ -23799,7 +23872,7 @@ function rebuild() {
       const nx = -dy / len, ny = dx / len; // inward normal, CCW
       const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
       const groundY = heightFn(mid[0], mid[1]);
-      const minTerrain = edgeSideMinTerrain(heightFn, i);
+      const minTerrain = bezugH(i);
       const req = edgeReq(p1, p2, i);
       const lightReach = (topY - minTerrain) * req.factor;
       const requiredAtTop = Math.max(req.setback, lightReach);
@@ -29760,11 +29833,25 @@ function vecRingSchnitte(ring, weltAt, s0, s1) {
 //   steigt die zulässige Höhe um 1 m je Faktor-Meter Abstand. Beschriftung parallel dazu.
 //   Ist der Faktor 0, gibt es die Linie nicht. (Vorgabe Ozan, 13.10.2026)
 // weltAt(s) liegt in der FLUCHT DER FASSADE, nicht davor — sonst stimmen die Abstände nicht.
+// die Grundstückskante, die einem Weltpunkt am nächsten liegt
+function naechsteParcelKante(pt) {
+  let best = -1, bd = Infinity;
+  const n = parcelPoints.length;
+  for (let i = 0; i < n; i++) {
+    const a = parcelPoints[i], b = parcelPoints[(i + 1) % n];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+    let t = ((pt[0] - a[0]) * dx + (pt[1] - a[1]) * dy) / L2;
+    t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(pt[0] - (a[0] + dx * t), pt[1] - (a[1] + dy * t));
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
 function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
   try {
     const grau = (typeof VP !== 'undefined' && VP.soft) ? VP.soft : '#9a9aa2';
-    const f = parseFloat((document.getElementById('factor') || {}).value);
-    const ab = parseFloat((document.getElementById('setback') || {}).value);
+    const fG = parseFloat((document.getElementById('factor') || {}).value);
+    const abG = parseFloat((document.getElementById('setback') || {}).value);
     const gs = vecRingSchnitte(parcelPoints, weltAt, sLo, sHi);
     gs.forEach((s, i) => {
       vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0);
@@ -29772,13 +29859,21 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       const eps = Math.max(0.05, (sHi - sLo) / 2000);
       const innen = pointInPolygon(weltAt(s + eps), parcelPoints) ? 1 : -1;
       const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
+      // Werte der getroffenen Kante — eine Kante mit eigenen Werten zählt ihre eigenen
+      const ki = naechsteParcelKante(weltAt(s));
+      const ov = (ki >= 0 && typeof parcelEdgeOverrides !== 'undefined' && parcelEdgeOverrides[ki] && parcelEdgeOverrides[ki].active) ? parcelEdgeOverrides[ki] : null;
+      const f = ov ? ov.factor : fG, ab = ov ? ov.setback : abG;
       if (isFinite(ab) && ab > 0.05) {
         vecMarkeSchraeg(ctx, M, [s, y0], [s + innen * ab, y0], grau,
           'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
       }
       if (isFinite(f) && f > 0.001) {
-        const L = Math.min(Math.max(2, f * (yHi - y0)), Math.abs(sHi - sLo) * 0.6);
-        vecMarkeSchraeg(ctx, M, [s, y0 - 0.15], [s + innen * L, y0 - 0.15 + L / f], grau,
+        // Die Linie beginnt auf der Bezugshöhe dieser Seite: das Urgelände dort, wo die
+        // Außenwand steht, waagrecht auf die Grundgrenze gezogen. (Vorgabe Ozan 14.10.2026)
+        const bez = (window.__lichtBezugH || [])[ki];
+        const yRef = (bez != null && isFinite(bez)) ? bez : (y0 - 0.15);
+        const L = Math.min(Math.max(2, f * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
+        vecMarkeSchraeg(ctx, M, [s, yRef], [s + innen * L, yRef + L / f], grau,
           'Höhenfaktor ' + fmtNum(f, 2), 0.9);
       }
     });
@@ -39508,7 +39603,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v3.29';
+  const VERSION = 'v3.30';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
