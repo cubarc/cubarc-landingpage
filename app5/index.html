@@ -24892,8 +24892,8 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
       // Werte der getroffenen Kante — eine Kante mit eigenen Werten zählt ihre eigenen
       const ki = naechsteParcelKante(weltAt(s));
-      const ov = (ki >= 0 && typeof parcelEdgeOverrides !== 'undefined' && parcelEdgeOverrides[ki] && parcelEdgeOverrides[ki].active) ? parcelEdgeOverrides[ki] : null;
-      const f = ov ? ov.factor : fG, ab = ov ? ov.setback : abG;
+      const ee = (ki >= 0 && typeof edgeEff === 'function') ? edgeEff(ki) : null;
+      const f = ee ? ee.factor : fG, ab = ee ? ee.setback : abG;
       if (isFinite(ab) && ab > 0.05) {
         vecMarkeSchraeg(ctx, M, [s, y0], [s + innen * ab, y0], grau,
           'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
@@ -24901,8 +24901,18 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       if (isFinite(f) && f > 0.001) {
         // Die Linie beginnt auf der Bezugshöhe dieser Seite: das Urgelände dort, wo die
         // Außenwand steht, waagrecht auf die Grundgrenze gezogen. (Vorgabe Ozan 14.10.2026)
-        const bez = (window.__lichtBezugH || [])[ki];
-        const yRef = (bez != null && isFinite(bez)) ? bez : (y0 - 0.15);
+        // Außenwand im Schnitt suchen: von der Grenze nach innen bis in ein Geschoß
+        const uf = typeof liveHeightFn === 'function' ? liveHeightFn : null;
+        let sW = null;
+        for (let d = 0; d <= 60; d += 0.05) {
+          const q = weltAt(s + innen * d);
+          if ((liveVizArgs || []).some(a => a.fp && fpContains(a.fp, q))) { sW = s + innen * d; break; }
+        }
+        if (sW == null) sW = s + innen * Math.max(ab || 0, 0);
+        const qW = weltAt(sW);
+        const yRef = uf ? uf(qW[0], qW[1]) : (y0 - 0.15);
+        // Bezugshöhe an der Wand waagrecht bis zur Grundgrenze (fein gestrichelt)
+        try { vecMarkeSchraeg(ctx, M, [sW, yRef], [s, yRef], grau, '', 0.5, true); } catch (e) {}
         const L = Math.min(Math.max(2, f * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
         vecMarkeSchraeg(ctx, M, [s, yRef], [s + innen * L, yRef + L / f], grau,
           'Höhenfaktor ' + fmtNum(f, 2), 0.9);
@@ -33847,7 +33857,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.20';
+  const VERSION = 'v5.21';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
