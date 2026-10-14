@@ -33652,7 +33652,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.04';
+  const VERSION = 'v5.05';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34862,7 +34862,9 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       bindRegler(row, r => { if (r.id.startsWith('brg-b-')) rg.breite = +r.value; if (r.id.startsWith('brg-r-')) rg.radius = +r.value; neuZeichnenBald(); });
     });
   }
+  const BAND_AN = false;   // Menüband oben vorerst aus — Ozan bleibt bei der linken Spalte (14.10.2026)
   function bandNachRebuild() {
+    if (!BAND_AN) return;
     if (!band) bandAufbauen();
     if (!band) return;
     werkzeugeZeichnen();
