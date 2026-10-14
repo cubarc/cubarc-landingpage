@@ -18319,6 +18319,9 @@ function s5Default() {
     zeige: { flaeche: true, suchraum: false, schutz: true }, naechsteNr: 1 };
 }
 var S5 = s5Default();
+// Attika bzw. Brüstung/Geländer auf dem Dach: gehört zur Außenhaut (§ 6 Abs. 1 TBO) und
+// zählt daher beim Abstand und bei der Gebäudehöhe mit — das Weißmodell endet an der Rohdecke
+function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.3 : Math.max(0, +a); }
 var s5Live = null;          // letzte Auswertung: Fläche, Suchraum, Varianten-Ergebnisse
 var s5Aenderung = null;     // Rückruf der Oberfläche nach jedem Neuaufbau
 
@@ -18796,8 +18799,9 @@ function s5Geschosse(k, K) {
   const bezug = k.aufSockel ? (k._sockelBasis != null ? k._sockelBasis : basis) : basis;
   for (let f = 0; f < k.geschosse; f++) {
     const y0 = startOf(f), h = geschossOf(f), y1 = y0 + h;
-    if (y1 - bezug > K.maxH + 1e-6) break;                       // höchstzulässige Gebäudehöhe
-    if (K.topAbsY != null && y1 > K.topAbsY + 1e-6) break;        // höchster Punkt absolut
+    const yA = y1 + s5Attika();                                   // Oberkante Attika/Brüstung
+    if (yA - bezug > K.maxH + 1e-6) break;                       // höchstzulässige Gebäudehöhe
+    if (K.topAbsY != null && yA > K.topAbsY + 1e-6) break;        // höchster Punkt absolut
     let fp = [k.fp];
     if (k.ruecksprung > 0 && f === k.geschosse - 1 && f > 0) fp = s5Offset(fp, -k.ruecksprung);
     if (k.terrasse && f > 0) {
@@ -18806,7 +18810,7 @@ function s5Geschosse(k, K) {
       const F = { ox: 0, oz: 0, ux: Math.cos(ang), uz: Math.sin(ang), vx: -Math.sin(ang), vz: Math.cos(ang) };
       fp = s5And(fp, [{ o: s5Rect(F, ext.u0 + d, ext.u1 + 1, ext.v0 - 1, ext.v1 + 1), h: [] }]);
     }
-    fp = s5Teile(s5And(fp, K.huelleBei(y1)), 8);
+    fp = s5Teile(s5And(fp, K.huelleBei(yA)), 8);
     if (!fp.length) break;
     out.push({ f, y0, h, regs: fp, flaeche: s5Area(fp) });
   }
@@ -18910,7 +18914,7 @@ function s5Auswerten(rez, K) {
   if (sockel.length) { s5AufSockelBeschneiden(koerper); s = summe(); }
   // Kennzahlen
   const alle = []; koerper.forEach(k => k._geschosse.forEach(g => alle.push(g)));
-  const hoehe = koerper.reduce((m, k) => { if (!k._geschosse.length) return m; const top = k._geschosse[k._geschosse.length - 1]; const b = k.aufSockel ? (k._sockelBasis || 0) : k._geschosse[0].y0; return Math.max(m, top.y0 + top.h - b); }, 0);
+  const hoehe = koerper.reduce((m, k) => { if (!k._geschosse.length) return m; const top = k._geschosse[k._geschosse.length - 1]; const b = k.aufSockel ? (k._sockelBasis || 0) : k._geschosse[0].y0; return Math.max(m, top.y0 + top.h + s5Attika() - b); }, 0);
   const geschosseMax = koerper.reduce((m, k) => Math.max(m, k._geschosse.length + (k.aufSockel ? 1 : 0)), 0);
   const huelle = alle.reduce((q, g) => q + s5Perim(g.regs) * g.h, 0) + koerper.reduce((q, k) => q + (k._geschosse.length ? k._geschosse[0].flaeche + k._geschosse[k._geschosse.length - 1].flaeche : 0), 0);
   const vol = alle.reduce((q, g) => q + g.flaeche * g.h, 0);
@@ -19059,9 +19063,9 @@ function s5Zeichne(K, ziel, markerGroup) {
     let y = y0, f = 0;
     while (f < 40) {
       const h = f === 0 ? S5.hEG : S5.hOG, top = y + h;
-      if (top - hoch > K.maxH + 1e-6) break;   // auch am höchsten Geländepunkt schon über der Höchsthöhe
-      if (K.topAbsY != null && top > K.topAbsY + 1e-6) break;
-      const regs = K.huelleBei(top); if (!regs.length) break;
+      if (top + s5Attika() - hoch > K.maxH + 1e-6) break;   // auch am höchsten Geländepunkt schon über der Höchsthöhe
+      if (K.topAbsY != null && top + s5Attika() > K.topAbsY + 1e-6) break;
+      const regs = K.huelleBei(top + s5Attika()); if (!regs.length) break;
       regs.forEach(r => markerGroup.add(s5Mesh(r, y, h, S5_FARBE.suchraum, { basic: true, opacity: schritt === 'flaeche' ? 0.10 : 0.05, kanten: true, kantenFarbe: S5_FARBE.suchraum, kantenDeckkraft: schritt === 'flaeche' ? 0.45 : 0.18 })));
       y = top; f++;
     }
@@ -33763,7 +33767,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.15';
+  const VERSION = 'v5.16';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34285,6 +34289,8 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       <div class="mp-sec">Geschoßhöhen</div>
       ${regler('s5-heg', 'Erdgeschoß', S5.hEG, 2.6, 6, 0.1, 'm', 2)}
       ${regler('s5-hog', 'Obergeschoße', S5.hOG, 2.6, 5, 0.1, 'm', 2)}
+      ${regler('s5-attika', 'Attika / Brüstung über dem Dach', s5Attika(), 0, 1.5, 0.05, 'm', 2)}
+      <div class="s5-info">Zählt beim Abstand nach § 6 TBO und bei der Gebäudehöhe mit — sie gehört zur Außenhaut. Flachdach mit Attika meist 0,3–0,5 m, Dachterrasse mit Geländer 1,0 m.</div>
       <div class="mp-sec">Typische Bautiefe</div>
       ${regler('s5-tiefe', 'Bautiefe für Riegel & Flügel', S5.tiefe, 8, 24, 0.5, 'm', 1)}
       <div class="s5-info">Diese Werte gelten für alle neu erzeugten Varianten. Für ${esc(N.kurz)} sind ${fmtNum(N.tiefe, 1)} m Bautiefe üblich.</div>
@@ -34294,7 +34300,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       renderNutzung(); neu();
     }));
     bindRegler(host, r => {
-      if (r.id === 's5-heg') S5.hEG = +r.value; if (r.id === 's5-hog') S5.hOG = +r.value; if (r.id === 's5-tiefe') S5.tiefe = +r.value;
+      if (r.id === 's5-heg') S5.hEG = +r.value; if (r.id === 's5-hog') S5.hOG = +r.value; if (r.id === 's5-tiefe') S5.tiefe = +r.value; if (r.id === 's5-attika') S5.attika = +r.value;
       if (r.id !== 's5-tiefe') neuZeichnenBald();
     });
     weiterKnopf(host);
