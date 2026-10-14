@@ -13806,97 +13806,8 @@ function dgmFineAt(d, x, z) {
 // leicht andere Abstände und der Baukörper kleine Stufen, die es an einer durchgehenden
 // Grenze nicht gibt. Der Abstand ist damit je Seite gleich (und nie kleiner als je Kante).
 var sideMinTerrainCache = { key: null, vals: null };
-function edgeSideMinTerrain(heightFn, i) {
-  const n = parcelPoints.length;
-  const key = parcelPoints.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(';') + '|' + (dgmActive() ? terrainDgm.ref : 'flat') + '|' + document.getElementById('slope').value + '|' + document.getElementById('aspect').value + '|' + document.getElementById('z-offset').value;
-  if (sideMinTerrainCache.key !== key) {
-    const dir = k => { const a = parcelPoints[k % n], b = parcelPoints[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; };
-    const straight = k => { const u = dir(k - 1 + n), v = dir(k); return (u[0] * v[0] + u[1] * v[1]) > Math.cos(15 * Math.PI / 180); };
-    // Seiten-Nummer je Kante (zyklisch)
-    const side = new Array(n).fill(-1); let sid = 0;
-    let start = 0; for (let k = 0; k < n; k++) if (!straight(k)) { start = k; break; }
-    for (let k = 0; k < n; k++) { const e = (start + k) % n; if (k > 0 && !straight(e)) sid++; side[e] = sid; }
-    const mins = {};
-    for (let k = 0; k < n; k++) { const m = edgeMinTerrain(heightFn, parcelPoints[k], parcelPoints[(k + 1) % n]); mins[side[k]] = Math.min(mins[side[k]] == null ? Infinity : mins[side[k]], m); }
-    sideMinTerrainCache = { key, vals: side.map(sd => mins[sd]) };
-  }
-  return sideMinTerrainCache.vals[i];
-}
 // Seitennummer je Kante (mehrere fast gerade Kanten gehören zu EINER Seite)
 var parcelSeitenCache = { key: null, vals: null };
-function parcelSeiten() {
-  const n = parcelPoints.length;
-  const key = parcelPoints.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(';');
-  if (parcelSeitenCache.key !== key) {
-    const dir = k => { const a = parcelPoints[k % n], b = parcelPoints[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; };
-    const gerade = k => { const u = dir(k - 1 + n), v = dir(k); return (u[0] * v[0] + u[1] * v[1]) > Math.cos(15 * Math.PI / 180); };
-    const side = new Array(n).fill(-1); let sid = 0;
-    let start = 0; for (let k = 0; k < n; k++) if (!gerade(k)) { start = k; break; }
-    for (let k = 0; k < n; k++) { const e = (start + k) % n; if (k > 0 && !gerade(e)) sid++; side[e] = sid; }
-    parcelSeitenCache = { key, vals: side };
-  }
-  return parcelSeitenCache.vals;
-}
-// ---- Lichtabstand: Bezugshöhe an der Wand, nicht an der Grenze ----------------------
-// Vorgabe Ozan 14.10.2026 (Skizze): Maßgeblich ist das URGELÄNDE an der Stelle, an der die
-// Außenwand steht. Diese Höhe wird waagrecht auf die Grundgrenze gezogen; von dort steigt
-// die Lichtabstandslinie mit dem Faktor an. Entspricht § 6 TBO 2022 — gemessen wird der
-// lotrechte Abstand zwischen dem betreffenden Punkt und dem Geländeniveau DARUNTER.
-//
-// Weil die Lage der Wand selbst vom Abstand abhängt, wird der Abstand eingependelt. Die
-// Abbildung ist eine Kontraktion, solange Faktor × Hangneigung < 1 — bei 0,6 und 40 % Hang
-// also 0,24; drei bis fünf Durchgänge genügen.
-// Kanten einer geraden Seite bekommen denselben (ungünstigsten, also tiefsten) Wert, damit
-// an einer durchgehenden Grenze keine Stufen entstehen.
-function lichtBezugAlle(heightFn, topY, reqOf) {
-  const n = parcelPoints.length, sg = signedArea(parcelPoints) >= 0 ? 1 : -1;
-  const roh = [];
-  for (let i = 0; i < n; i++) {
-    const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
-    const dx = p2[0] - p1[0], dy = p2[1] - p1[1], L = Math.hypot(dx, dy) || 1;
-    const nx = -dy / L * sg, ny = dx / L * sg;                       // nach innen
-    const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
-    // Gelände an der Wand: drei Stellen längs der Kante, die tiefste zählt
-    const hAn = d => {
-      let m = Infinity;
-      [0.15, 0.5, 0.85].forEach(t => {
-        const x = p1[0] + dx * t + nx * d, z = p1[1] + dy * t + ny * d;
-        m = Math.min(m, heightFn(x, z));
-      });
-      return m;
-    };
-    let d = Math.max(0, req.setback), H = hAn(d);
-    if (req.factor > 0.001) {
-      for (let k = 0; k < 6; k++) {
-        H = hAn(d);
-        const neu = Math.max(req.setback, (topY - H) * req.factor);
-        if (Math.abs(neu - d) < 0.02) { d = neu; break; }
-        d = d + (neu - d) * 0.7;
-      }
-      H = hAn(d);
-    }
-    roh.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
-  }
-  // je Seite den ungünstigsten Wert übernehmen
-  const side = parcelSeiten(), tief = {};
-  for (let i = 0; i < n; i++) tief[side[i]] = Math.min(tief[side[i]] == null ? Infinity : tief[side[i]], roh[i].H);
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % n];
-    const req = reqOf(p1, p2, i) || { setback: 0, factor: 0 };
-    const H = tief[side[i]];
-    out.push({ H, d: Math.max(req.setback, req.factor > 0.001 ? (topY - H) * req.factor : 0) });
-  }
-  return out;
-}
-function edgeMinTerrain(heightFn, p1, p2) {
-  let m = Math.min(heightFn(p1[0], p1[1]),
-    heightFn(p2[0], p2[1]));
-  if (!dgmActive()) return m;
-  const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), n = Math.min(200, Math.ceil(len / 1));
-  for (let k = 1; k < n; k++) { const t = k / n; m = Math.min(m, heightFn(p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)); }
-  return m;
-}
 // Dreiecksnetz feiner unterteilen, damit bodennahe Flächen dem Gelände folgen und
 // nicht als große ebene Dreiecke hindurchschneiden (nur bei echtem Gelände)
 function dgmRefineShapeGeo(geo, maxEdge) {
@@ -18545,17 +18456,72 @@ function s5Kontext(o) {
   const schutz = s5SchutzRegionen(heightFn);
   const flaeche = s5Minus(nachAbstand, schutz.regs).filter(r => s5RegArea(r) >= 12);
   const base = flaeche.length ? Math.min(...flaeche.map(r => s5Tiefster(heightFn, r.o))) : s5Tiefster(heightFn, parcelPoints);
-  // Bezugshöhe des Lichtabstands je Seite — wie bisher aus dem Urgelände an der Wand
-  let bezug = null;
-  try { bezug = lichtBezugAlle(heightFn, base + S5.hEG, edgeReq); } catch (e) { bezug = null; }
-  const bezugH = i => (bezug && bezug[i] ? bezug[i].H : edgeSideMinTerrain(heightFn, i));
+  // ── Lichtabstand nach § 6 Abs. 1 TBO 2022 ─────────────────────────────────────────────
+  // „Jeder Punkt auf der Außenhaut“ braucht zu den Grenzen einen waagrechten Abstand vom
+  // Faktor-fachen „des lotrechten Abstands zwischen dem betreffenden Punkt und dem
+  // Geländeniveau darunter“ (Urgelände), mindestens den Mindestabstand.
+  // Daher je Stelle der Grenze eigens: dort, wo die Wand stehen würde, das Urgelände nehmen
+  // (H), den Abstand d = max(Mindestabstand, Faktor × (Wandoberkante − H)) einpendeln.
+  // Jede Kante wird um ihren — entlang der Kante veränderlichen — Abstand nach innen versetzt
+  // (Kantenversatz, scharfe Ecken). Am Hang wird die Grenze dadurch zur geneigten Linie
+  // statt zu einem einzigen Wert je Seite.
+  const sgP = signedArea(parcelPoints) >= 0 ? 1 : -1;
+  const kanten = parcelPoints.map((p1, i) => {
+    const p2 = parcelPoints[(i + 1) % n], dx = p2[0] - p1[0], dz = p2[1] - p1[1], L = Math.hypot(dx, dz) || 1;
+    return { p1, p2, L, ux: dx / L, uz: dz / L, nx: -dz / L * sgP, nz: dx / L * sgP, req: edgeReq(p1, p2, i) };
+  });
+  // erforderlicher Abstand an einer Stelle q der Kante für die Wandoberkante Y
+  function abstandAn(e, q, Y) {
+    const s = Math.max(0, e.req.setback || 0), f = e.req.factor || 0;
+    if (f < 0.001) return { d: s, H: heightFn(q[0] + e.nx * s, q[1] + e.nz * s) };
+    let d = s, H = 0;
+    for (let k = 0; k < 8; k++) {
+      H = heightFn(q[0] + e.nx * d, q[1] + e.nz * d);
+      const neu = Math.max(s, (Y - H) * f);
+      if (Math.abs(neu - d) < 0.01) { d = neu; break; }
+      d += (neu - d) * 0.8;
+    }
+    H = heightFn(q[0] + e.nx * d, q[1] + e.nz * d);
+    return { d: Math.max(s, (Y - H) * f), H };
+  }
+  // Ecken: einspringende Ecke (Innenwinkel > 180°) → Streifen bis zum Gehrungspunkt verlängern
+  const knick = parcelPoints.map((_, i) => {   // an der Ecke am Ende von Kante i
+    const a = kanten[i], b = kanten[(i + 1) % n];
+    const cr = (a.ux * b.uz - a.uz * b.ux) * sgP, dt = Math.max(-1, Math.min(1, a.ux * b.ux + a.uz * b.uz));
+    return cr < -1e-6 ? Math.tan(Math.acos(dt) / 2) : 0;   // tan(halber Knickwinkel), 0 = ausspringende Ecke
+  });
+  const flaecheGrund = s5Regs([parcelPoints.map(p => p.slice())]);
+  const plan = typeof planLinesOf === 'function' ? planLinesOf(parcelPoints) : [];
+  function streifen(Y) {
+    const baender = [];
+    kanten.forEach((e, i) => {
+      const ns = Math.max(1, Math.ceil(e.L / 1.0)), innen = [], aussen = [];
+      for (let k = 0; k <= ns; k++) {
+        const t = k / ns, q = [e.p1[0] + (e.p2[0] - e.p1[0]) * t, e.p1[1] + (e.p2[1] - e.p1[1]) * t];
+        const { d } = abstandAn(e, q, Y);
+        aussen.push([q[0] - e.nx * 0.05, q[1] - e.nz * 0.05]);
+        innen.push([q[0] + e.nx * d, q[1] + e.nz * d]);
+      }
+      // Verlängerung an einspringenden Ecken (Gehrung, begrenzt wie beim Kantenversatz)
+      const dA = Math.hypot(innen[0][0] - e.p1[0], innen[0][1] - e.p1[1]), dE = Math.hypot(innen[ns][0] - e.p2[0], innen[ns][1] - e.p2[1]);
+      const vA = Math.min(dA * 4, dA * knick[(i - 1 + n) % n]), vE = Math.min(dE * 4, dE * knick[i]);
+      if (vA > 0.001) { aussen.unshift([e.p1[0] - e.ux * vA - e.nx * 0.05, e.p1[1] - e.uz * vA - e.nz * 0.05]); innen.unshift([innen[0][0] - e.ux * vA, innen[0][1] - e.uz * vA]); }
+      if (vE > 0.001) { aussen.push([e.p2[0] + e.ux * vE - e.nx * 0.05, e.p2[1] + e.uz * vE - e.nz * 0.05]); innen.push([innen[innen.length - 1][0] + e.ux * vE, innen[innen.length - 1][1] + e.uz * vE]); }
+      baender.push({ o: s5Norm(aussen.concat(innen.slice().reverse())), h: [] });
+    });
+    let regs = s5Minus(flaecheGrund, s5Union(baender));
+    if (plan && plan.length && typeof clipByPlanLines === 'function') regs = s5Regs(regs.map(r => clipByPlanLines(r.o, plan)).filter(o => o && o.length >= 3));
+    return regs;
+  }
+  // Bezugshöhe je Kante (Mitte, Wand auf Höhe des Erdgeschoßes) — für Linien, Schnitt, Anzeige
+  const bezugMitte = kanten.map(e => abstandAn(e, [(e.p1[0] + e.p2[0]) / 2, (e.p1[1] + e.p2[1]) / 2], base + S5.hEG).H);
+  const bezugH = i => bezugMitte[i];
   const cache = new Map();
   // Suchraum: zulässiger Umriss für eine Wand-Oberkante auf absoluter Höhe Y
   function huelleBei(Y) {
     const k = Math.round(Y * 20) / 20;
     if (cache.has(k)) return cache.get(k);
-    const dist = parcelPoints.map((p1, i) => { const r = edgeReq(p1, parcelPoints[(i + 1) % n], i); return Math.max(r.setback, (k - bezugH(i)) * r.factor); });
-    let regs = s5Regs([offsetPolygonVariable(parcelPoints, dist)]);
+    let regs = streifen(k);
     regs = s5Minus(regs, schutz.regs);
     cache.set(k, regs);
     if (cache.size > 400) cache.delete(cache.keys().next().value);
@@ -19124,6 +19090,30 @@ function s5Zeichne(K, ziel, markerGroup) {
 var s5Umgebung = { key: null, obj: null, grp: null };
 const s5ObjNr = new WeakMap(); let s5ObjZ = 0;
 function s5Nr(o) { if (!o || typeof o !== 'object') return 0; if (!s5ObjNr.has(o)) s5ObjNr.set(o, ++s5ObjZ); return s5ObjNr.get(o); }
+// Pläne 2D (Grundriss, Draufsicht, Ansicht, Schnitt) aus der gewählten Variante: je Geschoß-
+// ebene die Umrisse; die Zeichenroutinen der Projektmappe lesen livePlanFloors und liveVizArgs
+let s5PlanKey = '';
+function s5PlanDaten(e) {
+  const floors = [], viz = [];
+  if (e && e.koerper) {
+    const alle = [];
+    e.koerper.forEach((k, ki) => (k._geschosse || []).forEach((g, gi) => alle.push({ k, ki, g, gi })));
+    const ebenen = [...new Set(alle.map(x => Math.round(x.g.y0 * 100) / 100))].sort((a, b) => a - b);
+    alle.forEach(({ k, ki, g, gi }) => {
+      const f = ebenen.indexOf(Math.round(g.y0 * 100) / 100), oben = (k._geschosse || [])[gi + 1];
+      (g.regs || []).forEach(r => {
+        if (!r || !r.o || r.o.length < 3) return;
+        const ring = r.o.map(p => [p[0], p[1]]); ring.holes = (r.h || []).map(h => h.map(p => [p[0], p[1]]));
+        (floors[f] = floors[f] || []).push({ fp: ring, units: [], core: null, terraces: null, balconies: [] });
+        viz.push({ fp: ring, baseY: g.y0, floorH: g.h, f, pieceIdx: ki, top: !oben, upperFp: oben && oben.regs && oben.regs[0] ? oben.regs[0].o : null });
+      });
+    });
+    for (let f = 0; f < ebenen.length; f++) floors[f] = floors[f] || [];
+  }
+  const key = JSON.stringify(viz.map(a => [a.f, a.baseY, a.floorH, a.fp.length, a.fp[0]]));
+  livePlanFloors = floors; liveVizArgs = viz; liveUgPlans = []; liveErschl = [];
+  if (key !== s5PlanKey) { s5PlanKey = key; planDataStamp++; }
+}
 function rebuild() {
   try { if (typeof neuZeichnen === 'function') neuZeichnen(500, 'rebuild'); } catch (e) {}
   if (s5Umgebung.obj && s5Umgebung.obj.parent) s5Umgebung.obj.parent.remove(s5Umgebung.obj);   // vor dem Aufräumen retten
@@ -19187,6 +19177,7 @@ function rebuild() {
   if (S5.aktiv && !erg[S5.aktiv]) S5.aktiv = null;
   s5Live = { K, erg };
   const terrainHoleFps = s5Zeichne(K, buildingGroup, markerGroup);
+  s5PlanDaten(s5AktiveVariante() && erg[S5.aktiv]);
 
   // ---- Maße ----
   const akt = s5AktiveVariante() && erg[S5.aktiv];
@@ -19299,8 +19290,7 @@ function rebuild() {
   document.getElementById('compass-widget').style.display = document.getElementById('toggle-compass').checked ? 'block' : 'none';
 
   // ---- Kennzahlen für die übrigen Programmteile (Übersicht, Projektliste) ----
-  livePlanFloors = []; liveUgPlans = []; liveErschl = []; planDataStamp++;
-  liveVizArgs = []; liveUg = { count: 0, height: 0 };
+  liveUg = { count: 0, height: 0 };   // Plandaten setzt s5PlanDaten()
   const z = akt ? akt.z : null;
   liveMetrics = {
     bgf: z ? z.bgf : 0, ugArea: 0, stalls: 0, stallsRequired: null, units: null, unitArea: 0,
@@ -33665,7 +33655,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.13';
+  const VERSION = 'v5.14';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -36143,14 +36133,8 @@ function s5ModellMesh(v, basis) {
   const $ = id => document.getElementById(id);
   const css = document.createElement('style');
   css.textContent = `
-    #topbar-check, #topbar-expose, #mobile-check-btn, #wg-add, #toggle-2d, #panel-2d,
-    [data-m="2d"], #rp-check, #rp-econ, #rp-toggle-m, #econ-open-dash, #m-dash, #m-stats { display: none !important; }
-    [data-m="3d"] { pointer-events: none; }`;
+    #topbar-check, #topbar-expose, #mobile-check-btn, #wg-add, #rp-check, #rp-econ, #rp-toggle-m, #econ-open-dash, #m-dash, #m-stats { display: none !important; }`;
   document.head.appendChild(css);
-  const zu2d = () => { const p = $('panel-2d'); if (p && p.classList.contains('open')) { const t = $('toggle-2d'); if (t) t.click(); } };
-  setTimeout(zu2d, 300); setInterval(zu2d, 1500);
-  // die Kopfleiste zeigt nur noch die 3D-Ansicht: Umschalter ganz ausblenden
-  setTimeout(() => { document.querySelectorAll('[data-m="3d"]').forEach(b => { const seg = b.parentElement; if (seg && seg.querySelector('[data-m="2d"]')) seg.style.display = 'none'; }); }, 400);
 })();
 
 </script>
