@@ -19113,28 +19113,6 @@ function s5Zeichne(K, ziel, markerGroup) {
   return holes;
 }
 
-// Grundstücksgrenzen der Nachbarn: klare Linien knapp über Gelände und Grundstücksflächen
-function s5Grenzen(heightFn) {
-  if (typeof neighbourData === 'undefined' || !neighbourData || !(neighbourData.items || []).length) return null;
-  if (typeof nbVisible === 'function' && !nbVisible()) return null;
-  // alle Grundstückskanten dezent: dünne dunkelgraue Linien knapp über Gelände und Grundstücksflächen
-  const mat = new THREE.LineBasicMaterial({ color: 0x2b2a27, transparent: true, opacity: 0.55, depthWrite: false });
-  const g = new THREE.Group();
-  neighbourData.items.forEach(o => {
-    if (!o || !o.ring || o.ring.length < 3) return;
-    let teile = [o.ring];
-    try { teile = aufAusschnitt(o.ring); } catch (e) {}
-    teile.forEach(r => {
-      if (!r || r.length < 3) return;
-      const pts = dgmDensify(r, true).map(p => new THREE.Vector3(p[0], heightFn(p[0], p[1]) + 0.1, p[1]));
-      pts.push(pts[0].clone());
-      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
-      l.renderOrder = 5; l.raycast = () => {};
-      g.add(l);
-    });
-  });
-  return g;
-}
 
 // =============================================================== Neuaufbau (v5) ======
 function rebuild() {
@@ -19220,7 +19198,6 @@ function rebuild() {
   { const sg = toSiteLayer(buildSiteGround(terrainFn, showViz)); if (sg) terrainMesh.add(sg); }
   { const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz)); if (nb) terrainMesh.add(nb); }
   { const pl = toSiteLayer(buildSitePlinth(heightFn, showViz)); if (pl) terrainMesh.add(pl); }
-  { const gg = toSiteLayer(s5Grenzen(heightFn)); if (gg) terrainMesh.add(gg); }   // Grundstücksgrenzen der Nachbarn immer sichtbar
   applyGroundGlass(showViz);
   window.__v2HeightFn = heightFn;
   { let px0 = Infinity, px1 = -Infinity, pz0 = Infinity, pz1 = -Infinity;
@@ -19237,12 +19214,24 @@ function rebuild() {
   { const tr = toSiteLayer(buildTreeLayer(terrainFn, showViz)); if (tr) terrainMesh.add(tr); }
   if (viewMode() === 'widmung') { const wd = toSiteLayer(buildWidmungDrape(heightFn)); if (wd) terrainMesh.add(wd); }
   applySceneMood(showViz);
+  // Darstellung wie das Massenmodell in v3.32: Flächen von Gelände, Nachbargrundstücken und
+  // Nachbarhäusern durchscheinend, die Grenzlinien darauf gut lesbar, keine Schatten am Boden
+  if (viewMode() !== 'widmung') terrainMesh.traverse(o => {
+    if (!(o.isMesh || o.isInstancedMesh) || !o.material) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    ms.forEach(m => { m.transparent = true; m.opacity = Math.min(m.opacity == null ? 1 : m.opacity, o === terrainMesh ? 0.34 : 0.13); m.depthWrite = false; m.needsUpdate = true; });
+    o.receiveShadow = false;
+  });
 
   // ---- Grundgrenze, Kanten, Baulinien, Mindestabstand ----
   const hellesThema = document.documentElement.getAttribute('data-theme') === 'light';
-  // eigene Grundgrenze: die Katasterlinie selbst kräftig in Orange — kein zusätzliches Band (Vorgabe Ozan, 14.10.2026)
+  // eigene Grundgrenze wie im Massenmodell (v3.32): nur die Katasterlinie, fein in Orange
   parcelLine = new THREE.Group();
-  parcelPoints.forEach((p1, i) => { try { const rb = buildEdgeHighlightRibbon(p1, parcelPoints[(i + 1) % parcelPoints.length], heightFn, 0.22, 0xe98f45); rb.renderOrder = 6; rb.raycast = () => {}; if (rb.material) { rb.material.depthWrite = false; rb.material.depthTest = true; } parcelLine.add(rb); } catch (e) {} });
+  { const pk = [], d = dgmDensify(parcelPoints, true);
+    for (let i = 0; i < d.length; i++) { const q = d[i], r = d[(i + 1) % d.length]; pk.push(q[0], heightFn(q[0], q[1]) + 0.05, q[1], r[0], heightFn(r[0], r[1]) + 0.05, r[1]); }
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pk, 3));
+    const ls = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xe08a4a, transparent: true, opacity: 0.95, depthWrite: false }));
+    ls.renderOrder = 6; ls.raycast = () => {}; parcelLine.add(ls); }
   scene.add(parcelLine);
   scene.add(setbackLine);
   parcelPoints.forEach((p1, i) => { if (selectedParcelEdgeIdx === i) parcelLine.add(buildEdgeHighlightRibbon(p1, parcelPoints[(i + 1) % parcelPoints.length], heightFn, 0.5, 0xe98f6c)); });
@@ -19280,7 +19269,7 @@ function rebuild() {
     for (let i = 0; i < parcelPoints.length; i++) { const p1 = parcelPoints[i], p2 = parcelPoints[(i + 1) % parcelPoints.length], len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]); if (len > bestLen) { bestLen = len; bestI = i; } }
     const gp1 = parcelPoints[bestI], gp2 = parcelPoints[(bestI + 1) % parcelPoints.length], gmid = [(gp1[0] + gp2[0]) / 2, (gp1[1] + gp2[1]) / 2];
     const gl = makeTextSprite('Grundgrenze', '#b5afa5', 0.6, { leicht: true, deckkraft: 0.9 });
-    gl.position.set(gmid[0], heightFn(gmid[0], gmid[1]) + 0.6, gmid[1]); parcelLine.add(gl); }
+    gl.position.set(gmid[0], heightFn(gmid[0], gmid[1]) + 0.6, gmid[1]); void gl; }
 
   scene.add(buildingGroup); scene.add(markerGroup); scene.add(dimensionGroup); scene.add(floorLineGroup);
   lightLineGroup.visible = document.getElementById('toggle-lightlines').checked;
@@ -33647,7 +33636,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.06';
+  const VERSION = 'v5.07';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34074,6 +34063,8 @@ function sprSetzen(code, still) {
 .b-liste { max-height: 420px; }
 body.s5-band-an .tb-m-l { max-width: none !important; }
 .b-pop { background: var(--panel-solid, var(--panel)) !important; }
+
+.s5-import { width: 100%; margin: 4px 0 2px; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34344,10 +34335,15 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         ${v.typ === 'frei' ? `<button type="button" class="viz-btn s5-zeichnen">Baukörper zeichnen und bearbeiten</button>` : ''}
         <div class="s5-akt-knoepfe"><button type="button" data-a="frei">Frei weiterbearbeiten</button><button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
     }
+    h += `<button type="button" class="viz-btn s5-import">Baukörper importieren · IFC, DXF, OBJ</button>`;
     h += `<div class="mp-sec">Typologie einzeln hinzufügen</div>` + S5_FAMILIEN.map(fm => `<div class="s5-fam"><span>${esc(fm.name)}</span><div>${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" class="s5-typ" data-t="${t}" title="${esc(S5_TYPEN[t].text)}">${ico(t, 20)}<em>${esc(S5_TYPEN[t].kurz)}</em></button>`).join('')}</div></div>`).join('');
     h += `<button type="button" class="viz-btn primary s5-weiter" data-zu="menu-vergleich">Weiter zum Vergleich</button>`;
     host.innerHTML = h;
     host.querySelector('.s5-erzeugen').addEventListener('click', variantenErzeugen);
+    host.querySelector('.s5-import').addEventListener('click', () => {
+      const nv = s5NeueVariante('frei', L, false); nv.eigen = true; nv.name = 'Import'; S5.aktiv = nv.id; rebuild();
+      (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: nv, importStart: true });
+    });
     $('s5-dichte').addEventListener('change', ev => { S5.dichteEinhalten = ev.target.checked; neu(); });
     host.querySelectorAll('.s5-karte').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); }));
     host.querySelectorAll('.s5-typ').forEach(b => b.addEventListener('click', () => {
@@ -34908,7 +34904,8 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/>',
     redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/>',
     fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>'
+    plus: '<path d="M12 5v14M5 12h14"/>', minus: '<path d="M5 12h14"/>',
+    import: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/>'
   };
   const ico = (k, s) => `<svg width="${s || 18}" height="${s || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICO[k]}</svg>`;
 
@@ -34969,6 +34966,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
           <button type="button" data-a="undo" title="Rückgängig (Strg+Z)">${ico('undo')}</button><button type="button" data-a="redo" title="Wiederholen (Strg+Y)">${ico('redo')}</button>
           <span class="cad-sep"></span>
           <button type="button" data-a="zin" title="Vergrößern">${ico('plus')}</button><button type="button" data-a="zout" title="Verkleinern">${ico('minus')}</button><button type="button" data-a="fit" title="Einpassen (F)">${ico('fit')}</button>
+          ${modus === 'frei' ? `<span class="cad-sep"></span><button type="button" data-a="imp" title="Baukörper importieren (IFC, DXF, OBJ)">${ico('import')}</button><input type="file" class="cad-datei" accept=".ifc,.dxf,.obj,.dwg" hidden>` : ''}
         </div>
         <div class="cad-flaeche"><svg class="cad-svg" preserveAspectRatio="xMidYMid meet"></svg><div class="cad-nord">N</div><div class="cad-tip"></div></div>
         <div class="cad-panel"></div>
@@ -35375,6 +35373,23 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     ov.querySelector('[data-a=zout]').addEventListener('click', () => zoom(1.3));
     ov.querySelector('[data-a=fit]').addEventListener('click', () => { einpassen(); zeichne(); });
     ov.querySelector('[data-a=abbr]').addEventListener('click', zu);
+    // ---- Import aus Archicad & Co. ----
+    const datei = ov.querySelector('.cad-datei');
+    if (datei) {
+      ov.querySelector('[data-a=imp]').addEventListener('click', () => datei.click());
+      datei.addEventListener('change', async () => {
+        const f = datei.files && datei.files[0]; datei.value = ''; if (!f) return;
+        tip.textContent = 'Datei wird gelesen …';
+        try {
+          const r = await window.s5Importieren(f, t => { tip.textContent = t; });
+          merke(); koerper.push(...r.koerper); sel = new Set(r.koerper.map(k => k.id)); werkzeug = 'waehlen';
+          einpassen(); alles();
+          if (v && /^(Import|Freie Variante|.* — frei)$/.test(v.name)) v.name = 'Import · ' + r.name.replace(/\.[^.]+$/, '');
+          appToast(r.koerper.length + (r.koerper.length === 1 ? ' Baukörper' : ' Baukörper') + ' aus „' + r.name + '“ übernommen (Einheit ' + r.info.einheit + '). Jetzt verschieben und drehen, bis die Lage passt.');
+        } catch (e) { console.warn('Import', e); tip.textContent = ''; appToast(e.message || 'Import fehlgeschlagen.'); }
+      });
+      if (opt.importStart) setTimeout(() => datei.click(), 0);
+    }
     ov.querySelector('[data-a=ok]').addEventListener('click', () => {
       if (modus === 'frei') { v.p.koerper = koerper; v.eigen = true; zu(); rebuild(); pushHistory(); return; }
       if (modus === 'zone' && poly.length >= 3) { schliessen(); return; }
@@ -35391,6 +35406,228 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
   window.s5Cad = s5Cad;
   // das bisherige Zeichenfenster durch das CAD-Fenster ersetzen
   window.s5Zeichenfenster = s5Cad;
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════════════
+//  cubarc v5 — Baukörper importieren (IFC aus Archicad/Revit, DXF/DWG-Export, OBJ)
+//  Aus jedem Modell wird ein Weißmodell aus prismatischen Baukörpern: von oben gesehen
+//  zählt je Stelle die höchste Oberkante (Dächer, oberste Decken). Innenliegende Decken
+//  verschwinden dadurch von selbst. Das Ergebnis landet als freie Variante im
+//  Zeichenfenster und kann dort verschoben, gedreht und angepasst werden.
+// ═════════════════════════════════════════════════════════════════════════════════════
+(() => {
+  'use strict';
+  const IFC_VERSION = '0.0.66';
+  const IFC_CDN = 'https://cdn.jsdelivr.net/npm/web-ifc@' + IFC_VERSION + '/';
+
+  // ---------------------------------------------------------------- Dreiecke → Körper ----
+  // tris: Liste [[x,y,z],[x,y,z],[x,y,z]] mit z = oben, x/y = Grundriss (Norden = +y)
+  function ausDreiecken(tris, opt) {
+    opt = opt || {};
+    if (!tris.length) return [];
+    let zMin = Infinity;
+    tris.forEach(t => t.forEach(p => { if (p[2] < zMin) zMin = p[2]; }));
+    // nach oben zeigende Flächen nach Höhe ihrer Oberkante sammeln
+    const gruppen = new Map(), raster = 0.25;
+    tris.forEach(([a, b, c]) => {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, L = Math.hypot(nx, ny, nz);
+      if (L < 1e-9) return;
+      if (Math.abs(nz / L) < 0.3) return;                      // Wände: senkrecht, zählen nicht
+      const flaeche = Math.abs(nz) / 2; if (flaeche < 0.005) return;
+      const top = Math.max(a[2], b[2], c[2]) - zMin;
+      if (top < 0.5) return;                                   // Bodenplatten, Gelände
+      const k = Math.round(top / raster) * raster;
+      if (!gruppen.has(k)) gruppen.set(k, []);
+      // Grundriss: x bleibt, Norden (+y) wird zu −z im Modell
+      gruppen.get(k).push([[a[0], -a[1]], [b[0], -b[1]], [c[0], -c[1]]]);
+    });
+    const hoehen = [...gruppen.keys()].sort((x, y) => y - x);
+    let belegt = [];
+    const koerper = [];
+    hoehen.forEach(h => {
+      // Dreiecke einer Höhe vereinigen (in Paketen, damit Clipper schnell bleibt)
+      const tr = gruppen.get(h).map(t => ({ o: s5Norm(t), h: [] })).filter(r => polygonArea(r.o) > 0.002);
+      let fl = [];
+      for (let i = 0; i < tr.length; i += 400) fl = s5Union(fl.concat(tr.slice(i, i + 400)));
+      fl = s5Offset(s5Offset(fl, 0.02), -0.02);            // feine Fugen zwischen Dreiecken schließen
+      const frei = belegt.length ? s5Minus(fl, belegt) : fl;
+      frei.filter(r => s5RegArea(r) >= (opt.minFlaeche || 4)).forEach(r => {
+        // schmale Reste (Dachränder, Attiken) weglassen
+        if (typeof s5Schmal === 'function' && s5Schmal([r]) < 1.2) return;
+        koerper.push({ ring: r.o.map(p => [p[0], p[1]]), hoehe: h });
+      });
+      belegt = s5Union(belegt.concat(fl));
+    });
+    return koerper;
+  }
+
+  // ---------------------------------------------------------------- OBJ ------------------
+  function ladeOBJ(text, achse) {
+    const v = [], tris = [];
+    text.split(/\r?\n/).forEach(z => {
+      if (z.startsWith('v ')) { const p = z.trim().split(/\s+/); v.push([+p[1], +p[2], +p[3]]); }
+      else if (z.startsWith('f ')) {
+        const ids = z.trim().split(/\s+/).slice(1).map(s => { const i = parseInt(s.split('/')[0], 10); return i < 0 ? v.length + i : i - 1; });
+        for (let k = 1; k + 1 < ids.length; k++) tris.push([v[ids[0]], v[ids[k]], v[ids[k + 1]]]);
+      }
+    });
+    // Hochachse: OBJ ist üblicherweise Y-oben
+    const zUp = achse === 'z';
+    return tris.filter(t => t.every(Boolean)).map(t => t.map(p => zUp ? [p[0], p[1], p[2]] : [p[0], -p[2], p[1]]));
+  }
+
+  // ---------------------------------------------------------------- DXF ------------------
+  function ladeDXF(text) {
+    const z = text.split(/\r?\n/);
+    const paare = [];
+    for (let i = 0; i + 1 < z.length; i += 2) paare.push([parseInt(z[i].trim(), 10), z[i + 1].trim()]);
+    let einheit = null;
+    const bloecke = new Map();
+    const entities = [];
+    let i = 0, abschnitt = null, block = null;
+    const lies = () => {   // eine Entität bis zum nächsten Code 0 lesen
+      const typ = paare[i][1], d = { typ, c: [] }; i++;
+      while (i < paare.length && paare[i][0] !== 0) { d.c.push(paare[i]); i++; }
+      return d;
+    };
+    while (i < paare.length) {
+      const [c, w] = paare[i];
+      if (c === 0 && w === 'SECTION') { abschnitt = (paare[i + 1] || [])[1]; i += 2; continue; }
+      if (c === 0 && w === 'ENDSEC') { abschnitt = null; i++; continue; }
+      if (abschnitt === 'HEADER' && c === 9 && w === '$INSUNITS') { einheit = parseInt((paare[i + 1] || [])[1], 10); i += 2; continue; }
+      if (abschnitt === 'BLOCKS' && c === 0 && w === 'BLOCK') { const d = lies(); const n = (d.c.find(p => p[0] === 2) || [])[1]; block = { name: n, ents: [] }; bloecke.set(n, block); continue; }
+      if (abschnitt === 'BLOCKS' && c === 0 && w === 'ENDBLK') { block = null; lies(); continue; }
+      if (c === 0 && (abschnitt === 'ENTITIES' || (abschnitt === 'BLOCKS' && block))) {
+        const d = lies();
+        if (d.typ === 'POLYLINE') {   // mit VERTEX bis SEQEND
+          d.verts = [];
+          while (i < paare.length && paare[i][1] !== 'SEQEND') { const vv = lies(); if (vv.typ === 'VERTEX') d.verts.push(vv); }
+          if (i < paare.length) lies();
+        }
+        (abschnitt === 'ENTITIES' ? entities : block.ents).push(d);
+        continue;
+      }
+      i++;
+    }
+    const num = (d, code, def) => { const p = d.c.find(q => q[0] === code); return p ? parseFloat(p[1]) : def; };
+    const tris = [], polys = [];
+    function verarbeite(liste, T, tiefe) {
+      liste.forEach(d => {
+        if (d.typ === '3DFACE') {
+          const P = [0, 1, 2, 3].map(k => T([num(d, 10 + k, 0), num(d, 20 + k, 0), num(d, 30 + k, 0)]));
+          tris.push([P[0], P[1], P[2]]);
+          if (Math.hypot(P[3][0] - P[2][0], P[3][1] - P[2][1], P[3][2] - P[2][2]) > 1e-6) tris.push([P[0], P[2], P[3]]);
+        } else if (d.typ === 'LWPOLYLINE') {
+          const fl = num(d, 70, 0), elev = num(d, 38, 0), dicke = num(d, 39, 0), pts = [];
+          let x = null; d.c.forEach(([c, w]) => { if (c === 10) x = parseFloat(w); if (c === 20 && x != null) { pts.push(T([x, parseFloat(w), elev])); x = null; } });
+          if ((fl & 1 || (pts.length > 3 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-3)) && pts.length >= 3) polys.push({ pts, dicke: Math.abs(T([0, 0, dicke])[2] - T([0, 0, 0])[2]), layer: (d.c.find(p => p[0] === 8) || [])[1] });
+        } else if (d.typ === 'POLYLINE') {
+          const fl = num(d, 70, 0);
+          if (fl & 64) {   // Polyface-Netz
+            const vs = [], fs = [];
+            d.verts.forEach(vv => { const f = num(vv, 70, 0); if (f & 128 && !(f & 64)) fs.push([71, 72, 73, 74].map(k => Math.abs(num(vv, k, 0)))); else vs.push(T([num(vv, 10, 0), num(vv, 20, 0), num(vv, 30, 0)])); });
+            fs.forEach(f => { const ix = f.filter(n => n > 0).map(n => vs[n - 1]); for (let k = 1; k + 1 < ix.length; k++) if (ix[0] && ix[k] && ix[k + 1]) tris.push([ix[0], ix[k], ix[k + 1]]); });
+          } else if (fl & 1) {
+            const pts = d.verts.map(vv => T([num(vv, 10, 0), num(vv, 20, 0), num(vv, 30, 0)]));
+            if (pts.length >= 3) polys.push({ pts, dicke: Math.abs(num(d, 39, 0)), layer: (d.c.find(p => p[0] === 8) || [])[1] });
+          }
+        } else if (d.typ === 'INSERT' && tiefe < 6) {
+          const b = bloecke.get((d.c.find(p => p[0] === 2) || [])[1]); if (!b) return;
+          const ox = num(d, 10, 0), oy = num(d, 20, 0), oz = num(d, 30, 0), sx = num(d, 41, 1), sy = num(d, 42, 1), sz = num(d, 43, 1), w = num(d, 50, 0) * Math.PI / 180;
+          const cs = Math.cos(w), sn = Math.sin(w);
+          verarbeite(b.ents, p => T([ox + (p[0] * sx) * cs - (p[1] * sy) * sn, oy + (p[0] * sx) * sn + (p[1] * sy) * cs, oz + p[2] * sz]), tiefe + 1);
+        }
+      });
+    }
+    verarbeite(entities, p => p, 0);
+    return { tris, polys, einheit };
+  }
+
+  // ---------------------------------------------------------------- IFC (web-ifc) --------
+  let ifcApi = null;
+  async function ladeIFC(buf, status) {
+    status('IFC-Leser wird geladen …');
+    if (!ifcApi) {
+      const W = await import(IFC_CDN + 'web-ifc-api.js');
+      const api = new W.IfcAPI();
+      api.SetWasmPath(IFC_CDN, true);
+      await api.Init();
+      ifcApi = { api, W };
+    }
+    const { api, W } = ifcApi;
+    status('Modell wird gelesen …');
+    const id = api.OpenModel(new Uint8Array(buf), { COORDINATE_TO_ORIGIN: true });
+    const tris = [];
+    // nur Bauteile — kein Gelände (IfcSite), keine Räume, keine Möbel
+    const typen = ['IFCWALL', 'IFCWALLSTANDARDCASE', 'IFCSLAB', 'IFCROOF', 'IFCCURTAINWALL', 'IFCBUILDINGELEMENTPROXY', 'IFCCOLUMN', 'IFCBEAM', 'IFCPLATE', 'IFCMEMBER', 'IFCCOVERING', 'IFCSTAIR', 'IFCRAMP', 'IFCWINDOW', 'IFCDOOR', 'IFCRAILING', 'IFCFOOTING', 'IFCCHIMNEY', 'IFCSHADINGDEVICE'].map(t => W[t]).filter(x => x != null);
+    const nimm = mesh => {
+      const n = mesh.geometries.size();
+      for (let g = 0; g < n; g++) {
+        const pg = mesh.geometries.get(g), geo = api.GetGeometry(id, pg.geometryExpressID);
+        const v = api.GetVertexArray(geo.GetVertexData(), geo.GetVertexDataSize());
+        const ix = api.GetIndexArray(geo.GetIndexData(), geo.GetIndexDataSize());
+        const m = pg.flatTransformation;
+        const P = k => { const x = v[k * 6], y = v[k * 6 + 1], z = v[k * 6 + 2];
+          const X = m[0] * x + m[4] * y + m[8] * z + m[12], Y = m[1] * x + m[5] * y + m[9] * z + m[13], Z = m[2] * x + m[6] * y + m[10] * z + m[14];
+          return [X, -Z, Y]; };   // web-ifc liefert Y-oben → Grundriss x/−z, Höhe y
+        for (let t = 0; t + 2 < ix.length; t += 3) tris.push([P(ix[t]), P(ix[t + 1]), P(ix[t + 2])]);
+        if (geo.delete) geo.delete();
+      }
+    };
+    if (typen.length && api.StreamAllMeshesWithTypes) api.StreamAllMeshesWithTypes(id, typen, nimm);
+    else api.StreamAllMeshes(id, nimm);
+    api.CloseModel(id);
+    return tris;
+  }
+
+  // ---------------------------------------------------------------- Einheiten -------------
+  function massstab(punkte, einheit) {
+    if (einheit === 4) return 0.001; if (einheit === 5) return 0.01; if (einheit === 6) return 1;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    punkte.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+    const e = Math.max(x1 - x0, y1 - y0);
+    return e > 3000 ? 0.001 : e > 400 ? 0.01 : 1;   // mm, cm oder m
+  }
+
+  // ---------------------------------------------------------------- Hauptfunktion ---------
+  async function importieren(datei, status) {
+    const name = datei.name || 'Import', end = (name.split('.').pop() || '').toLowerCase();
+    status = status || (() => {});
+    let tris = [], polys = [], einheit = null;
+    if (end === 'ifc') tris = await ladeIFC(await datei.arrayBuffer(), status);
+    else if (end === 'obj') tris = ladeOBJ(await datei.text());
+    else if (end === 'dxf') { const r = ladeDXF(await datei.text()); tris = r.tris; polys = r.polys; einheit = r.einheit; }
+    else if (end === 'dwg') throw new Error('DWG ist ein geschlossenes Format. Bitte in Archicad oder AutoCAD als DXF oder besser als IFC speichern.');
+    else throw new Error('Dieses Format kennt cubarc noch nicht. Möglich sind IFC, DXF und OBJ.');
+    status('Baukörper werden erkannt …');
+    const alle = tris.length ? tris.flat() : polys.flatMap(p => p.pts);
+    if (!alle.length) throw new Error('In der Datei wurden keine Bauteile gefunden.');
+    const f = end === 'ifc' ? 1 : massstab(alle, einheit);
+    if (f !== 1) { tris = tris.map(t => t.map(p => [p[0] * f, p[1] * f, p[2] * f])); polys = polys.map(p => Object.assign({}, p, { pts: p.pts.map(q => [q[0] * f, q[1] * f, q[2] * f]), dicke: (p.dicke || 0) * f })); }
+    let koerper = [];
+    if (tris.length) koerper = ausDreiecken(tris);
+    if (!koerper.length && polys.length) {   // reine Grundrisse (2D): Höhe aus der Objekthöhe, sonst Standard
+      koerper = polys.filter(p => polygonArea(p.pts.map(q => [q[0], q[1]])) >= 4).map(p => ({ ring: s5Norm(p.pts.map(q => [q[0], -q[1]])), hoehe: p.dicke > 0.5 ? p.dicke : null }));
+    }
+    if (!koerper.length) throw new Error('Es konnten keine Baukörper erkannt werden.');
+    // auf die bebaubare Fläche setzen (Lage und Drehung bleiben, verschoben wird nur der Mittelpunkt)
+    const L = s5Live && s5Live.K;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    koerper.forEach(k => k.ring.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }));
+    const ziel = L && L.flaeche.length ? polygonCentroid(L.flaeche.slice().sort((a, b) => s5RegArea(b) - s5RegArea(a))[0].o) : polygonCentroid(parcelPoints);
+    const dx = ziel[0] - (x0 + x1) / 2, dz = ziel[1] - (z0 + z1) / 2;
+    const geschosseAus = h => h == null ? null : Math.max(1, Math.round((h - S5.hEG) / S5.hOG) + 1);
+    return {
+      name,
+      koerper: koerper.map((k, i) => ({ id: 'imp' + Date.now().toString(36) + i, ring: k.ring.map(p => [Math.round((p[0] + dx) * 1000) / 1000, Math.round((p[1] + dz) * 1000) / 1000]), geschosse: geschosseAus(k.hoehe) || 3, rolle: null, hoeheImport: k.hoehe })),
+      info: { dreiecke: tris.length, einheit: f === 0.001 ? 'mm' : f === 0.01 ? 'cm' : 'm', breite: (x1 - x0), tiefe: (z1 - z0) }
+    };
+  }
+  window.s5Importieren = importieren;
+  window.s5AusDreiecken = ausDreiecken;
+  window.s5LadeDXF = ladeDXF;
+  window.s5LadeOBJ = ladeOBJ;
 })();
 
 </script>
