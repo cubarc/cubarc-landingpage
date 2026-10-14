@@ -24907,34 +24907,45 @@ function vecPlanMarken(ctx, M, weltAt, sLo, sHi, yLo, yHi, gAt) {
       vecMarkeSenkrecht(ctx, M, s, yLo, yHi, MARK_GRENZE, 'Grundgrenze', i >= gs.length / 2, 0);
       // nach innen zeigt die Richtung, in der der Punkt im Grundstück liegt
       const eps = Math.max(0.05, (sHi - sLo) / 2000);
-      const innen = pointInPolygon(weltAt(s + eps), parcelPoints) ? 1 : -1;
+      const sMitte = gs.length ? (gs[0] + gs[gs.length - 1]) / 2 : s + eps;
+      void eps;
+      const innen = Math.abs(sMitte - s) > 0.01 ? Math.sign(sMitte - s) : (pointInPolygon(weltAt(s + eps), parcelPoints) ? 1 : -1);
       const y0 = (typeof gAt === 'function' ? gAt(s) : yLo) + 0.15;
       // Werte der getroffenen Kante — eine Kante mit eigenen Werten zählt ihre eigenen
       const ki = naechsteParcelKante(weltAt(s));
       const ee = (ki >= 0 && typeof edgeEff === 'function') ? edgeEff(ki) : null;
       const f = ee ? ee.factor : fG, ab = ee ? ee.setback : abG;
-      if (isFinite(ab) && ab > 0.05) {
-        vecMarkeSchraeg(ctx, M, [s, y0], [s + innen * ab, y0], grau,
-          'Mindestabstand ' + fmtNum(ab, 2) + ' m', 0.9, true);
+      // Außenwand im Schnitt: von der Grenze nach innen bis in ein Geschoß
+      const uf = typeof liveHeightFn === 'function' ? liveHeightFn : null;
+      let sW = null;
+      for (let d = 0; d <= 60; d += 0.02) {
+        const q = weltAt(s + innen * d);
+        if ((liveVizArgs || []).some(a => a.fp && fpContains(a.fp, q))) { sW = s + innen * d; break; }
       }
-      if (isFinite(f) && f > 0.001) {
-        // Die Linie beginnt auf der Bezugshöhe dieser Seite: das Urgelände dort, wo die
-        // Außenwand steht, waagrecht auf die Grundgrenze gezogen. (Vorgabe Ozan 14.10.2026)
-        // Außenwand im Schnitt suchen: von der Grenze nach innen bis in ein Geschoß
-        const uf = typeof liveHeightFn === 'function' ? liveHeightFn : null;
-        let sW = null;
-        for (let d = 0; d <= 60; d += 0.05) {
-          const q = weltAt(s + innen * d);
-          if ((liveVizArgs || []).some(a => a.fp && fpContains(a.fp, q))) { sW = s + innen * d; break; }
-        }
-        if (sW == null) sW = s + innen * Math.max(ab || 0, 0);
-        const qW = weltAt(sW);
-        const yRef = uf ? uf(qW[0], qW[1]) : (y0 - 0.15);
-        // Bezugshöhe an der Wand waagrecht bis zur Grundgrenze (fein gestrichelt)
-        try { vecMarkeSchraeg(ctx, M, [sW, yRef], [s, yRef], grau, '', 0.5, true); } catch (e) {}
-        const L = Math.min(Math.max(2, f * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
-        vecMarkeSchraeg(ctx, M, [s, yRef], [s + innen * L, yRef + L / f], grau,
-          'Höhenfaktor ' + fmtNum(f, 2), 0.9);
+      const qW = weltAt(sW != null ? sW : s + innen * Math.max(ab || 0, 0));
+      const yRef = uf ? uf(qW[0], qW[1]) : (y0 - 0.15);
+      // Wandhöhe an dieser Stelle: oberstes Geschoß über der Wand + Attika, mindestens die
+      // geplante Wandhöhe an dieser Kante (Geschoße + Brüstung)
+      let wTop = -Infinity;
+      if (sW != null) { const qi = weltAt(sW + innen * 0.1); (liveVizArgs || []).forEach(a => { if (a.fp && fpContains(a.fp, qi)) wTop = Math.max(wTop, a.baseY + a.floorH); }); }
+      const hWand = Math.max(isFinite(wTop) ? wTop + (typeof s5Attika === 'function' ? s5Attika() : 0) - yRef : 0, typeof s5WandKante === 'function' && ki >= 0 ? s5WandKante(ki) : 0);
+      const fx = isFinite(f) ? f : 0, sb = isFinite(ab) ? ab : 0, erf = Math.max(sb, fx * hWand);
+      if (sW != null) {
+        const dIst = Math.abs(sW - s), orange = '#f0bf7c', k2 = Object.assign({}, M, { pxPerM: M.k || M.pxPerM, ts: 0.9 });
+        let text;
+        if (Math.abs(dIst - sb) < 0.05 && fx * hWand <= sb + 0.01) text = 'Mindestabstand = ' + fmtNum(sb, 2) + ' m';
+        else if (Math.abs(dIst - erf) < 0.05) text = fmtNum(fx, 1) + ' × ' + fmtNum(hWand, 2) + ' m = ' + fmtNum(erf, 2) + ' m';
+        else text = fmtNum(dIst, 2) + ' m (' + (fx * hWand > sb ? fmtNum(fx, 1) + ' × ' + fmtNum(hWand, 2) + ' = ' + fmtNum(erf, 2) : 'mind. ' + fmtNum(sb, 2)) + ' m)';
+        const yM = Math.min(yRef, typeof gAt === 'function' ? Math.min(gAt(s), gAt(sW)) : yRef) - 0.9;
+        try { planMass(ctx, k2, [Math.min(s, sW), yM], [Math.max(s, sW), yM], 0, text, orange, true); } catch (e) {}
+      }
+      if (fx > 0.001) {
+        // Bezugshöhe: Urgelände an der Wand, waagrecht auf die Grundgrenze gezogen; von dort
+        // steigt die Linie mit 1 m Höhe je Faktor-Meter (Vorgabe Ozan 14.10.2026)
+        if (sW != null) { try { vecMarkeSchraeg(ctx, M, [sW, yRef], [s, yRef], grau, '', 0.5, true); } catch (e) {} }
+        const L = Math.min(Math.max(2, fx * (yHi - yRef)), Math.abs(sHi - sLo) * 0.6);
+        vecMarkeSchraeg(ctx, M, [s, yRef], [s + innen * L, yRef + L / fx], grau,
+          'Höhenfaktor ' + fmtNum(fx, 2), 0.9);
       }
     });
   } catch (e) { /* Marken sind nur Darstellung */ }
@@ -33878,7 +33889,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.22';
+  const VERSION = 'v5.23';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
