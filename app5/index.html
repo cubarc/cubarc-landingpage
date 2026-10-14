@@ -33620,7 +33620,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.02';
+  const VERSION = 'v5.03';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -33993,6 +33993,58 @@ function sprSetzen(code, still) {
 .cad-svg .cad-live { fill: var(--ink); font-family: var(--f-body); font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: var(--bg, #101114); stroke-width: 3.5px; pointer-events: none; }
 .cad-svg .cad-fang { fill: none; stroke: #6fe0a0; stroke-width: 1.6; pointer-events: none; }
 @media (max-width: 900px) { .cad-body { grid-template-columns: 46px 1fr; } .cad-panel { display: none; } }
+/* ===== Menüband oben (Desktop) ===== */
+#s5-band { display: none; }
+@media (min-width: 1025px) {
+  body.s5-band-an .sidebar { display: none !important; }
+  body.s5-band-an #s5-band { display: block; flex: 0 0 auto; background: var(--panel); border-bottom: 1px solid var(--line); position: relative; z-index: 30; }
+}
+.b-tabs { display: flex; align-items: center; gap: 4px; padding: 8px 16px 0; }
+.b-tab { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--muted); font: 500 13px var(--f-body); cursor: pointer; position: relative; }
+.b-tab i { font-style: normal; width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 600; background: var(--panel-hi-2, rgba(255,255,255,.08)); color: var(--muted); }
+.b-tab:hover { color: var(--ink); }
+.b-tab.on { color: var(--ink); font-weight: 600; background: var(--panel-hi, rgba(255,255,255,.04)); }
+.b-tab.on i { background: var(--accent); color: #1b1410; }
+.b-tab.on::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; border-radius: 2px; background: var(--accent); }
+.b-ctx { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; }
+.b-ctx b { color: var(--ink); font-weight: 600; }
+.b-ctx em { font-style: normal; color: var(--accent); }
+.b-tools { display: flex; align-items: center; gap: 6px; padding: 9px 16px 10px; background: var(--panel-hi, rgba(255,255,255,.04)); border-top: 1px solid var(--line); min-height: 56px; box-sizing: border-box; overflow-x: auto; scrollbar-width: none; }
+.b-tools::-webkit-scrollbar { display: none; }
+.b-btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 500 12.5px var(--f-body); cursor: pointer; white-space: nowrap; flex: 0 0 auto; transition: border-color .12s, background .12s, color .12s; }
+.b-btn svg { flex: 0 0 auto; color: var(--muted); }
+.b-btn:hover { border-color: var(--line-strong, var(--accent)); }
+.b-btn:hover svg { color: var(--ink); }
+.b-btn.on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); color: var(--ink); }
+.b-btn.on svg { color: var(--accent); }
+.b-btn.auf { border-color: var(--accent); color: var(--accent); }
+.b-btn.auf svg { color: var(--accent); }
+.b-btn.primary { background: linear-gradient(135deg, #f3c27f, #e98f6c); color: #1b1410; border: 0; font-weight: 600; }
+.b-btn.primary svg { color: #1b1410; }
+.b-btn.nur-icon { width: 36px; padding: 0; justify-content: center; }
+.b-btn:disabled { opacity: .4; cursor: default; }
+.b-btn .b-pf { opacity: .6; margin-left: -2px; }
+.b-sep { width: 1px; height: 24px; background: var(--line); margin: 0 6px; flex: 0 0 auto; }
+.b-chip { display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 10px; background: transparent; color: var(--muted); font-size: 12.5px; white-space: nowrap; flex: 0 0 auto; }
+.b-chip b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.b-chip .b-gross { font-size: 16px; color: var(--accent); }
+.b-pop { position: fixed; z-index: 8000; display: none; width: 340px; max-height: calc(100vh - 170px); overflow-y: auto; padding: 14px 16px 16px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 50px rgba(0,0,0,.4); }
+.b-pop.open { display: block; animation: bPopIn .14s ease; }
+@keyframes bPopIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.b-pop-h { font: 600 10.5px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.b-pop details > summary { display: none; }
+.b-pop details.b-geliehen { margin: 0; border: 0; padding: 0; background: transparent; }
+.b-pop .viz-btn.wide, .b-pop .wide { width: 100%; margin-top: 6px; }
+.b-typen { display: grid; gap: 6px; }
+.b-typen button { display: grid; grid-template-columns: 32px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 9px 10px; border: 1px solid var(--line); border-radius: 11px; background: transparent; color: var(--ink); cursor: pointer; }
+.b-typen button svg { grid-row: 1 / 3; color: var(--muted); }
+.b-typen button b { font-size: 13px; font-weight: 600; }
+.b-typen button span { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.b-typen button:hover { border-color: var(--accent); }
+.b-typen button:hover svg { color: var(--accent); }
+.b-liste { max-height: 420px; }
+body.s5-band-an .tb-m-l { max-width: none !important; }
+.b-pop { background: var(--panel-solid, var(--panel)) !important; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34097,6 +34149,7 @@ function sprSetzen(code, still) {
     host.querySelectorAll('.s5-weiter').forEach(b => b.addEventListener('click', () => oeffne(b.dataset.zu)));
   }
   function oeffne(menuId) {
+    if (window.s5BandAktiv && window.s5BandAktiv()) { const m = { 'menu-bebauung': 'grundstueck', 'menu-nutzung': 'nutzung', 'menu-flaeche': 'flaeche', 'menu-varianten': 'varianten', 'menu-vergleich': 'vergleich' }[menuId]; if (m) { schrittSetzen(m); return; } }
     const b = document.querySelector(`.side-btn[data-menu="${menuId}"]`);
     if (b && !$(menuId).classList.contains('open')) b.click();
   }
@@ -34507,11 +34560,13 @@ function sprSetzen(code, still) {
   s5Aenderung = () => {
     // Schritt merken, damit die Darstellung passt (Fläche betont in Schritt 3)
     renderNutzung(); renderFlaeche(); renderVarianten(); renderVergleich(); rechteSpalte();
+    try { bandNachRebuild(); } catch (e) { console.warn('Menüband', e); }
     const ov = $('s5-cmp'); if (ov && ov.classList.contains('open')) { /* neu zeichnen beim nächsten Öffnen */ }
   };
   // Welcher Schritt offen ist, bestimmt die Betonung im 3D-Modell
   const MENUE_SCHRITT = { 'menu-bebauung': 'grundstueck', 'menu-nutzung': 'nutzung', 'menu-flaeche': 'flaeche', 'menu-varianten': 'varianten', 'menu-vergleich': 'vergleich' };
   new MutationObserver(() => {
+    if (window.s5BandAktiv && window.s5BandAktiv()) return;   // am Desktop bestimmt das Menüband den Schritt
     const auf = Object.keys(MENUE_SCHRITT).find(id => $(id) && $(id).classList.contains('open')) || null;
     if (auf === offenes) return; offenes = auf;
     const s = auf ? MENUE_SCHRITT[auf] : 'varianten';
@@ -34525,6 +34580,262 @@ function sprSetzen(code, still) {
     S5.zeige = Object.assign(s5Default().zeige, S5.zeige || {});
     S5.tiris = Object.assign(s5Default().tiris, S5.tiris || {});
   };
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  //  Menüband oben (Desktop): fünf Schritte als Reiter, darunter die Werkzeuge des
+  //  Schritts als Knöpfe. Einstellungen öffnen sich als kleines Fenster unter dem Knopf
+  //  und schließen sich beim Klick ins Modell — das 3D-Modell bleibt immer frei.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  const BAND_ICO = {
+    laden: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+    grund: '<path d="M5 8.5L11 4l8.5 3.5L20 17l-8 3.5L4.5 16z"/>',
+    kanten: '<path d="M4 7l7-3.5 9 4-1.5 11L10 21l-6-5z"/><path d="M4 7l1 9" stroke-width="2.6"/>',
+    gelaende: '<path d="M3 18l5-7 4 4 3-4 6 7z"/><path d="M3 21h18"/>',
+    regel: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/>',
+    regler: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+    hoehe: '<path d="M4 20h16M7 20V8l5-4 5 4v12"/><path d="M9 12h6M9 16h6" opacity=".55"/>',
+    tiefe: '<rect x="4" y="8" width="16" height="8" rx="1"/><path d="M12 5v3M12 16v3M10 6l2-2 2 2M10 18l2 2 2-2"/>',
+    flaeche: '<path d="M4 8l8-4 8 4-8 4z"/><path d="M4 12.5l8 4 8-4" opacity=".55"/>',
+    liste: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/>',
+    gefahr: '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.5"/>',
+    streifen: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18" stroke-width="3" opacity=".6"/>',
+    baum: '<circle cx="12" cy="9" r="6"/><path d="M12 15v6"/>',
+    zeichnen: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>',
+    auge: '<path d="M1.8 12S5.4 5.5 12 5.5 22.2 12 22.2 12 18.6 18.5 12 18.5 1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/>',
+    suchraum: '<path d="M5 20V9l7-5 7 5v11z" stroke-dasharray="3 2"/>',
+    erzeugen: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
+    kopie: '<rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>',
+    stern: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+    weg: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
+    vergleich: '<path d="M4 19.5h16"/><path d="M6.5 16V9M11 16V5.5M15.5 16v-4M20 16v-7"/>',
+    zurueck: '<path d="M15 5l-7 7 7 7"/>', vor: '<path d="M9 5l7 7-7 7"/>',
+    dichte: '<path d="M4 20h16"/><rect x="6" y="10" width="4" height="10"/><rect x="14" y="6" width="4" height="14"/><path d="M3 5h18" stroke-dasharray="2 2"/>'
+  };
+  const bico = k => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${BAND_ICO[k] || ICON[k] || ''}</svg>`;
+  const SCHRITTE = [['grundstueck', 'Grundstück'], ['nutzung', 'Nutzung'], ['flaeche', 'Bebaubare Fläche'], ['varianten', 'Varianten'], ['vergleich', 'Vergleich']];
+  const desk = () => window.innerWidth >= 1025;
+  let band = null, pop = null, popAuf = null;   // popAuf: { key, btn, render }
+  const geparkt = new Map();                    // aus dem Grundstück-Fenster ausgeliehene Knoten
+
+  function bandAufbauen() {
+    if (band) return;
+    const shell = document.querySelector('.shell'), row = document.querySelector('.body-row');
+    if (!shell || !row) return;
+    band = document.createElement('div'); band.id = 's5-band';
+    band.innerHTML = `<div class="b-tabs">${SCHRITTE.map(([k, n], i) => `<button type="button" class="b-tab" data-s="${k}"><i>${i + 1}</i>${n}</button>`).join('')}<span class="b-ctx"></span></div><div class="b-tools"></div>`;
+    shell.insertBefore(band, row);
+    pop = document.createElement('div'); pop.id = 's5-pop'; pop.className = 'b-pop'; document.body.appendChild(pop);
+    band.querySelectorAll('.b-tab').forEach(b => b.addEventListener('click', () => schrittSetzen(b.dataset.s)));
+    document.addEventListener('pointerdown', e => {
+      if (!popAuf) return;
+      if (pop.contains(e.target) || (popAuf.btn && popAuf.btn.contains(e.target))) return;
+      // Auswahllisten der App (eigene Dropdowns) gehören noch zum Fenster
+      if (e.target.closest && e.target.closest('.csel, .cs-list, .bk-dd-auf')) return;
+      popZu();
+    }, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && popAuf) popZu(); });
+    window.addEventListener('resize', () => { document.body.classList.toggle('s5-band-an', desk()); if (popAuf) popLage(); });
+    document.body.classList.toggle('s5-band-an', desk());
+    window.s5BandAktiv = () => desk();
+  }
+  function schrittSetzen(s) {
+    popZu();
+    S5.schritt = s;
+    werkzeugeZeichnen();
+    if (firstRenderDone) rebuild();
+  }
+  // ---- Fenster unter dem Knopf ----
+  function popLage() {
+    if (!popAuf || !popAuf.btn) return;
+    const r = popAuf.btn.getBoundingClientRect(), w = pop.offsetWidth;
+    pop.style.left = Math.max(10, Math.min(window.innerWidth - w - 10, r.left)) + 'px';
+    pop.style.top = (band.getBoundingClientRect().bottom + 6) + 'px';
+  }
+  function popOeffnen(key, btn, render) {
+    if (popAuf && popAuf.key === key) { popZu(); return; }
+    popZu();
+    popAuf = { key, btn, render };
+    btn.classList.add('auf');
+    pop.innerHTML = ''; pop.classList.add('open');
+    render(pop);
+    popLage();
+  }
+  function popZu() {
+    if (!popAuf) return;
+    geparkt.forEach((g, node) => { if (g.platz.parentNode) g.platz.parentNode.insertBefore(node, g.platz); g.platz.remove(); if (g.details) node.open = g.warOffen; });
+    geparkt.clear();
+    if (popAuf.btn) popAuf.btn.classList.remove('auf');
+    popAuf = null; pop.classList.remove('open'); pop.innerHTML = '';
+  }
+  function popNeu() { if (!popAuf || popAuf.dom) return; pop.innerHTML = ''; popAuf.render(pop); popLage(); }
+  // Knoten aus dem Grundstück-Fenster leihen (Regler behalten ihre Funktion)
+  function leihe(host, node, titel) {
+    if (!node) return;
+    const platz = document.createComment('s5'); node.parentNode.insertBefore(platz, node);
+    const g = { platz, details: node.tagName === 'DETAILS', warOffen: node.open };
+    geparkt.set(node, g);
+    if (titel) { const h = document.createElement('div'); h.className = 'b-pop-h'; h.textContent = titel; host.appendChild(h); }
+    host.appendChild(node);
+    if (g.details) { node.open = true; node.classList.add('b-geliehen'); }
+    popAuf.dom = true;
+  }
+
+  // ---- Werkzeugleiste ----
+  function werkzeugeZeichnen() {
+    if (!band) return;
+    const L = K();
+    band.querySelectorAll('.b-tab').forEach(b => b.classList.toggle('on', b.dataset.s === S5.schritt));
+    const tl = band.querySelector('.b-tools'); tl.innerHTML = '';
+    const knopf = (txt, ic, fn, o) => {
+      o = o || {};
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = 'b-btn' + (o.primary ? ' primary' : '') + (o.on ? ' on' : '') + (o.pop ? ' hat-pop' : '') + (o.nurIcon ? ' nur-icon' : '');
+      b.innerHTML = (ic ? bico(ic) : '') + (o.nurIcon ? '' : `<span>${esc(txt)}</span>`) + (o.pop ? '<svg class="b-pf" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 10l5 5 5-5"/></svg>' : '');
+      if (o.nurIcon || o.title) b.title = o.title || txt;
+      if (o.aus) b.disabled = true;
+      if (o.pop) b.dataset.key = o.key || txt;
+      b.addEventListener('click', () => o.pop ? popOeffnen(o.key || txt, b, fn) : (popZu(), fn(b)));
+      tl.appendChild(b); return b;
+    };
+    const trenn = () => { const s = document.createElement('span'); s.className = 'b-sep'; tl.appendChild(s); };
+    const chip = (html) => { const s = document.createElement('span'); s.className = 'b-chip'; s.innerHTML = html; tl.appendChild(s); };
+    const ctx = band.querySelector('.b-ctx');
+    const va = s5AktiveVariante();
+    ctx.innerHTML = L ? `Grundstück <b>${f0(L.lotArea)} m²</b> · bebaubar <b>${f0(L.flaecheM2)} m²</b>${va ? ' · <em>' + esc(va.name) + '</em>' : ''}` : '';
+
+    const nachher = () => { if (popAuf) { const nb = tl.querySelector(`[data-key="${CSS.escape(popAuf.key)}"]`); if (nb) { popAuf.btn = nb; nb.classList.add('auf'); } else popZu(); } };
+    setTimeout(nachher, 0);
+    if (S5.schritt === 'grundstueck') {
+      knopf('Grundstück laden', 'laden', () => { const b = $('topbar-import'); if (b) b.click(); }, { primary: true });
+      const gs = $('gs-card');
+      if (gs) knopf('Übersicht', 'grund', host => leihe(host, gs), { pop: true, key: 'gs' });
+      knopf('Kanten & Baulinien', 'kanten', () => { const b = $('edge-editor-open'); if (b) b.click(); });
+      trenn();
+      const body = document.querySelector('#menu-bebauung .ms-body') || $('menu-bebauung');
+      const ICS = { 'Lage & Gelände': 'gelaende', 'Bauordnung': 'regel', 'Werte anpassen': 'regler' };
+      [...(body ? body.children : [])].filter(c => c.tagName === 'DETAILS').forEach(d => {
+        const t = ((d.querySelector('summary') || {}).textContent || '').trim().split('\n')[0].trim();
+        const name = Object.keys(ICS).find(k => t.startsWith(k)) || t.slice(0, 26);
+        knopf(name, ICS[name] || 'regler', host => leihe(host, d), { pop: true, key: 'gs-' + name });
+      });
+      if (L) chip(`${f0(L.lotArea)} m² · ${esc(L.regel.lang || 'Bauordnung')}`);
+    }
+    if (S5.schritt === 'nutzung') {
+      Object.keys(S5_NUTZUNG).forEach(k => knopf(S5_NUTZUNG[k].name, null, () => { const n = S5_NUTZUNG[k]; S5.nutzung = k; S5.hEG = n.hEG; S5.hOG = n.hOG; S5.tiefe = n.tiefe; neu(); }, { on: S5.nutzung === k, title: S5_NUTZUNG[k].text }));
+      trenn();
+      knopf('Geschoßhöhen', 'hoehe', host => {
+        host.innerHTML = `<div class="b-pop-h">Geschoßhöhen</div>${regler('b-heg', 'Erdgeschoß', S5.hEG, 2.6, 6, 0.1, 'm', 2)}${regler('b-hog', 'Obergeschoße', S5.hOG, 2.6, 5, 0.1, 'm', 2)}`;
+        bindRegler(host, r => { if (r.id === 'b-heg') S5.hEG = +r.value; else S5.hOG = +r.value; neuZeichnenBald(); });
+      }, { pop: true });
+      knopf('Bautiefe', 'tiefe', host => {
+        const N = S5_NUTZUNG[S5.nutzung];
+        host.innerHTML = `<div class="b-pop-h">Typische Bautiefe</div>${regler('b-tiefe', 'Riegel & Flügel', S5.tiefe, 8, 24, 0.5, 'm', 1)}<div class="s5-info">Gilt für neu erzeugte Varianten. Für ${esc(N.kurz)} sind ${fmtNum(N.tiefe, 1)} m üblich.</div>`;
+        bindRegler(host, r => { S5.tiefe = +r.value; });
+      }, { pop: true });
+      chip(`EG ${f2(S5.hEG)} m · OG ${f2(S5.hOG)} m · Bautiefe ${f1(S5.tiefe)} m`);
+      trenn();
+      knopf('Weiter zur bebaubaren Fläche', 'vor', () => schrittSetzen('flaeche'));
+    }
+    if (S5.schritt === 'flaeche' && L) {
+      chip(`<b class="b-gross">${f0(L.flaecheM2)} m²</b> bebaubar · ${pct(L.flaecheM2 / Math.max(1, L.lotArea))}`);
+      knopf('So entsteht sie', 'flaeche', host => {
+        const lot = L.lotArea, abA = lot - s5Area(L.nachAbstand), abS = Math.max(0, s5Area(L.nachAbstand) - L.flaecheM2);
+        host.innerHTML = `<div class="b-pop-h">Maximal bebaubare Fläche</div><div class="s5-abzug"><div><span>Grundstück</span><b>${f0(lot)} m²</b></div><div><span>− Abstände & Baulinien</span><b>${f0(abA)} m²</b></div><div><span>− Schutzzonen</span><b>${f0(abS)} m²</b></div><div class="sum"><span>= bebaubar</span><b>${f0(L.flaecheM2)} m²</b></div></div>`;
+      }, { pop: true });
+      knopf('Kanten & Baulinien', 'kanten', () => { const b = $('edge-editor-open'); if (b) b.click(); });
+      trenn();
+      const t = S5.tiris;
+      knopf('Gefahrenzonen' + (t.zonen && t.zonen.length ? ' (' + t.zonen.length + ')' : ''), 'gefahr', host => {
+        host.innerHTML = `<div class="b-pop-h">Schutzzonen aus tiris</div>${schalter('b-rot', 'Rote Gefahrenzonen (Bauverbot)', t.aktiv && t.rot)}${schalter('b-gelb', 'Gelbe Gefahrenzonen ausnehmen', t.aktiv && t.gelb)}
+          <div class="s5-info">${t.fehler ? esc(t.fehler) : t.stand ? (t.zonen.length ? t.zonen.length + ' Zone(n) am Grundstück · Stand ' + esc(t.stand) : 'Keine Gefahrenzonen am Grundstück · Stand ' + esc(t.stand)) : (lastKatTransform ? 'Noch nicht geladen' : 'Nur mit Grundstück aus dem Kataster')}</div>
+          <button type="button" class="viz-btn wide b-laden" ${lastKatTransform ? '' : 'disabled'}>Von tiris laden</button>`;
+        host.querySelector('#b-rot').addEventListener('change', e => { t.aktiv = true; t.rot = e.target.checked; neu(); });
+        host.querySelector('#b-gelb').addEventListener('change', e => { t.aktiv = true; t.gelb = e.target.checked; neu(); });
+        host.querySelector('.b-laden').addEventListener('click', () => tirisLaden(true));
+      }, { pop: true, key: 'tiris' });
+      const neuId = () => 'r' + Date.now().toString(36);
+      knopf('Freihaltestreifen', 'streifen', () => { S5.regeln.push({ id: neuId(), art: 'streifen', kante: 0, breite: 3, name: 'Freihaltestreifen Kante 1' }); neu(); });
+      knopf('Baum / Kreis', 'baum', () => (window.s5Cad || zeichenfenster)({ modus: 'kreis', fertig: m => { S5.regeln.push({ id: neuId(), art: 'kreis', mitte: m, radius: 4, name: 'Baum / Schutzkreis' }); neu(); } }));
+      knopf('Fläche zeichnen', 'zeichnen', () => (window.s5Cad || zeichenfenster)({ modus: 'zone', fertig: ring => { S5.regeln.push({ id: neuId(), art: 'flaeche', ring, name: 'Freihaltefläche' }); neu(); } }));
+      knopf('Regeln (' + (S5.regeln || []).length + ')', 'liste', host => regelnFenster(host), { pop: true, key: 'regeln' });
+      trenn();
+      knopf('Fläche', 'auge', () => { S5.zeige.flaeche = !S5.zeige.flaeche; rebuild(); }, { on: S5.zeige.flaeche, title: 'Bebaubare Fläche zeigen' });
+      knopf('Suchraum', 'suchraum', () => { S5.zeige.suchraum = !S5.zeige.suchraum; rebuild(); }, { on: S5.zeige.suchraum, title: 'Lichtabstand je Geschoß auch bei den Varianten zeigen' });
+    }
+    if (S5.schritt === 'varianten' && L) {
+      knopf('Varianten erzeugen', 'erzeugen', variantenErzeugen, { primary: true });
+      trenn();
+      S5_FAMILIEN.forEach(fm => knopf(fm.key === 'grundform' ? 'Grundform' : fm.key === 'kombi' ? 'Zusammengesetzt' : fm.key === 'topo' ? 'Topografisch' : 'Frei', fm.key === 'grundform' ? 'block' : fm.key === 'kombi' ? 'sockel_riegel' : fm.key === 'topo' ? 'hangstaffel' : 'frei', host => {
+        host.innerHTML = `<div class="b-pop-h">${esc(fm.name)}</div><div class="b-typen">${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" data-t="${t}">${ico(t, 26)}<b>${esc(S5_TYPEN[t].name)}</b><span>${esc(S5_TYPEN[t].text)}</span></button>`).join('')}</div>`;
+        host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
+          const t = b.dataset.t, nv = s5NeueVariante(t, L, t !== 'frei'); nv.eigen = true; S5.aktiv = nv.id; popZu(); neu();
+          if (t === 'frei') (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: nv });
+        }));
+      }, { pop: true, key: 'fam-' + fm.key }));
+      trenn();
+      knopf(va ? va.name : 'Variante wählen', 'liste', host => {
+        host.innerHTML = `<div class="b-pop-h">Varianten (${S5.varianten.length})</div><div class="s5-liste b-liste">${S5.varianten.map(x => { const z = s5Live.erg[x.id] && s5Live.erg[x.id].z; return `<button type="button" class="s5-karte ${x.id === S5.aktiv ? 'on' : ''}" data-id="${x.id}">${plan(x, 64, 52)}<span class="s5-k-t"><b>${S5.favorit === x.id ? '★ ' : ''}${esc(x.name)}</b><em>${z ? f0(z.bgf) + ' m² BGF · ' + (z.ausnutzung != null ? pct(z.ausnutzung) : z.geschosse + ' G.') : '–'}</em></span></button>`; }).join('') || '<div class="s5-info">Noch keine Varianten.</div>'}</div>`;
+        host.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); }));
+      }, { pop: true, key: 'liste', aus: !S5.varianten.length });
+      knopf('Werte', 'regler', host => werteFenster(host), { pop: true, key: 'werte', aus: !va });
+      knopf('Zeichnen & bearbeiten', 'zeichnen', () => cadFuer(va), { aus: !va, title: 'Im Zeichenfenster bearbeiten (Drehen, Versatz, Duplizieren …)' });
+      knopf('Duplizieren', 'kopie', () => { const c = JSON.parse(JSON.stringify(va)); c.id = 'v' + (S5.naechsteNr++) + '_' + Math.random().toString(36).slice(2, 6); c.name = va.name + ' (Kopie)'; c.eigen = true; S5.varianten.push(c); S5.aktiv = c.id; neu(); }, { aus: !va, nurIcon: true });
+      knopf('Favorit', 'stern', () => { S5.favorit = S5.favorit === va.id ? null : va.id; neu(); }, { aus: !va, nurIcon: true, on: va && S5.favorit === va.id, title: 'Als Favorit markieren' });
+      knopf('Löschen', 'weg', () => { S5.varianten = S5.varianten.filter(x => x !== va); if (S5.favorit === va.id) S5.favorit = null; S5.aktiv = (S5.varianten[0] || {}).id || null; neu(); }, { aus: !va, nurIcon: true });
+      trenn();
+      knopf('Dichte einhalten', 'dichte', () => { S5.dichteEinhalten = !S5.dichteEinhalten; neu(); }, { on: S5.dichteEinhalten, title: 'Zulässige Dichte einhalten' });
+    }
+    if (S5.schritt === 'vergleich' && L) {
+      knopf('Vergleich öffnen', 'vergleich', vergleichOeffnen, { primary: true, aus: !S5.varianten.length });
+      trenn();
+      const idx = S5.varianten.findIndex(x => x.id === S5.aktiv);
+      const geh = d => { if (!S5.varianten.length) return; const i = ((idx < 0 ? 0 : idx) + d + S5.varianten.length) % S5.varianten.length; S5.aktiv = S5.varianten[i].id; rebuild(); };
+      knopf('Vorherige', 'zurueck', () => geh(-1), { nurIcon: true, aus: S5.varianten.length < 2 });
+      chip(va ? `<b>${esc(va.name)}</b> · ${idx + 1} von ${S5.varianten.length}` : 'Keine Variante gewählt');
+      knopf('Nächste', 'vor', () => geh(1), { nurIcon: true, aus: S5.varianten.length < 2 });
+      trenn();
+      knopf('Rangliste', 'liste', host => { host.innerHTML = `<div class="b-pop-h">Nach BGF</div><div class="s5-rang">${rangliste()}</div>`; host.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); })); }, { pop: true, key: 'rang', aus: !S5.varianten.length });
+      knopf(va && S5.favorit === va.id ? 'Wird weiterverfolgt' : 'Diese Variante weiterverfolgen', 'stern', () => { if (va) { S5.favorit = va.id; neu(); } }, { on: va && S5.favorit === va.id, aus: !va });
+    }
+  }
+  function cadFuer(va) {
+    if (!va) return;
+    if (va.typ === 'frei') { (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: va }); return; }
+    const L = K(), e2 = s5Live.erg[va.id]; if (!e2) return;
+    const fr = s5NeueVariante('frei', L, false); fr.eigen = true; fr.name = va.name + ' — frei'; fr.p.geschosse = va.p.geschosse;
+    fr.p.koerper = e2.koerper.filter(k => k._geschosse.length).map((k, i) => ({ id: 'k' + i, ring: k.fp.o.map(p => [p[0], p[1]]), geschosse: k._geschosse.length, rolle: k.rolle === 'sockel' ? 'sockel' : k.aufSockel ? 'aufsatz' : null }));
+    S5.aktiv = fr.id; neu(); (window.s5Cad || zeichenfenster)({ modus: 'frei', variante: fr });
+  }
+  function werteFenster(host) {
+    const v = s5AktiveVariante(); if (!v) return;
+    const keys = PARAMS_JE[v.typ] || ['geschosse'];
+    host.innerHTML = `<div class="b-pop-h">${esc(S5_TYPEN[v.typ].name)}</div><input type="text" class="s5-name" value="${esc(v.name)}" maxlength="48">
+      ${keys.map(k => { const d = PARAM[k], w = v.p[k]; if (w == null) return ''; return regler('p-' + k, d.l, w, d.min, k === 'geschosse' ? Math.max(d.max, w) : d.max, d.step, d.e, d.nk); }).join('')}
+      ${v.typ === 'winkel' ? `<div class="group"><label>Ecke</label><select class="s5-sel" data-k="ecke"><option value="auto">Automatisch (Garten nach Süden)</option><option value="v0u0">Ecke 1</option><option value="v0u1">Ecke 2</option><option value="v1u0">Ecke 3</option><option value="v1u1">Ecke 4</option></select></div>` : ''}
+      ${v.typ === 'uform' ? `<div class="group"><label>Offene Seite</label><select class="s5-sel" data-k="offen"><option value="auto">Automatisch (nach Süden offen)</option><option value="v1">Seite 1</option><option value="v0">Seite 2</option><option value="u1">Seite 3</option><option value="u0">Seite 4</option></select></div>` : ''}`;
+    const nm = host.querySelector('.s5-name'); nm.addEventListener('change', () => { v.name = nm.value.trim() || S5_TYPEN[v.typ].name; v.eigen = true; neu(); });
+    bindRegler(host, r => { if (!r.id.startsWith('p-')) return; v.p[r.id.slice(2)] = +r.value; v.eigen = true; if (v.typ === 'frei' && r.id === 'p-geschosse') (v.p.koerper || []).forEach(k => { if (k.rolle !== 'sockel') k.geschosse = +r.value; }); neuZeichnenBald(); });
+    host.querySelectorAll('.s5-sel').forEach(s => { s.value = v.p[s.dataset.k] || 'auto'; s.addEventListener('change', () => { v.p[s.dataset.k] = s.value; v.eigen = true; neu(); }); });
+  }
+  function regelnFenster(host) {
+    host.innerHTML = `<div class="b-pop-h">Eigene Regeln</div><div class="s5-regeln">${(S5.regeln || []).map(rg => `<div class="s5-regel ${rg.aus ? 'aus' : ''}" data-id="${rg.id}"><label><input type="checkbox" ${rg.aus ? '' : 'checked'}> ${esc(rg.name)}</label><button type="button" class="s5-x" title="Entfernen">✕</button>
+      ${rg.art === 'streifen' ? `<div class="s5-regel-ed"><select data-k="kante">${parcelPoints.map((p, i) => `<option value="${i}" ${(rg.kante | 0) === i ? 'selected' : ''}>${esc(kantenText(i))}</option>`).join('')}</select>${regler('brg-b-' + rg.id, 'Breite', rg.breite || 3, 0.5, 20, 0.5, 'm', 1)}</div>` : ''}
+      ${rg.art === 'kreis' ? `<div class="s5-regel-ed">${regler('brg-r-' + rg.id, 'Radius', rg.radius || 4, 0.5, 15, 0.5, 'm', 1)}</div>` : ''}</div>`).join('') || '<div class="s5-info">Noch keine eigenen Regeln. Freihaltestreifen, Baum oder Fläche über die Knöpfe anlegen.</div>'}</div>`;
+    host.querySelectorAll('.s5-regel').forEach(row => {
+      const rg = S5.regeln.find(x => x.id === row.dataset.id); if (!rg) return;
+      row.querySelector('input[type=checkbox]').addEventListener('change', e => { rg.aus = !e.target.checked; neu(); });
+      row.querySelector('.s5-x').addEventListener('click', () => { S5.regeln = S5.regeln.filter(x => x !== rg); neu(); });
+      const sel = row.querySelector('select[data-k=kante]'); if (sel) sel.addEventListener('change', () => { rg.kante = +sel.value; rg.name = 'Freihaltestreifen ' + kantenText(rg.kante).split(' · ')[0]; neu(); });
+      bindRegler(row, r => { if (r.id.startsWith('brg-b-')) rg.breite = +r.value; if (r.id.startsWith('brg-r-')) rg.radius = +r.value; neuZeichnenBald(); });
+    });
+  }
+  function bandNachRebuild() {
+    if (!band) bandAufbauen();
+    if (!band) return;
+    werkzeugeZeichnen();
+    if (popAuf && !popAuf.dom) popNeu();
+    else if (popAuf) popLage();
+  }
+
   // erster Aufbau der Oberfläche
   setTimeout(() => { try { if (s5Live) s5Aenderung(); } catch (e) {} }, 0);
 })();
