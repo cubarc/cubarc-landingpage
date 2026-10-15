@@ -13422,6 +13422,13 @@ function distPointToPolygon(p, poly) {
   return min;
 }
 
+// good approximation for simple/convex polygons like our rectangles
+function minDistanceBetweenPolygons(polyA, polyB) {
+  let min = Infinity;
+  polyA.forEach(p => { min = Math.min(min, distPointToPolygon(p, polyB)); });
+  polyB.forEach(p => { min = Math.min(min, distPointToPolygon(p, polyA)); });
+  return min;
+}
 
 // ---- Three.js Setup ----
 const host = document.getElementById('canvas-host');
@@ -19281,6 +19288,45 @@ function s5TboKanten() {
   return vals;
 }
 window.s5TboKanten = s5TboKanten;
+// Projektmappe (aus v3.32 übernommen): die Seiten lesen die Daten der alten Rechnung —
+// Kennzahlen-Leiste, Kubaturnachweis-Zeilen und Kubatur-Körper. v5 liefert sie aus dem
+// gewählten Weißmodell: je Baukörper und Geschoß Fläche, Höhe, Volumen ober-/unterirdisch.
+function s5MappeDaten(e, K) {
+  const setz = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+  const ug = document.getElementById('ug-count'); if (ug && ug.value !== '0') ug.value = '0';   // v5 kennt (noch) kein UG
+  const rows = [], solids = [], hf = K.heightFn;
+  if (e && e.koerper) e.koerper.forEach((k, ki) => {
+    const gs = k._geschosse || [];
+    gs.forEach((g, gi) => (g.regs || []).forEach(r => {
+      if (!r || !r.o || r.o.length < 3) return;
+      const fp = r.o.map(p => [p[0], p[1]]); fp.holes = (r.h || []).map(h => h.map(p => [p[0], p[1]]));
+      const y0 = g.y0, y1 = g.y0 + g.h, area = s5RegArea(r), vol = area * g.h;
+      let below = 0; try { below = Math.max(0, Math.min(1, floorBelowFrac(fp, y0, y1, hf))); } catch (err) { below = 0; }
+      rows.push({ piece: ki, floor: gi, label: floorLabel(gi, gs.length), yBottom: y0, yTop: y1, floorH: g.h, area, volume: vol, belowFrac: below, volBelow: vol * below, volAbove: vol * (1 - below), staffelung: !!g.staffel });
+      solids.push({ piece: ki, fp, holes: fp.holes.length ? fp.holes : null, y0, top: y1 });
+    }));
+  });
+  window.kubaturNachweisRows = rows; window.kubaturSolids = solids;
+  const z = e && e.z;
+  if (liveMetrics) liveMetrics.geschossFl = (livePlanFloors || []).map(l => (l || []).reduce((q, pc) => q + Math.abs(polygonArea(pc.fp)) - (pc.fp.holes || []).reduce((h, x) => h + Math.abs(polygonArea(x)), 0), 0));
+  setz('s-foot', z ? fmtNum(z.bebaut) + ' m²' : '–');
+  setz('s-bgf', z ? fmtNum(z.bgf) + ' m²' : '–');
+  setz('s-floors', z ? String(z.geschosse) : '–');
+  setz('s-height', z ? fmtNum(z.hoehe, 1) + ' m' : '–');
+  setz('s-vol-total', z ? fmtNum(rows.reduce((q, r) => q + r.volume, 0)) + ' m³' : '–');
+  setz('s-aushub', '–'); setz('s-boeschung', '–'); setz('s-erschl-anteil', '');
+  const vA = rows.reduce((q, r) => q + r.volAbove, 0), vB = rows.reduce((q, r) => q + r.volBelow, 0);
+  setz('s-vol-above', z ? fmtNum(vA) + ' m³' : '–');
+  setz('s-vol-below', z && vB > 0.5 ? fmtNum(vB) + ' m³' : '–');
+  setz('s-floors-h', String(Math.max(1, Math.floor((K.maxH - s5Attika() - S5.hEG + 1e-6) / S5.hOG) + 1)));
+  setz('s-floors-gfz', z && z.bebaut > 1 ? (isFinite(K.grenzen.bm) ? String(Math.max(0, Math.floor(K.grenzen.bm / (z.bebaut * S5.hOG) + 1e-6)))
+    : isFinite(K.grenzen.bgf) ? String(Math.max(0, Math.floor(K.grenzen.bgf / z.bebaut + 1e-6))) : '–') : '–');
+  setz('s-floors-shadow', '–');
+  { let gap = Infinity; const eg = (e && e.koerper || []).map(k => k._geschosse && k._geschosse[0] && k._geschosse[0].regs[0]).filter(Boolean);
+    for (let i = 0; i < eg.length; i++) for (let j = i + 1; j < eg.length; j++) { try { gap = Math.min(gap, minDistanceBetweenPolygons(eg[i].o, eg[j].o)); } catch (err) {} }
+    setz('s-buildinggap-actual', isFinite(gap) ? fmtNum(gap, 2) + ' m' : '–'); }
+  setz('s-wohnungen', '–'); setz('s-erschliessung', '–'); setz('s-spielplatz', '–');
+}
 // Pläne 2D (Grundriss, Draufsicht, Ansicht, Schnitt) aus der gewählten Variante: je Geschoß-
 // ebene die Umrisse; die Zeichenroutinen der Projektmappe lesen livePlanFloors und liveVizArgs
 let s5PlanKey = '';
@@ -19510,6 +19556,7 @@ function rebuild() {
     flaeche: K.flaecheM2
   };
   window.__ehGeschosse = liveMetrics.floors || 0;
+  s5MappeDaten(akt, K);
   if (typeof updateRangeFills === 'function') updateRangeFills();
   try { if (typeof s5Aenderung === 'function') s5Aenderung(); } catch (e) { console.warn('Studie-Anzeige', e); }
 
@@ -21029,7 +21076,7 @@ exposeCanvas3D.addEventListener('touchend', e => {
 });
 
 function populateExposeKennzahlen() {
-  document.getElementById('expose-kz-list').innerHTML = FULL_KZ_ROWS.map(([label, id]) => {
+  document.getElementById('expose-kz-list').innerHTML = FULL_KZ_ROWS.filter(([label, id]) => { const el = document.getElementById(id); const v = el ? String(el.textContent).trim() : ''; return v && v !== '–'; }).map(([label, id]) => {
     const el = document.getElementById(id);
     const val = el ? el.textContent : '–';
     return `<div class="expose-kz-row"><span class="k">${label.replace(/\s*\(.*\)$/, '')}</span><span class="v">${String(val).split(' (')[0]}</span></div>`;
@@ -33907,7 +33954,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.26';
+  const VERSION = 'v5.27';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -36444,7 +36491,7 @@ function s5ModellMesh(v, basis) {
   const $ = id => document.getElementById(id);
   const css = document.createElement('style');
   css.textContent = `
-    #topbar-check, #topbar-expose, #mobile-check-btn, #wg-add, #rp-check, #rp-econ, #rp-toggle-m, #econ-open-dash, #m-dash, #m-stats { display: none !important; }`;
+    #topbar-check, #mobile-check-btn, #wg-add, #rp-check, #rp-econ, #rp-toggle-m, #econ-open-dash, #m-dash, #m-stats { display: none !important; }`;
   document.head.appendChild(css);
 })();
 
