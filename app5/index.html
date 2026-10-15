@@ -33954,7 +33954,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.27';
+  const VERSION = 'v5.28';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34238,13 +34238,12 @@ function sprSetzen(code, still) {
 .s5-ed-svg .ed-neu { fill: rgba(233,143,69,.15); stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 5 3; }
 /* fünf Schritte statt drei */
 @media (min-width: 1025px) {
-  .sidebar { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; width: 396px !important; gap: 3px !important; }
+  .sidebar { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; width: 396px !important; gap: 3px !important; }
   .sidebar .side-btn[data-menu="menu-bebauung"] { grid-column: 1 !important; }
   .sidebar .side-btn[data-menu="menu-nutzung"] { grid-column: 2 !important; }
   .sidebar .side-btn[data-menu="menu-flaeche"] { grid-column: 3 !important; }
   .sidebar .side-btn[data-menu="menu-varianten"] { grid-column: 4 !important; }
-  .sidebar .side-btn[data-menu="menu-vergleich"] { grid-column: 5 !important; }
-  .sidebar .side-btn[data-menu="menu-baukoerper"], .sidebar .side-btn[data-menu="menu-wirtschaft"] { display: none !important; }
+  .sidebar .side-btn[data-menu="menu-baukoerper"], .sidebar .side-btn[data-menu="menu-wirtschaft"], .side-btn[data-menu="menu-vergleich"] { display: none !important; }
   .sidebar .side-btn, .sidebar .side-btn:hover, .sidebar .side-btn.active, .sidebar .side-btn.active:hover { font-size: 11px !important; padding: 9px 1px 8px !important; letter-spacing: -.01em; }
 }
 /* ===== CAD-Zeichenfenster ===== */
@@ -34401,6 +34400,10 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
 .s5-tbo-z b { text-align: right; }
 .s5-wh { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; margin-top: 3px; }
 .s5-wh input { width: 52px; padding: 2px 4px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--text, #fff) 18%, transparent); background: transparent; color: inherit; font: inherit; font-size: 11px; text-align: right; }
+
+.s5-vgl-knopf { margin-top: 6px; }
+.s5-weg { margin: 8px 0 4px; padding: 9px 11px; border-radius: 10px; font-size: 12px; line-height: 1.45; background: color-mix(in srgb, var(--text, #fff) 4%, transparent); opacity: .85; }
+.s5-weg b { font-weight: 600; }
 </style>
 <script>
 // ═════════════════════════════════════════════════════════════════════════════════════
@@ -34687,12 +34690,31 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     S5.varianten = S5.varianten.filter(v => v.eigen || v.typ === 'frei');
     typen.forEach(t => { const v = s5NeueVariante(t, L, true); v.auto = true; });
     rebuild();
+    // Varianten, die (fast) genau gleich wie eine schon erzeugte herauskommen, weglassen — auf
+    // kleinen Flächen passt die Typologie dann nicht wirklich (z. B. kein Platz für einen Hof)
+    const egReg = v => { const e2 = s5Live.erg[v.id]; const rs = []; ((e2 && e2.koerper) || []).forEach(k => (k._geschosse || []).forEach(g => rs.push(...g.regs))); return rs; };
+    const behalten = [], weg = [];
+    S5.varianten.forEach(v => {
+      if (!v.auto) { behalten.push(v); return; }
+      const z = s5Live.erg[v.id] && s5Live.erg[v.id].z;
+      if (!z || !z.koerper) { weg.push({ v, wie: null }); return; }
+      const a = egReg(v);
+      const gleich = behalten.find(w => {
+        const zw = s5Live.erg[w.id] && s5Live.erg[w.id].z; if (!zw || zw.geschosse !== z.geschosse || Math.abs(zw.bgf - z.bgf) > 0.05 * Math.max(zw.bgf, z.bgf)) return false;
+        const b = egReg(w), u = s5Area(s5Union(a.concat(b)));
+        return u > 0 && s5Area(s5And(a, b)) / u > 0.9;
+      });
+      if (gleich) weg.push({ v, wie: gleich }); else behalten.push(v);
+    });
+    S5.varianten = behalten;
+    S5.weggelassen = weg.map(x => ({ name: S5_TYPEN[x.v.typ].name, wie: x.wie ? x.wie.name : null }));
+    rebuild();
     // beste Ausnutzung zuerst aktiv
     let best = null;
     S5.varianten.forEach(v => { const e = s5Live.erg[v.id]; if (e && e.z.koerper && (!best || e.z.bgf > best.z.bgf)) best = { v, z: e.z }; });
     S5.aktiv = best ? best.v.id : (S5.varianten[0] || {}).id || null;
     neu();
-    appToast(S5.varianten.length + ' Varianten erzeugt — jede lässt sich mit den Reglern anpassen.');
+    appToast(S5.varianten.length + ' Varianten erzeugt' + (S5.weggelassen.length ? ' — ' + S5.weggelassen.length + ' Typologien passen hier nicht sinnvoll (gleiches Ergebnis)' : '') + '.');
   }
   function renderVarianten() {
     const host = $('s5-varianten'); const L = K(); if (!host || !L) return;
@@ -34706,6 +34728,9 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         const z = s5Live.erg[x.id] && s5Live.erg[x.id].z, bad = z && z.pruefung.some(q => !q.ok && !q.warn);
         return `<button type="button" class="s5-karte ${x.id === S5.aktiv ? 'on' : ''}" data-id="${x.id}">${plan(x, 64, 52)}<span class="s5-k-t"><b>${S5.favorit === x.id ? '★ ' : ''}${esc(x.name)}</b><em>${z ? f0(z.bgf) + ' m² BGF · ' + (z.ausnutzung != null ? pct(z.ausnutzung) : z.geschosse + ' G.') : '–'}${bad ? ' · <i class="s5-warn">⚠</i>' : ''}</em></span></button>`;
       }).join('') + '</div>';
+      h += `<button type="button" class="viz-btn s5-vgl-knopf" ${S5.varianten.length < 2 ? 'disabled' : ''}>${ico('block', 15)} Varianten vergleichen</button>`;
+      const weg = S5.weggelassen || [];
+      if (weg.length) h += `<div class="s5-weg"><b>Nicht sinnvoll auf diesem Grundstück:</b> ${weg.map(w => esc(w.name) + (w.wie ? ' (wie ' + esc(w.wie) + ')' : ' (passt nicht)')).join(', ')} — die Fläche ist für diese Typologien zu klein, das Ergebnis wäre gleich.</div>`;
     }
     if (v) {
       const keys = PARAMS_JE[v.typ] || ['geschosse'];
@@ -34723,10 +34748,11 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         <div class="s5-akt-knoepfe">${v.typ !== 'modell' ? '<button type="button" data-a="frei">Frei weiterbearbeiten</button>' : ''}<button type="button" data-a="kopie">Duplizieren</button><button type="button" data-a="fav">${S5.favorit === v.id ? '★ Favorit' : '☆ Favorit'}</button><button type="button" data-a="weg" class="weg">Löschen</button></div>`;
     }
     h += `<div class="mp-sec">Typologie einzeln hinzufügen</div>` + S5_FAMILIEN.map(fm => `<div class="s5-fam"><span>${esc(fm.name)}</span><div>${Object.keys(S5_TYPEN).filter(t => S5_TYPEN[t].fam === fm.key).map(t => `<button type="button" class="s5-typ" data-t="${t}" title="${esc(S5_TYPEN[t].text)}">${ico(t, 20)}<em>${esc(S5_TYPEN[t].kurz)}</em></button>`).join('')}</div></div>`).join('');
-    h += `<button type="button" class="viz-btn primary s5-weiter" data-zu="menu-vergleich">Weiter zum Vergleich</button>`;
+
     host.innerHTML = h;
     host.querySelector('.s5-erzeugen').addEventListener('click', variantenErzeugen);
     host.querySelector('.s5-import').addEventListener('click', () => window.s5ImportStarten());
+    { const vk = host.querySelector('.s5-vgl-knopf'); if (vk) vk.addEventListener('click', vergleichOeffnen); }
     $('s5-dichte').addEventListener('change', ev => { S5.dichteEinhalten = ev.target.checked; neu(); });
     host.querySelectorAll('.s5-karte').forEach(b => b.addEventListener('click', () => { S5.aktiv = b.dataset.id; rebuild(); }));
     host.querySelectorAll('.s5-typ').forEach(b => b.addEventListener('click', () => {
