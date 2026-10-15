@@ -36,6 +36,14 @@
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-store
 
+# cubarc v6 (Gesamtfassung aus v3 und v5) unter /app6/: nicht in Suchmaschinen, immer die neueste Fassung
+/app6/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+/app6
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+
 # Bilder und Schrift: eine Stunde zwischenspeichern
 /img/*
   Cache-Control: public, max-age=3600

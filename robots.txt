@@ -2,5 +2,6 @@ User-agent: *
 Disallow: /vorschau/
 Disallow: /app/
 Disallow: /app5/
+Disallow: /app6/
 
 Sitemap: https://cubarc.at/sitemap.xml
