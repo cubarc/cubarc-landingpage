@@ -36225,7 +36225,7 @@ function buildSiteGround(heightFn, showViz) {
   geo.computeVertexNormals();
   const farbe = showViz ? (isLight ? 0xd6d5d2 : 0x6d6b66) : (isLight ? 0xe6e5e2 : 0x24242a);
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: farbe, roughness: 1, side: THREE.DoubleSide,
-    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
+    polygonOffset: true, polygonOffsetFactor: showViz ? 1 : -2, polygonOffsetUnits: showViz ? 1 : -8 }));
   m.receiveShadow = true; m.raycast = () => {};
   return m;
 }
@@ -36424,7 +36424,7 @@ function buildNeighbourLayer(heightFn, showViz) {
     const pos = geo.attributes.position, arr = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getY(i); arr[i * 3] = x; arr[i * 3 + 1] = heightFn(x, z) + lift; arr[i * 3 + 2] = z; }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: showViz ? 1 : -2, polygonOffsetUnits: showViz ? 1 : -8 }));
     m.receiveShadow = true; return m;
   };
   const outline = (ring, color, lift, opacity) => {
@@ -40938,7 +40938,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v6.0';
+  const VERSION = 'v6.01';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
