@@ -18319,25 +18319,22 @@ function s5Default() {
     zeige: { flaeche: true, suchraum: false, schutz: true }, naechsteNr: 1 };
 }
 var S5 = s5Default();
-// Wandhöhe über der Rohdecke — gehört zur Außenhaut (§ 6 Abs. 1 TBO), macht die Wand darunter
-// höher und vergrößert damit automatisch den Abstand (Faktor × Wandhöhe):
-//  · Attika: Rand des Flachdachs über dem obersten Geschoß
-//  · Brüstung: Absturzsicherung von Terrasse/Balkon über einem zurückspringenden Geschoß
-//    (OIB-Richtlinie 4, Punkt 4.2.1: mind. 1,00 m, ab mehr als 12 m Absturzhöhe mind. 1,10 m)
-//  · Dachterrasse: auf dem obersten Geschoß gilt dann die Brüstung statt der Attika
-// Geplante Wandhöhe an der Grundgrenze: als Geschoße (EG + OGs + Brüstung darüber — meist
-// Terrasse, Dachterrasse oder Geländer, OIB-RL 4: 1,00 m) oder direkt in Metern; je Kante änderbar
+// Wandhöhe über der Rohdecke — gehört zur Außenhaut (§ 6 Abs. 1 TBO) und vergrößert damit
+// automatisch den Abstand (Faktor × Wandhöhe). Derzeit nur die Attika (Rand des Flachdachs).
+// Eine Brüstung kommt erst dazu, wenn Balkon/Terrasse eingeschaltet werden (Vorgabe Ozan,
+// 15.10.2026: keine zusätzliche Brüstung erfinden).
+// Geplante Wandhöhe an der Grundgrenze: als Geschoße (EG + OGs + Attika) oder direkt in Metern;
+// je Kante änderbar
 function s5WandGlobal() {
   const w = (S5 && S5.wand) || {};
   if (w.modus === 'hoehe') return Math.max(0, +w.hoehe || 7);
   const g = Math.max(1, Math.round(+w.geschosse || 2));
   const roh = S5.hEG + (g - 1) * S5.hOG;
-  return roh + s5Bruestung(roh);
+  return roh + s5Attika();
 }
 function s5WandKante(i) { const k = S5 && S5.wandKante; const v = k && k[i]; return v != null && isFinite(+v) && +v > 0 ? +v : s5WandGlobal(); }
 function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.5 : Math.max(0, +a); }   // Rohdecke → Oberkante Attika: Dachaufbau + Aufkantung
-function s5Bruestung(absturz) { const b = S5 && S5.bruestung; const w = b == null || !isFinite(+b) ? 1.0 : Math.max(0, +b); return absturz > 12 ? Math.max(w, 1.1) : w; }
-function s5Oben(absturz) { return S5 && S5.dachterrasse ? s5Bruestung(absturz) : s5Attika(); }
+function s5Oben() { return s5Attika(); }
 var s5Live = null;          // letzte Auswertung: Fläche, Suchraum, Varianten-Ergebnisse
 var s5Aenderung = null;     // Rückruf der Oberfläche nach jedem Neuaufbau
 
@@ -18816,7 +18813,7 @@ function s5Geschosse(k, K) {
   const startOf = f => { let y = basis; for (let q = 0; q < f; q++) y += geschossOf(q); return y; };
   const bezug = k.aufSockel ? (k._sockelBasis != null ? k._sockelBasis : basis) : basis;
   // ── Gerade Wand (Regelfall) ─────────────────────────────────────────────────────────────
-  // Die Wandhöhe ergibt sich aus den Geschoßen plus Attika (bzw. Brüstung, wenn auf dem Körper
+  // Die Wandhöhe ergibt sich aus den Geschoßen plus Attika (
   // eine Terrasse liegt — beim Sockel). Daraus folgt nach § 6 TBO der Abstand für die GANZE
   // Wand: max(Mindestabstand, Faktor × Höhe über dem Urgelände). Mehr Geschoße → höhere Wand →
   // die ganze Fassade rückt nach innen. Gestaffelt wird nur, wo die Typologie es vorsieht
@@ -18824,7 +18821,7 @@ function s5Geschosse(k, K) {
   if (!(k.ruecksprung > 0) && !k.terrasse) {
     for (let n = k.geschosse; n > 0; n--) {
       const yTop = startOf(n - 1) + geschossOf(n - 1);
-      const yA = yTop + (k.rolle === 'sockel' ? s5Bruestung(yTop - bezug) : s5Oben(yTop - bezug));
+      const yA = yTop + s5Attika();
       if (yA - bezug > K.maxH + 1e-6) continue;                    // höchstzulässige Gebäudehöhe
       if (K.topAbsY != null && yA > K.topAbsY + 1e-6) continue;     // höchster Punkt absolut
       const fp = s5Teile(s5And([k.fp], K.huelleBei(yA)), 8);
@@ -18852,7 +18849,7 @@ function s5Geschosse(k, K) {
       fp = s5And(fp, [{ o: s5Rect(F, ext.u0 + d, ext.u1 + 1, ext.v0 - 1, ext.v1 + 1), h: [] }]);
     }
     // darüber folgt ein Geschoß: am Rand steht die Terrassenbrüstung
-    const fpB = s5Teile(s5And(fp, K.huelleBei(y1 + s5Bruestung(y1 - bezug))), 8);
+    const fpB = s5Teile(s5And(fp, K.huelleBei(y1 + s5Attika())), 8);
     if (!fpB.length) {   // passt nur noch als oberstes Geschoß (Attika niedriger als Brüstung)
       const fpO = s5Teile(s5And(fp, K.huelleBei(yA)), 8);
       if (fpO.length) out.push({ f, y0, h, regs: fpO, flaeche: s5Area(fpO), oben: true });
@@ -19044,7 +19041,7 @@ function s5Optimieren(typ, K) {
   // die beste Variante ist daher nicht automatisch die höchste
   // höchstens so viele Geschoße, wie unter die geplante Wandhöhe an der Grundgrenze passen
   const wandG = (() => { const w = S5.wand || {}; if (w.modus !== 'hoehe') return Math.max(1, Math.round(+w.geschosse || 2));
-    const H = s5WandGlobal(); let n = 1; while (S5.hEG + n * S5.hOG + s5Bruestung(S5.hEG + n * S5.hOG) <= H + 1e-6) n++; return n; })();
+    const H = s5WandGlobal(); let n = 1; while (S5.hEG + n * S5.hOG + s5Attika() <= H + 1e-6) n++; return n; })();
   const maxG = Math.max(1, Math.min(basis.geschosse || 1, wandG)), alle = [];
   kand.forEach(p => { for (let g = 1; g <= maxG; g++) alle.push(Object.assign({}, p, { geschosse: g })); });
   let best = null;
@@ -33910,7 +33907,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v5.25';
+  const VERSION = 'v5.26';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -34441,7 +34438,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       <div class="mp-sec">Geschoßhöhen</div>
       ${regler('s5-heg', 'Erdgeschoß', S5.hEG, 2.6, 6, 0.1, 'm', 2)}
       ${regler('s5-hog', 'Obergeschoße', S5.hOG, 2.6, 5, 0.1, 'm', 2)}
-      <div class="s5-info">Wandhöhe = Geschoße + Attika 0,50 m (Flachdach); über Terrassen Brüstung 1,00 m, ab 12 m Absturzhöhe 1,10 m (OIB-Richtlinie 4). Daraus folgt der Abstand nach § 6 TBO: mindestens 4 m (bzw. 3 m), sonst Faktor × Wandhöhe.</div>
+      <div class="s5-info">Wandhöhe = Geschoße + Attika 0,50 m (Flachdach). Daraus folgt der Abstand nach § 6 TBO: mindestens 4 m (bzw. 3 m), sonst Wandhöhe × Höhenfaktor.</div>
       <div class="mp-sec">Typische Bautiefe</div>
       ${regler('s5-tiefe', 'Bautiefe für Riegel & Flügel', S5.tiefe, 8, 24, 0.5, 'm', 1)}
       <div class="s5-info">Diese Werte gelten für alle neu erzeugten Varianten. Für ${esc(N.kurz)} sind ${fmtNum(N.tiefe, 1)} m Bautiefe üblich.</div>
@@ -34507,9 +34504,9 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         const roh = S5.hEG + (g - 1) * S5.hOG, wg = s5WandGlobal();
         const wandBlock = `<div class="mp-sec">Wandhöhe an der Grundgrenze</div>
           <div class="s5-seg"><button type="button" data-wm="geschosse" class="${modus === 'geschosse' ? 'on' : ''}">Geschoße</button><button type="button" data-wm="hoehe" class="${modus === 'hoehe' ? 'on' : ''}">Wandhöhe</button></div>
-          ${modus === 'geschosse' ? regler('s5-wand-g', 'Geschoße bis zur Brüstung', g, 1, 10, 1, '', 0) : regler('s5-wand-h', 'Wandhöhe', +w.hoehe || 7, 3, 35, 0.1, 'm', 2)}
-          <div class="s5-wand-erg">${modus === 'geschosse' ? `EG ${fmtNum(S5.hEG, 2)}${g > 1 ? ' + ' + (g - 1) + ' × OG ' + fmtNum(S5.hOG, 2) : ''} + Brüstung ${fmtNum(wg - roh, 2)} = ` : ''}<b>${fmtNum(wg, 2)} m Wandhöhe</b><br>Abstand je Kante = max(Mindestabstand; Faktor × ${fmtNum(wg, 2)} m)${tbo.some(t => t && !t.strasse && t.factor * wg > t.setback) ? ' — z. B. 0,6 × ' + fmtNum(wg, 2) + ' = <b>' + fmtNum(0.6 * wg, 2) + ' m</b>' : ''}</div>
-          <div class="s5-info">Die Brüstung (1,00 m, ab 12 m Absturzhöhe 1,10 m) über dem obersten Geschoß an der Grenze zählt zur Wand — Terrasse, Dachterrasse oder Geländer. Je Kante kann unten eine eigene Wandhöhe eingetragen werden.</div>`;
+          ${modus === 'geschosse' ? regler('s5-wand-g', 'Geschoße an der Grundgrenze', g, 1, 10, 1, '', 0) : regler('s5-wand-h', 'Wandhöhe', +w.hoehe || 7, 3, 35, 0.1, 'm', 2)}
+          <div class="s5-wand-erg">${modus === 'geschosse' ? `EG ${fmtNum(S5.hEG, 2)}${g > 1 ? ' + ' + (g - 1) + ' × OG ' + fmtNum(S5.hOG, 2) : ''} + Attika ${fmtNum(wg - roh, 2)} = ` : ''}<b>${fmtNum(wg, 2)} m Wandhöhe</b><br>Abstand je Kante = max(Mindestabstand; Faktor × ${fmtNum(wg, 2)} m)${tbo.some(t => t && !t.strasse && t.factor * wg > t.setback) ? ' — z. B. 0,6 × ' + fmtNum(wg, 2) + ' = <b>' + fmtNum(0.6 * wg, 2) + ' m</b>' : ''}</div>
+          <div class="s5-info">Wandhöhe = Geschoße + Attika (Rand des Flachdachs). Je Kante kann unten eine eigene Wandhöhe eingetragen werden.</div>`;
         return wandBlock + `<div class="mp-sec">Abstände nach Tiroler Bauordnung</div>
           <div class="s5-info">Eigene Widmung: <b>${esc(S5_KLASSE_NAME[eigen.eigen] || '–')}</b>. Je Kante nach § 6 Abs. 1 TBO 2022 (Faktor × Höhe über dem Urgelände darunter, mindestens 3 bzw. 4 m) — zur Straße nach § 5 TBO ohne Höhenfaktor.</div>
           <div class="s5-tbo">${zeilen}</div>
