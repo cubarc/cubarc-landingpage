@@ -14105,13 +14105,24 @@ function dgmRefineShapeGeo(geo, maxEdge) {
   if (!dgmActive()) return geo;
   maxEdge = maxEdge || Math.max(LOW_MEM ? 2.2 : 1.2, terrainDgm.step / 2.5);
   const src = geo.index ? geo.toNonIndexed() : geo, p = src.attributes.position.array, out = [];
+  { let flaeche = 0;
+    for (let i = 0; i < p.length; i += 9) flaeche += Math.abs((p[i + 3] - p[i]) * (p[i + 7] - p[i + 1]) - (p[i + 6] - p[i]) * (p[i + 4] - p[i + 1])) / 2;
+    const maxTri = (LOW_MEM ? 6e5 : 3e6) / 9 * 0.7;                 // Reserve für Randdreiecke
+    const minEdge = Math.sqrt(flaeche * 2.2 / Math.max(1, maxTri));  // halbierte Dreiecke ≈ Kante² / 2
+    if (maxEdge < minEdge) maxEdge = minEdge; }
   const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2, lim = maxEdge * maxEdge;
+  const mitte = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const tri = (a, b, c, depth) => {
-    const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a), m = Math.max(ab, bc, ca);
-    if (m <= lim || depth > (LOW_MEM ? 18 : 26) || out.length > (LOW_MEM ? 6e5 : 3e6)) { out.push(a[0], a[1], 0, b[0], b[1], 0, c[0], c[1], 0); return; }
-    if (m === ab) { const q = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; tri(a, q, c, depth + 1); tri(q, b, c, depth + 1); }
-    else if (m === bc) { const q = [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2]; tri(a, b, q, depth + 1); tri(a, q, c, depth + 1); }
-    else { const q = [(c[0] + a[0]) / 2, (c[1] + a[1]) / 2]; tri(a, b, q, depth + 1); tri(q, b, c, depth + 1); }
+    const sAB = d2(a, b) > lim, sBC = d2(b, c) > lim, sCA = d2(c, a) > lim;
+    if (!(sAB || sBC || sCA) || depth > (LOW_MEM ? 22 : 30) || out.length > (LOW_MEM ? 6e5 : 3e6)) { out.push(a[0], a[1], 0, b[0], b[1], 0, c[0], c[1], 0); return; }
+    const d = depth + 1, mab = sAB ? mitte(a, b) : null, mbc = sBC ? mitte(b, c) : null, mca = sCA ? mitte(c, a) : null;
+    if (sAB && sBC && sCA) { tri(a, mab, mca, d); tri(mab, b, mbc, d); tri(mca, mbc, c, d); tri(mab, mbc, mca, d); }
+    else if (sAB && sBC) { tri(mab, b, mbc, d); tri(a, mab, mbc, d); tri(a, mbc, c, d); }
+    else if (sBC && sCA) { tri(mbc, c, mca, d); tri(a, b, mbc, d); tri(a, mbc, mca, d); }
+    else if (sCA && sAB) { tri(a, mab, mca, d); tri(mab, b, c, d); tri(mab, c, mca, d); }
+    else if (sAB) { tri(a, mab, c, d); tri(mab, b, c, d); }
+    else if (sBC) { tri(a, b, mbc, d); tri(a, mbc, c, d); }
+    else { tri(a, b, mca, d); tri(mca, b, c, d); }
   };
   for (let i = 0; i < p.length; i += 9) tri([p[i], p[i + 1]], [p[i + 3], p[i + 4]], [p[i + 6], p[i + 7]], 0);
   const g = new THREE.BufferGeometry();
@@ -19427,7 +19438,9 @@ function buildFloorFacade(fp, baseY, floorH, withBalcony, heightFn, wallColor, n
 function buildGardenLayer(heightFn, groundFootprints, rng, withTrees) {
   const group = new THREE.Group();
   const outer = new THREE.Shape(parcelPoints.map(p => new THREE.Vector2(p[0], p[1])));
-  groundFootprints.forEach(fp => { if (fp && fp.length >= 3) outer.holes.push(new THREE.Path(fp.map(p => new THREE.Vector2(p[0], p[1])))); });
+  let loecher = groundFootprints.filter(fp => fp && fp.length >= 3);
+  try { const u = s5Union(s5Regs(loecher)).map(r => r.o).filter(o => o.length >= 3); if (u.length) loecher = u; } catch (e) { /* wie gehabt */ }
+  loecher.forEach(fp => outer.holes.push(new THREE.Path(fp.map(p => new THREE.Vector2(p[0], p[1])))));
   const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(outer));
   const pos = geo.attributes.position;
   const newPositions = new Float32Array(pos.count * 3);
@@ -19440,7 +19453,7 @@ function buildGardenLayer(heightFn, groundFootprints, rng, withTrees) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
   geo.computeVertexNormals();
   const mat = new THREE.MeshStandardMaterial({ color: VIZ_GRUND, roughness: 0.95, side: THREE.DoubleSide });
-  const lawn = new THREE.Mesh(geo, mat);
+  const lawn = new THREE.Mesh(geo, mat); lawn.userData.boden = 1;
   lawn.receiveShadow = true;
   group.add(lawn);
 
@@ -24895,6 +24908,8 @@ function rebuild() {
   } else { totals.boeAbtrag = 0; totals.boeAuftrag = 0; }
   liveFillHeightFn = terrainFn;
   pendingEntrances.forEach(en => { try { buildingGroup.add(buildEntranceGroup(en, en.floorY, terrainFn)); } catch (e) {} });
+  try { const vereint = s5Union(s5Regs(terrainHoleFps.filter(fp => fp && fp.length >= 3))).map(r => r.o).filter(o => o.length >= 3);
+    if (vereint.length) terrainHoleFps.splice(0, terrainHoleFps.length, ...vereint); } catch (e) { /* ohne Vereinigung weiter */ }
   window.__terrainHoleFps = terrainHoleFps;   // dieselben Löcher bekommt auch das Orthofoto
   terrainMesh = buildTerrain(terrainFn, terrainHoleFps);
   // In der Einheiten-Ansicht steht nur das Wohnungsvolumen — ohne Gelände und Grundstück
@@ -25516,6 +25531,17 @@ function rebuild() {
   updateEconomicsUI();
   if (typeof updateRangeFills === 'function') updateRangeFills();
   try { s6Studie(K5, heightFn); } catch (e) { console.warn('Baumassenstudie', e); }
+  if (showViz) try {
+    const unterFoto = (o, rang) => { if (!o.material) return; const ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.some(mm => mm.map)) return; ms.forEach(mm => { mm.depthWrite = false; }); o.renderOrder = rang; };
+    if (terrainMesh) terrainMesh.traverse(o => {
+      if (!o.isMesh) return;
+      const ud = o.userData || {};
+      if (o === terrainMesh) unterFoto(o, -2);
+      else if (ud.boden) unterFoto(o, -3);
+      else if (ud.nbType && ud.nbType !== 'bld') unterFoto(o, -1);
+    });
+    if (vizGroup) vizGroup.traverse(o => { if (o.isMesh && o.userData && o.userData.boden) unterFoto(o, -1); });
+  } catch (e) { /* nur Darstellung */ }
   try { if (typeof s5Aenderung === 'function') s5Aenderung(); } catch (e) { console.warn('Studie-Anzeige', e); }
 
   if (!firstRenderDone) {
@@ -25548,8 +25574,8 @@ function s6Studie(K, hf) {
     // Gelände und Umgebung durchscheinend, die Linien darauf gut lesbar (Darstellung aus v5)
     if (terrainMesh) terrainMesh.traverse(o => {
       if (!(o.isMesh || o.isInstancedMesh) || !o.material) return;
-      const ms = Array.isArray(o.material) ? o.material : [o.material];
-      ms.forEach(mm => { mm.transparent = true; mm.opacity = Math.min(mm.opacity == null ? 1 : mm.opacity, o === terrainMesh ? 0.34 : 0.13); mm.depthWrite = false; mm.needsUpdate = true; });
+      const kopie = mm => { const c = mm.clone(); c.transparent = true; c.opacity = Math.min(mm.opacity == null ? 1 : mm.opacity, o === terrainMesh ? 0.34 : 0.13); c.depthWrite = false; c.needsUpdate = true; return c; };
+      o.material = Array.isArray(o.material) ? o.material.map(kopie) : kopie(o.material);
       o.receiveShadow = false;
     });
   }
@@ -36226,7 +36252,7 @@ function buildSiteGround(heightFn, showViz) {
   const farbe = showViz ? (isLight ? 0xd6d5d2 : 0x6d6b66) : (isLight ? 0xe6e5e2 : 0x24242a);
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: farbe, roughness: 1, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: showViz ? 1 : -2, polygonOffsetUnits: showViz ? 1 : -8 }));
-  m.receiveShadow = true; m.raycast = () => {};
+  m.receiveShadow = true; m.raycast = () => {}; m.userData.boden = 2;
   return m;
 }
 function buildSitePlinth(heightFn, showViz) {
@@ -37353,11 +37379,34 @@ function buildOrthoDrape(heightFn) {
   holeFps.forEach(fp => { const ring = signedArea(fp) > 0 ? fp.slice().reverse() : fp; sh.holes.push(new THREE.Path(ring.map(p => new THREE.Vector2(p[0], p[1])))); });
   // halb so große Dreiecke wie beim Gelände: das Foto folgt dem Hang dann enger als
   // das Geländemesh selbst und wird von diesem nicht mehr durchstoßen
-  const geo = dgmRefineShapeGeo(new THREE.ShapeGeometry(sh), Math.max(0.6, ((terrainDgm && terrainDgm.step) || 2) / 5));
-  const pos = geo.attributes.position, n = pos.count, P = new Float32Array(n * 3), UV = new Float32Array(n * 2);
+  void sh;
+  const W0 = r[2] - r[0], H0 = r[3] - r[1];
+  let st = Math.max(0.6, ((terrainDgm && terrainDgm.step) || 2) / 5);
+  { const maxTri = LOW_MEM ? 70000 : 400000; st = Math.max(st, Math.sqrt(W0 * H0 * 2 / maxTri)); }
+  const nx = Math.max(1, Math.ceil(W0 / st)), nz = Math.max(1, Math.ceil(H0 / st)), sx = W0 / nx, sz = H0 / nz;
+  const lochRegs = holeFps.map(fp => ({ o: s5Norm(fp), h: [] }));
+  const lochBB = lochRegs.map(rg => { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; rg.o.forEach(p => { a = Math.min(a, p[0]); b = Math.min(b, p[1]); c = Math.max(c, p[0]); d = Math.max(d, p[1]); }); return [a, b, c, d]; });
+  const xy = [];
+  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+    const x0 = r[0] + i * sx, x1 = i === nx - 1 ? r[2] : r[0] + (i + 1) * sx, z0 = r[1] + j * sz, z1 = j === nz - 1 ? r[3] : r[1] + (j + 1) * sz;
+    const treffer = [];
+    lochBB.forEach((bb, k) => { if (bb[0] < x1 && bb[2] > x0 && bb[1] < z1 && bb[3] > z0) treffer.push(lochRegs[k]); });
+    if (!treffer.length) { xy.push(x0, z0, x1, z0, x1, z1, x0, z0, x1, z1, x0, z1); continue; }
+    let rest = [];
+    try { rest = s5Minus([{ o: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], h: [] }], treffer); } catch (e) { rest = []; }
+    rest.forEach(rg => {
+      const kontur = rg.o.map(p => new THREE.Vector2(p[0], p[1])), loecher = (rg.h || []).map(h => h.map(p => new THREE.Vector2(p[0], p[1])));
+      let tris = []; try { tris = THREE.ShapeUtils.triangulateShape(kontur, loecher); } catch (e) { tris = []; }
+      const alle = kontur.concat(...loecher);
+      tris.forEach(t => t.forEach(k => xy.push(alle[k].x, alle[k].y)));
+    });
+  }
+  const n = xy.length / 2, P = new Float32Array(n * 3), UV = new Float32Array(n * 2);
+  const geo = new THREE.BufferGeometry();
+  const orthoLift = Math.max(0.12, Math.min(0.5, st * 0.08));
   for (let i = 0; i < n; i++) {
-    const x = pos.getX(i), z = pos.getY(i);
-    P[i * 3] = x; P[i * 3 + 1] = heightFn(x, z) + 0.12; P[i * 3 + 2] = z;
+    const x = xy[i * 2], z = xy[i * 2 + 1];
+    P[i * 3] = x; P[i * 3 + 1] = heightFn(x, z) + orthoLift; P[i * 3 + 2] = z;
     const m = orthoModelToMerc([x, z], orthoTex.z);
     UV[i * 2] = (m[0] - orthoTex.x0) / orthoTex.w; UV[i * 2 + 1] = (m[1] - orthoTex.y0) / orthoTex.h;
   }
@@ -40938,7 +40987,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v6.01';
+  const VERSION = 'v6.02';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
