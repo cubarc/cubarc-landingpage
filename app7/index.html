@@ -4228,6 +4228,18 @@ body.s7-ed-auf { overflow: hidden; }
   .s7-fuss { display: none; }
 }
 
+.s7-gl-k { display: flex; gap: 4px; }
+.s7-gl-k .s7-gl-plus { flex: 1; font-size: 12px; }
+.s7-gl-ugtrenn { font-size: 10px; color: var(--muted); text-align: center; border-top: 1px dashed var(--muted); padding-top: 3px; margin-top: 2px; letter-spacing: .06em; text-transform: uppercase; }
+.s7-gl-g.ug { cursor: default; border-style: dashed; opacity: .85; }
+.s7-gl-ugh { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--line); }
+.s7-gl-ugh input { width: 100%; border: 0; background: transparent; color: var(--ink); font: 600 12px var(--f-body, inherit); text-align: right; outline: none; }
+.s7-gl-ugh em { font-style: normal; font-size: 10.5px; color: var(--muted); }
+.s7-band.ug { fill: color-mix(in srgb, var(--ink) 10%, transparent); stroke: var(--muted); stroke-dasharray: 4 3; }
+@media (max-width: 899px) { .s7-gl-ugtrenn { border-top: 0; border-left: 1px dashed var(--muted); padding: 0 6px; writing-mode: vertical-rl; } .s7-gl-k { flex-direction: column; } .s7-gl-ugh { min-width: 70px; } }
+.s7-gl-k .s7-gl-plus { white-space: nowrap; padding: 0 4px; min-height: 28px; }
+.s7-gl-k .s7-gl-plus:last-child { flex: 0 0 28px; }
+
 </style>
 <style>.group:has(#roof-pitch), .nbp-nei:has(#pdach-nei) { display: none !important; }</style>
 </head>
@@ -20899,7 +20911,25 @@ function buildVizFloor(acc, fp, baseY, floorH, f, lowerFp, upperFp, heightFn, pi
   // Terrasse: eine umlaufende, auskragende Platte je Geschoß — dieselbe Figur wie der
   // frühere Rundum-Balkon, nur ohne Rücksprung. Sie ist zugleich das Vordach über dem
   // Eingang. Die alte beige Terrassenfläche entfällt ersatzlos (Vorgabe Ozan, 13.10.2026).
-  if (opts.terrassen) vizTerrassenRing(acc, outerFp, baseY, floorH, opts, f, !upperFp);
+  // Terrassen: dort, wo das Geschoß darunter nicht mehr überbaut ist — Glasbrüstung an dessen
+  // Außenkante, keine auskragenden Platten und kein Ring am Boden
+  if (f > 0 && lowerFp) {
+    const y = baseY, rh = 1.0;
+    const kanten = edgesOf(lowerFp); (lowerFp.holes || []).forEach(h => kanten.push(...edgesOf(h)));
+    let regsB = null; try { regsB = s5Live && s5Live.K ? s5And(s5Live.K.flaeche, s5Live.K.huelleBei(y + rh)) : null; } catch (err) { regsB = null; }
+    kanten.forEach(e => {
+      if (e.len < 0.05) return;
+      const m = [(e.p1[0] + e.p2[0]) / 2, (e.p1[1] + e.p2[1]) / 2];
+      if (distPointToPolygon(m, fp) < 0.1 || (fp.holes || []).some(h => distPointToPolygon(m, h) < 0.1)) return;   // dort steht die Wand
+      // die Brüstung gehört zur Außenhaut: nur dort, wo sie in ihrer Höhe im Lichtabstand liegt
+      if (regsB && !regsB.some(r => pointInPolygon(m, r.o) || distPointToPolygon(m, r.o) < 0.15)) return;
+      const a = e.p1, b = e.p2;
+      acc.rail.push((() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([
+        a[0], y, a[1], b[0], y, b[1], b[0], y + rh, b[1], a[0], y, a[1], b[0], y + rh, b[1], a[0], y + rh, a[1]], 3)); return g; })());
+      acc.railLines.push(a[0], y + rh, a[1], b[0], y + rh, b[1]);
+    });
+  }
+  void vizTerrassenRing;
   void vizTerrassenBelag; void vizTerraceRailings;
   buildVizCap(acc, outerFp, baseY + floorH);
 }
@@ -25046,7 +25076,7 @@ function rebuild() {
         liveVizArgsTmp.push({ fp, baseY: ebeneY(f), floorH: geschossOben(f) - ebeneY(f), f: fG(f), lowerFp: floorFootprints[f - 1] || null, upperFp: floorFootprints[f + 1] || null, pieceIdx, top: f === floorFootprints.length - 1, entryPt: vizOpts.entryPt || null, entryF: vizOpts.entryF || 0, planUnits: planUnitsF });
         vizOpts.planUnits = planUnitsF;
         if (showViz) {
-          buildVizFloor(vizAcc, fp, ebeneY(f), ebeneY(f + 1) - ebeneY(f), f, floorFootprints[f - 1] || null, floorFootprints[f + 1] || null, gelaendeNachBoeschung(heightFn, baseLevel), pieceIdx, vizOpts);
+          buildVizFloor(vizAcc, fp, ebeneY(f), geschossOben(f) - ebeneY(f), f, floorFootprints[f - 1] || null, floorFootprints[f + 1] || null, gelaendeNachBoeschung(heightFn, baseLevel), pieceIdx, vizOpts);
         }
       });
     }
@@ -38555,7 +38585,7 @@ function s7Auswerten(K) {
   else if (z.key && z.key !== s7Schluessel() && K.flaecheM2 > 0) s7Erzeugen(K);   // anderes Grundstück
   const legal = []; for (let f = 0; f < n; f++) legal.push(s7Zulaessig(K, f));
   const belegt = []; for (let f = 0; f < n; f++) belegt.push([]);
-  const koerper = [], ueber = [];
+  const koerper = [], ueber = [], terrassen = [];
   z.koerper.forEach((b, bi) => {
     let lauf = null;
     const schliessen = () => { if (lauf && lauf._geschosse.length) koerper.push(lauf); lauf = null; };
@@ -38570,6 +38600,20 @@ function s7Auswerten(K) {
       let gebaut = [], drueber = [];
       if (!L.hochOk) { drueber = regs; }
       else { try { gebaut = s5And(regs, L.regs); drueber = s5Minus(regs, L.regs); } catch (e) { gebaut = regs; drueber = []; } }
+      // Terrasse auf diesem Geschoß (darüber nicht mehr überbaut): die Glasbrüstung (1,00 m)
+      // gehört zur Außenhaut und muss in ihrer Höhe im Lichtabstand liegen (§ 6 TBO). Wo sie
+      // das nicht kann, bleibt die Fläche Dach — nicht begehbar, ohne Brüstung.
+      if (L.hochOk && f < n - 1 && gebaut.length) {
+        try {
+          const oben = z.koerper.map(x => x.ringe[f + 1]).filter(r => r && r.length >= 3).map(r => ({ o: s5Norm(r), h: [] }));
+          const frei = s5Minus(gebaut, oben).filter(r => s5RegArea(r) >= 1);
+          if (frei.length) {
+            const LB = s5And(K.flaeche, K.huelleBei(L.yTop + 1.0));
+            const nein = s5Minus(frei, LB).filter(r => s5RegArea(r) >= 0.5);
+            terrassen.push({ f, regs: frei, flaeche: s5Area(frei), ohne: nein, ohneFl: s5Area(nein) });
+          }
+        } catch (e) {}
+      }
       gebaut = gebaut.filter(r => s5RegArea(r) >= 1);
       drueber = drueber.filter(r => s5RegArea(r) >= 0.2);
       if (drueber.length) ueber.push({ f, y0: L.y0, h: L.h, regs: drueber, flaeche: s5Area(drueber), grund: L.hochOk ? 'abstand' : 'hoehe', koerper: b.id });
@@ -38607,17 +38651,20 @@ function s7Auswerten(K) {
   const pr = [];
   const proG = {}; ueber.forEach(u => { const k = u.f + u.grund; proG[k] = proG[k] || { f: u.f, grund: u.grund, a: 0 }; proG[k].a += u.flaeche; });
   Object.values(proG).sort((a, b) => b.f - a.f).forEach(u => pr.push({ ok: false, rot: true, f: u.f,
-    t: u.grund === 'hoehe' ? s7Name(u.f) + ' liegt über der zulässigen Gebäudehöhe — zählt nicht' : s7Name(u.f) + ': ' + fmtNum(u.a, 1) + ' m² außerhalb von Abstand bzw. Lichtabstand — zählt nicht' }));
+    t: u.grund === 'hoehe' ? s7Name(u.f) + ' liegt über der zulässigen Gebäudehöhe — zählt nicht'
+      : u.grund === 'bruestung' ? s7Name(u.f) + ': Terrasse ' + fmtNum(u.a, 1) + ' m² — die Glasbrüstung (1,00 m) läge außerhalb des Lichtabstands; zählt nicht'
+      : s7Name(u.f) + ': ' + fmtNum(u.a, 1) + ' m² außerhalb von Abstand bzw. Lichtabstand — zählt nicht' }));
   pr.push({ ok: !ueber.length, t: ueber.length ? 'Teile liegen außerhalb der zulässigen Fläche (rot)' : 'Alle Geschoße innerhalb von Abstand und Lichtabstand (§ 6 TBO)' });
   pr.push({ ok: hoehe <= K.maxH + 0.01, t: 'Gebäudehöhe ' + fmtNum(hoehe, 1) + ' m von max. ' + fmtNum(K.maxH, 1) + ' m' });
   if (isFinite(K.grenzen.bm)) pr.push({ ok: bm <= K.grenzen.bm + 0.5, dichte: true, t: 'Baumassendichte ' + fmtNum(zz.bmd, 2) + ' von max. ' + fmtNum(K.bmd, 2) });
   if (isFinite(K.grenzen.bgf)) pr.push({ ok: bgf <= K.grenzen.bgf + 0.5, dichte: true, t: String(K.regel.kurz || 'Dichte').replace(' max.', '') + ' ' + dichteWert(zz.gfz) + ' von max. ' + dichteWert(K.gfz) });
   if (isFinite(K.grenzen.nf)) pr.push({ ok: bgf * 0.8 <= K.grenzen.nf + 0.5, dichte: true, t: 'Nutzflächendichte ' + fmtNum(zz.nfd, 2) + ' von max. ' + fmtNum(K.nfd, 2) });
   if (isFinite(K.grenzen.bebaut)) pr.push({ ok: bebaut <= K.grenzen.bebaut + 0.5, dichte: true, t: 'Bebauungsdichte ' + fmtNum(zz.bd, 2) + ' von max. ' + fmtNum(K.bdMax, 2) });
+  terrassen.filter(t => t.ohneFl >= 0.5).forEach(t => pr.push({ ok: false, warn: true, t: s7Name(t.f) + ': ' + fmtNum(t.ohneFl, 1) + ' m² der Terrasse ohne Glasbrüstung — dort läge die Brüstung außerhalb des Lichtabstands; Dachfläche, nicht begehbar' }));
   if (!zz.koerper) pr.push({ ok: false, t: 'Kein Geschoß liegt in der zulässigen Fläche — Geschoße zeichnen oder Kubatur neu erzeugen' });
   zz.pruefung = pr;
   zz.ms = performance.now() - t0;
-  return { koerper, z: zz, v7: { ueber, legal, n } };
+  return { koerper, z: zz, v7: { ueber, legal, n, terrassen } };
 }
 // Die eine „Variante“ der v7: immer da, immer aktiv
 function s7Sicher() {
@@ -38951,20 +38998,33 @@ function s7KopfZeichnen() {
     <div class="${rotH ? 'rot' : ''}"><span>Höhe</span><b>${fmtNum(zz.hoehe, 2)} / ${fmtNum(K.maxH, 1)} m</b></div>
     <div class="${e.v7.ueber.length ? 'rot' : 'gut'}"><span>Regeln</span><b>${e.v7.ueber.length ? '⚠ ' + e.v7.ueber.length + ' Überschreitung' + (e.v7.ueber.length === 1 ? '' : 'en') : '✓ eingehalten'}</b></div>`;
 }
+function s7UG() { const n = parseInt((document.getElementById('ug-count') || {}).value || '0', 10) || 0, h = parseFloat((document.getElementById('ug-height') || {}).value || '2.8') || 2.8; return { n, h }; }
+function s7UGSetzen(n, h) {
+  const c = document.getElementById('ug-count'), hh = document.getElementById('ug-height');
+  if (c && n != null) { c.value = Math.max(0, Math.min(3, n | 0)); const v = document.getElementById('v-ugcount'); if (v) v.textContent = c.value; }
+  if (hh && h != null && isFinite(h)) { hh.value = Math.max(2, Math.min(5, Math.round(h * 100) / 100)); const v = document.getElementById('v-ugheight'); if (v) v.textContent = (+hh.value).toFixed(2) + ' m'; }
+  try { if (typeof updateRangeFills === 'function') updateRangeFills(); } catch (e) {}
+}
 function s7GeschosseZeichnen() {
   const host = document.getElementById('s7-gl'); if (!host) return;
-  const z = s7Zustand(), e = S7E.e, fs = s7Bereich();
+  const z = s7Zustand(), e = S7E.e, fs = s7Bereich(), ug = s7UG();
   const rot = new Set((e ? e.v7.ueber : []).map(u => u.f));
-  let h = `<button type="button" class="s7-gl-plus" data-ga="geschoss+" title="Geschoß oben dazu">＋</button>`;
+  let h = `<div class="s7-gl-k"><button type="button" class="s7-gl-plus" data-ga="geschoss+" title="Geschoß oben dazu">＋ OG</button><button type="button" class="s7-gl-plus" data-ga="geschoss-" title="Oberstes Geschoß entfernen" ${z.hoehen.length < 2 ? 'disabled' : ''}>－</button></div>`;
   for (let f = z.hoehen.length - 1; f >= 0; f--) {
-    const a = (e ? e.koerper : []).reduce((q, k) => q + k._geschosse.filter(g => g.f === f).reduce((s, g) => s + g.flaeche, 0), 0);
+    const a = (e ? e.koerper : []).reduce((q, k) => q + k._geschosse.filter(g => g.f === f).reduce((s2, g) => s2 + g.flaeche, 0), 0);
     h += `<button type="button" class="s7-gl-g ${f === S7E.f ? 'on' : ''} ${fs.includes(f) ? 'im' : ''} ${rot.has(f) ? 'rot' : ''}" data-gf="${f}">
       <b>${s7Name(f)}</b><span>${fmtNum(z.hoehen[f], 2)} m</span><em>${fmtNum(a, 0)} m²</em></button>`;
   }
-  h += `<button type="button" class="s7-gl-plus" data-ga="geschoss-" title="Oberstes Geschoß entfernen" ${z.hoehen.length < 2 ? 'disabled' : ''}>－</button>`;
+  h += `<div class="s7-gl-ugtrenn">Gelände</div>`;
+  for (let l = 1; l <= ug.n; l++) h += `<div class="s7-gl-g ug" title="Untergeschoß unter dem Erdgeschoß — Keller, Technik, Tiefgarage; keine Wohnnutzfläche"><b>${l}. UG</b><span>${fmtNum(ug.h, 2)} m</span><em>Keller/Garage</em></div>`;
+  h += `<div class="s7-gl-k"><button type="button" class="s7-gl-plus" data-ug="1" ${ug.n >= 3 ? 'disabled' : ''} title="Untergeschoß dazu (Keller/Garage, ohne Wohnnutzfläche)">＋ UG</button><button type="button" class="s7-gl-plus" data-ug="-1" ${ug.n < 1 ? 'disabled' : ''} title="Untergeschoß entfernen">－</button></div>`;
+  if (ug.n) h += `<label class="s7-gl-ugh" title="Höhe der Untergeschoße"><input type="text" inputmode="decimal" id="s7-ugh" value="${fmtNum(ug.h, 2)}"><em>m</em></label>`;
   host.innerHTML = h;
   host.querySelectorAll('[data-gf]').forEach(b => b.addEventListener('click', () => { S7E.f = +b.dataset.gf; s7EdNeu(true); }));
   host.querySelectorAll('[data-ga]').forEach(b => b.addEventListener('click', () => s7Aktion(b.dataset.ga)));
+  host.querySelectorAll('[data-ug]').forEach(b => b.addEventListener('click', () => { s7UGSetzen(s7UG().n + (+b.dataset.ug)); s7Toast(+b.dataset.ug > 0 ? 'Untergeschoß dazu — Keller, Technik bzw. Tiefgarage, ohne Wohnnutzfläche.' : 'Untergeschoß entfernt.'); s7EdNeu(); s7Fertig(true); }));
+  const ugh = host.querySelector('#s7-ugh');
+  if (ugh) ugh.addEventListener('change', () => { const v = parseFloat(String(ugh.value).replace(',', '.')); if (isFinite(v)) s7UGSetzen(null, v); s7EdNeu(); s7Fertig(true); });
 }
 function s7SeiteZeichnen() {
   const host = document.getElementById('s7-seite'); if (!host) return;
@@ -39439,7 +39499,7 @@ function s7SchnittDaten(art, cFix) {
     }
   }
   const top = s7EbeneY(K, n) + s5Attika();
-  const yMin = Math.min(...gel.map(g => g[1])) - 3, yMax = Math.max(top, K.base + K.maxH) + 3.2;
+  const yMin = Math.min(Math.min(...gel.map(g => g[1])) - 3, K.base - s7UG().n * s7UG().h - 1), yMax = Math.max(top, K.base + K.maxH) + 3.2;
   return { art, c, dir, baender, grenze, gel, huelle, sMin, sMax, yMin, yMax, n, K };
 }
 function s7SchnittView(svg, D) {
@@ -39476,6 +39536,11 @@ function s7SchnittZeichnen(art) {
     bd.rot.forEach(([a, b]) => { s += R(a, b, bd.y0, bd.y1, 's7-band rot'); });
     if (sel && akt) bd.roh.forEach(([a, b]) => { s += `<path d="M${a},${-bd.y0}V${-bd.y1}M${b},${-bd.y0}V${-bd.y1}" class="s7-seite-griff"/>`; });
   });
+  // Untergeschoße unter dem Erdgeschoß (Keller/Garage)
+  { const ug = s7UG(); if (ug.n) D.baender.filter(bd => bd.f === 0).forEach(bd => bd.roh.concat(bd.gebaut).slice(0, 1).forEach(([a, b]) => {
+      for (let l = 1; l <= ug.n; l++) s += R(a, b, bd.y0 - l * ug.h, bd.y0 - (l - 1) * ug.h, 's7-band ug');
+      s += T((a + b) / 2, bd.y0 - ug.h / 2 - 3 * k1, ug.n + ' UG · Keller/Garage', 's7-kotet', 10, 'middle');
+    })); }
   // geneigtes Dach im obersten Geschoß
   if (art === 'ans') (window.kubaturSolids || []).filter(k => k && k.roof && k.dach && k.dach.H && k.fp).forEach(k => {
     let a = Infinity, b = -Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -39763,6 +39828,10 @@ function s7Panel(host) {
     <div class="s5-info">Geschoßhöhe = Fußboden bis Fußboden. Die oberste Höhe reicht bis zur Oberkante der Attika bzw. beim Steildach bis zum First. Einzelne Geschoße unten anpassen.</div>
     <div class="s7p-liste">${zeilen}</div>
     ${pr.length ? `<div class="s7p-rot">${pr.map(q => `<div>⚠ ${escapeHtml(q.t)}</div>`).join('')}</div>` : `<div class="s7p-gut">✓ Alle Regeln eingehalten</div>`}
+    <div class="mp-sec">Untergeschoße</div>
+    <div class="s7p-n"><span>Keller / Garage <small style="color:var(--muted)">(ohne Wohnnutzfläche)</small></span>
+      <div class="s7p-step"><button type="button" data-ugn="-1" ${s7UG().n < 1 ? 'disabled' : ''}>−</button><b>${s7UG().n}</b><button type="button" data-ugn="1" ${s7UG().n >= 3 ? 'disabled' : ''}>+</button></div></div>
+    ${s7UG().n ? `<div class="s7p-hh"><label><span>Höhe je UG</span><input type="text" inputmode="decimal" id="s7p-ugh" value="${fmtNum(s7UG().h, 2)}"><em>m</em></label></div>` : ''}
     <button type="button" class="viz-btn primary s7p-ed">${S7_IC('<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>', 16)} Geschoße bearbeiten</button>
     <div class="s5-info">Oder im 3D-Modell direkt auf ein Geschoß klicken — es öffnet sich mit Grundriss, Ansicht, Schnitt und 3D.</div>
     <div class="mp-sec">Erste Kubatur</div>
@@ -39777,6 +39846,8 @@ function s7Panel(host) {
   { const eg = host.querySelector('#s7p-heg'), og = host.querySelector('#s7p-hog');
     eg.addEventListener('change', () => { const v = zahl(eg); if (v != null) s7HoeheSetzen(0, v); fertig(); });
     og.addEventListener('change', () => { const v = zahl(og); if (v != null) { for (let f = 1; f < s7Zustand().hoehen.length; f++) s7HoeheSetzen(f, v); } fertig(); }); }
+  host.querySelectorAll('[data-ugn]').forEach(b => b.addEventListener('click', () => { s7UGSetzen(s7UG().n + (+b.dataset.ugn)); fertig(); }));
+  { const u = host.querySelector('#s7p-ugh'); if (u) u.addEventListener('change', () => { const v = zahl(u); if (v != null) s7UGSetzen(null, v); fertig(); }); }
   host.querySelectorAll('[data-ed]').forEach(b => b.addEventListener('click', () => s7EditorOeffnen(+b.dataset.ed)));
   host.querySelector('.s7p-ed').addEventListener('click', () => s7EditorOeffnen(S7E ? S7E.f : 0));
   host.querySelectorAll('[data-fs]').forEach(b => b.addEventListener('click', () => { s7Zustand().fassade = b.dataset.fs; s7Erzeugen(s5Live.K, b.dataset.fs); fertig(); }));
@@ -42892,7 +42963,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v7.0';
+  const VERSION = 'v7.01';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
