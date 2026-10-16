@@ -3,5 +3,6 @@ Disallow: /vorschau/
 Disallow: /app/
 Disallow: /app5/
 Disallow: /app6/
+Disallow: /app7/
 
 Sitemap: https://cubarc.at/sitemap.xml
