@@ -3197,7 +3197,16 @@ body.boot-out .rp { transition: filter .9s ease, opacity .9s ease; }
 .gs-load svg { width: 15px; height: 15px; }
 
 /* --- Bauordnung als Chips + drei Kennwert-Kacheln --- */
-.site-aus { margin-bottom: 8px; }
+.site-aus { margin-bottom: 4px; }
+  #site-info-inner > #nb-info { margin: 0 0 10px; padding: 0; background: none; box-shadow: none; color: var(--muted); font-size: 11.5px; }
+  .site-schalter .tree-controls.off { display: none; }
+  .site-schalter .site-gesperrt { opacity: 0.45; pointer-events: none; }
+  .nb-floors-slot:empty { display: none; }
+  .site-schalter .tree-row { flex-wrap: wrap; }
+  .site-schalter #tree-reseed { min-width: 150px; }
+  .site-schalter #tree-info { flex: 1 1 120px; }
+  .nb-floors-slot { margin: -2px 0 6px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 4%, transparent); font-size: 12px; }
+  .nb-floors-slot .nb-tip { margin-top: 6px; }
   .site-aus-k { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
   .site-aus-k span { font: 500 12px var(--f-body); color: var(--muted); }
   .site-aus-k b { font: 600 12.5px var(--f-body); color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -22563,6 +22572,14 @@ function s5WandGlobal() {
   const roh = S5.hEG + (g - 1) * S5.hOG;
   return roh + s5Attika();
 }
+// Geschoße, die unter die geplante Wandhöhe an der Grundgrenze passen
+function s5WandGeschosse() {
+  const w = (S5 && S5.wand) || {};
+  if (w.modus !== 'hoehe') return Math.max(1, Math.round(+w.geschosse || 2));
+  const H = s5WandGlobal(); let n = 1;
+  while (S5.hEG + n * S5.hOG + s5Attika() <= H + 1e-6) n++;
+  return n;
+}
 function s5WandKante(i) { const k = S5 && S5.wandKante; const v = k && k[i]; return v != null && isFinite(+v) && +v > 0 ? +v : s5WandGlobal(); }
 function s5Attika() {
   try { const ro = roofOptions(); if (ro && ro.type !== 'flach' && !(courtyardOptions && courtyardOptions().on)) return ro.ansatz; } catch (e) {}
@@ -22920,7 +22937,7 @@ function s5Abschnitte(reg, dir, laenge) {
 
 // Rezept → Körperliste
 function s5Erzeuge(rez, K) {
-  const p = rez.p, fl = K.flaeche, typ = rez.typ, G = p.geschosse;
+  const p = rez.p, fl = K.flaeche, typ = rez.typ, G = (rez.auto && !rez.eigen) ? Math.max(1, Math.min(p.geschosse, s5WandGeschosse())) : p.geschosse;
   if (!fl.length) return [];
   const hTop = (g) => S5.hEG + (g - 1) * S5.hOG;
   switch (typ) {
@@ -23274,8 +23291,7 @@ function s5Optimieren(typ, K) {
   // Geschoßzahl mitsuchen: bei gerader Wand kostet jedes Geschoß mehr Abstand (Faktor × Höhe) —
   // die beste Variante ist daher nicht automatisch die höchste
   // höchstens so viele Geschoße, wie unter die geplante Wandhöhe an der Grundgrenze passen
-  const wandG = (() => { const w = S5.wand || {}; if (w.modus !== 'hoehe') return Math.max(1, Math.round(+w.geschosse || 2));
-    const H = s5WandGlobal(); let n = 1; while (S5.hEG + n * S5.hOG + s5Attika() <= H + 1e-6) n++; return n; })();
+  const wandG = s5WandGeschosse();
   const maxG = Math.max(1, Math.min(basis.geschosse || 1, wandG)), alle = [];
   kand.forEach(p => { for (let g = 1; g <= maxG; g++) alle.push(Object.assign({}, p, { geschosse: g })); });
   let best = null;
@@ -25099,7 +25115,9 @@ function rebuild() {
   {
     const el = id => document.getElementById(id);
     const key = JSON.stringify([slopePct, aspectDeg, s5Nr(terrainDgm), dgmActive() ? [terrainDgm.ref, terrainDgm.h.length, terrainDgm.step] : 0, viewMode(), document.documentElement.getAttribute('data-theme'),
-      nbVisible(), !!(el('toggle-nb-volumes') && el('toggle-nb-volumes').checked), s5Nr(neighbourData), neighbourData ? [neighbourData.items.length, neighbourData.buildings.length] : 0, s5Nr(widmungData), siteWindow, showViz, !!window.__exposeShot]);
+      nbVisible(), !!(el('toggle-nb-volumes') && el('toggle-nb-volumes').checked), s5Nr(neighbourData), neighbourData ? [neighbourData.items.length, neighbourData.buildings.length] : 0, s5Nr(widmungData), siteWindow, showViz, !!window.__exposeShot,
+      nbDefaultFloors(), neighbourData ? neighbourData.buildings.map(b => (b.floors == null ? '' : b.floors) + '/' + (b.height == null ? '' : Math.round(b.height * 10)) + (b.dach || '') + (b.neigung == null ? '' : b.neigung) + (b.first || '')).join(',') : '',
+      neighbourData ? neighbourData.items.map(o => o.fn || '').join(',') : '']);
     if (key !== s5Umgebung.key || !s5Umgebung.obj) {
       if (s5Umgebung.obj) disposeGeometries(s5Umgebung.obj);
       const nb = toSiteLayer(buildNeighbourLayer(heightFn, showViz));
@@ -36916,35 +36934,29 @@ function nbSyncUI() {
   if (neighbourData.buildings.length) parts.push(`${neighbourData.buildings.length} Nachbargebäude`);
   const osm = neighbourData.osmCount ? `<br><span class="nb-sub">${neighbourData.osmCount} Gebäudehöhe${neighbourData.osmCount === 1 ? '' : 'n'} aus OpenStreetMap (© OpenStreetMap-Mitwirkende)</span>` : '';
   const on = document.getElementById('toggle-neighbours').checked;
+  const vol = !!(document.getElementById('toggle-nb-volumes') || {}).checked;
   info.style.display = '';
-  const sw = siteWindow ? Math.round(siteWindow.half * 2) : null;
-  const siteRow = siteWindow ? `<div class="nb-site"><span>Ausschnitt <b>${sw} × ${sw} m</b>${c.total ? ` · ${c.total} Grundstücke` : ''}</span>`
-    + `<div class="segmented nb-seg">${Object.entries(SITE_PRESETS).map(([k, pr]) => `<button type="button" data-site="${k}" class="${siteWindow.preset === k ? 'active' : ''}">${pr.label}</button>`).join('')}</div></div>` : '';
-  info.innerHTML = siteRow + `<div class="nb-row"><span>${escapeHtml(parts.join(' · '))}</span>`
-    + `<button type="button" class="nb-toggle" id="nb-toggle-btn">${on ? 'Ausblenden' : 'Einblenden'}</button></div>`
-    + (neighbourData.buildings.length ? `<div class="nb-row nb-row2"><span class="nb-sub">Nachbargebäude ohne bekannte Höhe:${osm}</span>`
-      + `<div class="nb-floors"><button type="button" data-nbf="-1" aria-label="weniger">−</button><b id="nb-floors-val">${nbDefaultFloors()} G</b><button type="button" data-nbf="1" aria-label="mehr">+</button></div></div>` : '')
-    + `<div class="nb-tip">Nachbarfläche oder -gebäude im 3D-Fenster anklicken: Nutzung bzw. Geschosse festlegen.</div>`;
-  info.querySelectorAll('[data-site]').forEach(btn => btn.addEventListener('click', ev => {
-    ev.stopPropagation();
-    if (siteWindow && siteWindow.preset === btn.dataset.site) return;
-    document.getElementById('site-preset').value = btn.dataset.site;
-    siteReload();
-    if (typeof pushHistory === 'function') pushHistory();
-  }));
-  info.querySelectorAll('[data-nbf]').forEach(btn => btn.addEventListener('click', ev => {
-    ev.stopPropagation();
+  info.innerHTML = `<div class="nb-row"><span>${escapeHtml(parts.join(' · '))}</span></div>`;
+  // Geschoßzahl für Nachbargebäude ohne bekannte Höhe — direkt unter „Nachbargebäude als Volumen“
+  const slot = document.getElementById('nb-floors-slot') || info;
+  const floorsHtml = neighbourData.buildings.length && on && vol
+    ? `<div class="nb-row nb-fl-row"><span class="nb-sub">Geschoße, wo die Höhe unbekannt ist${osm}</span>`
+      + `<div class="nb-floors"><button type="button" data-nbf="-1" aria-label="weniger">−</button><b id="nb-floors-val">${nbDefaultFloors()} G</b><button type="button" data-nbf="1" aria-label="mehr">+</button></div></div>`
+      + `<div class="nb-tip">Ein Nachbargebäude im 3D-Fenster anklicken: Geschoße und Dach einzeln festlegen.</div>` : '';
+  if (slot === info) info.insertAdjacentHTML('beforeend', floorsHtml); else {
+    slot.innerHTML = floorsHtml;
+    const vz = document.getElementById('toggle-nb-volumes'), vzr = vz && vz.closest('.ios-toggle-row');
+    if (vzr && slot.previousElementSibling !== vzr) vzr.after(slot); }
+  slot.querySelectorAll('[data-nbf]').forEach(btn => btn.addEventListener('click', ev => {
+    ev.stopPropagation(); ev.preventDefault();
     const el = document.getElementById('nb-default-floors');
     el.value = Math.max(1, Math.min(30, nbDefaultFloors() + parseInt(btn.dataset.nbf, 10)));
     nbSyncUI(); rebuild(); if (typeof pushHistory === 'function') pushHistory();
   }));
-  document.getElementById('nb-toggle-btn').addEventListener('click', ev => {
-    ev.stopPropagation();
-    const el = document.getElementById('toggle-neighbours'); el.checked = !el.checked;
-    el.dispatchEvent(new Event('input')); nbSyncUI();
-  });
+  if (typeof window.__siteAusZeichne === 'function') window.__siteAusZeichne();
 }
 document.getElementById('toggle-neighbours').addEventListener('input', () => nbSyncUI());
+document.getElementById('toggle-nb-volumes').addEventListener('input', () => nbSyncUI());
 // ============================================================================
 // Nachbargebäude als Volumen + Nutzung der Nachbarflächen (per Klick)
 // ----------------------------------------------------------------------------
@@ -37774,8 +37786,10 @@ function buildTreeLayer(heightFn, showViz) {
   const info = document.getElementById('tree-info'), ctl = document.getElementById('tree-controls');
   const on = document.getElementById('toggle-trees').checked && (showViz || viewMode() !== 'widmung');
   { const dv = document.getElementById('v-tree-density'); if (dv) dv.textContent = document.getElementById('tree-density').value + ' %'; }
-  if (ctl) ctl.classList.toggle('off', !on);
-  if (!on || !nbVisible() || viewMode() === 'aushub') { if (info) info.textContent = ''; return null; }
+  if (ctl) ctl.classList.toggle('off', !document.getElementById('toggle-trees').checked);
+  if (on && !nbVisible()) { if (info) info.textContent = neighbourData ? 'nur mit eingeblendeten Nachbargrundstücken' : 'erst nach dem Laden eines Grundstücks'; return null; }
+  if (on && viewMode() === 'aushub') { if (info) info.textContent = 'in der Ansicht „Aushub“ ausgeblendet'; return null; }
+  if (!on) { if (info) info.textContent = ''; return null; }
   const areas = treeGreenAreas();
   // auch bebaute Nachbargrundstücke (Wohnen/Misch/…) bekommen Gartenbäume — lockerer als Grünland
   const gardens = (neighbourData && neighbourData.items ? neighbourData.items : []).filter(o => o.kind !== 'road' && o.kind !== 'rail' && o.fn !== 'verkehr' && o.fn !== 'gruen').map(o => o.ring);
@@ -37853,6 +37867,7 @@ document.getElementById('tree-style-seg').addEventListener('click', e => {
   rebuild(); if (typeof pushHistory === 'function') pushHistory();
 });
 document.getElementById('tree-density').addEventListener('input', e => { setzWert('v-tree-density', e.target.value + ' %'); });
+document.getElementById('toggle-trees').addEventListener('input', e => { const c = document.getElementById('tree-controls'); if (c) c.classList.toggle('off', !e.target.checked); });
 document.getElementById('tree-reseed').addEventListener('click', e => {
   e.stopPropagation();
   const el = document.getElementById('tree-seed'); el.value = String((parseInt(el.value, 10) || 1) + 1);
@@ -39267,27 +39282,38 @@ function northUpView() {
       const aus = document.createElement('div'); aus.className = 'site-aus'; aus.id = 'site-aus';
       const zeichne = () => {
         const sw = (typeof siteWindow !== 'undefined' && siteWindow) ? Math.round(siteWindow.half * 2) : null;
-        const akt = (typeof siteWindow !== 'undefined' && siteWindow) ? siteWindow.preset : (($('site-preset') || {}).value || 'kompakt');
-        aus.innerHTML = '<div class="site-aus-k"><span>Ausschnitt</span>' + (sw ? `<b>${sw} × ${sw} m</b>` : '') + '</div>'
+        const akt = (($('site-preset') || {}).value) || ((typeof siteWindow !== 'undefined' && siteWindow) ? siteWindow.preset : 'kompakt');
+        const nG = (typeof neighbourData !== 'undefined' && neighbourData && neighbourData.counts) ? neighbourData.counts.total : 0;
+        const laedt = typeof siteWindow !== 'undefined' && siteWindow && siteWindow.preset !== akt;
+        aus.innerHTML = '<div class="site-aus-k"><span>Ausschnitt</span>' + (laedt ? '<b>wird geladen …</b>' : sw ? `<b>${sw} × ${sw} m${nG ? ` · ${nG} Grundstücke` : ''}</b>` : '<b>nach dem Laden eines Grundstücks</b>') + '</div>'
           + '<div class="segmented nb-seg">'
           + Object.entries(SITE_PRESETS).map(([k, pr]) => `<button type="button" data-site2="${k}" class="${k === akt ? 'active' : ''}">${pr.label}</button>`).join('')
           + '</div>';
         aus.querySelectorAll('[data-site2]').forEach(b => b.addEventListener('click', ev => {
           ev.stopPropagation();
           const el = $('site-preset'); if (!el) return;
-          if (typeof siteWindow !== 'undefined' && siteWindow && siteWindow.preset === b.dataset.site2) return;
+          if (el.value === b.dataset.site2 && typeof siteWindow !== 'undefined' && siteWindow && siteWindow.preset === b.dataset.site2) return;
           el.value = b.dataset.site2;
+          zeichne();
           if (typeof siteReload === 'function' && typeof lastKatTransform !== 'undefined' && lastKatTransform) siteReload();
-          else { aus.querySelectorAll('[data-site2]').forEach(x => x.classList.toggle('active', x === b)); }
           if (typeof pushHistory === 'function') pushHistory();
-          setTimeout(zeichne, 1200);
         }));
       };
+      window.__siteAusZeichne = zeichne;
       zeichne();
       inner.insertBefore(aus, inner.firstChild);
+      // was im Ausschnitt liegt, steht direkt unter der Ausschnittwahl
+      { const ni = $('nb-info'); if (ni) inner.insertBefore(ni, aus.nextSibling); }
       const box = document.createElement('div'); box.className = 'site-schalter';
       teile.forEach(t => box.appendChild(t));
-      inner.insertBefore(box, aus.nextSibling);
+      { const vz = zeile('toggle-nb-volumes'); const sl = document.createElement('div'); sl.id = 'nb-floors-slot'; sl.className = 'nb-floors-slot';
+        const tz = zeile('toggle-trees');
+        if (tz && tz.parentElement === box) box.insertBefore(sl, tz); else if (vz && vz.parentElement === box) box.insertBefore(sl, vz.nextSibling); else box.appendChild(sl); }
+      inner.insertBefore(box, ($('nb-info') || aus).nextSibling);
+      // Gebäudevolumen gibt es nur mit eingeblendeten Nachbarn
+      const nbSperre = () => { const n = $('toggle-neighbours'), vz = zeile('toggle-nb-volumes'); if (n && vz) vz.classList.toggle('site-gesperrt', !n.checked); };
+      const tn = $('toggle-neighbours'); if (tn) tn.addEventListener('input', nbSperre); nbSperre();
+      if (typeof nbSyncUI === 'function') try { nbSyncUI(); } catch (e) {}
       karte.style.display = '';            // die Karte steht immer, auch ohne geladene Nachbarn
       karte.dataset.fest = '1';
       setInterval(() => { if (karte.style.display === 'none') karte.style.display = ''; }, 1500);
@@ -41270,7 +41296,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v6.04';
+  const VERSION = 'v6.05';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
@@ -41641,6 +41667,7 @@ function sprSetzen(code, still) {
 .cad-zoom { margin-left: auto; }
 /* Zeichnung */
 .cad-svg * { vector-effect: non-scaling-stroke; }
+.cad-svg text { vector-effect: none; }   /* Schrift: Rand wird passend zum Maßstab gesetzt (sonst Geisterschrift beim Zoomen) */
 .cad-svg .cad-gr { stroke: var(--line); stroke-width: .5; opacity: .45; fill: none; }
 .cad-svg .cad-gr2 { stroke: var(--line-strong, var(--line)); stroke-width: .8; opacity: .55; fill: none; }
 .cad-svg .cad-nb { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .55; }
@@ -41765,11 +41792,25 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${wert}" data-einheit="${einheit || ''}" data-nk="${nk == null ? 1 : nk}"></div>`;
   }
   function schalter(id, label, an) { return `<label class="ios-toggle-row"><span>${esc(label)}</span><input type="checkbox" id="${id}" class="ios-toggle" ${an ? 'checked' : ''}></label>`; }
+  let wandT = null, wandWert = null;
+  function wandVariantenBald() {
+    clearTimeout(wandT);
+    wandT = setTimeout(() => {
+      const w = JSON.stringify([S5.wand, s5WandGlobal()]);
+      if (w === wandWert) return; wandWert = w;
+      if (!S5.varianten.some(v => v.auto && !v.eigen)) return;
+      const akt = s5AktiveVariante(), typ = akt && akt.auto ? akt.typ : null;
+      try { window.s5VariantenErzeugen(true); } catch (e) { console.warn('Varianten', e); return; }
+      // die gewählte Typologie bleibt gewählt, sofern es sie noch gibt
+      if (typ) { const n = S5.varianten.find(v => v.typ === typ); if (n && n.id !== S5.aktiv) { S5.aktiv = n.id; neu(false); } }
+    }, 350);
+  }
   function bindRegler(root, onInput, onChange) {
     root.querySelectorAll('input[type=range]').forEach(r => {
       const show = () => { const v = root.querySelector(`.val[data-for="${r.id}"]`); if (v) v.textContent = fmtNum(+r.value, +r.dataset.nk) + (r.dataset.einheit ? ' ' + r.dataset.einheit : ''); };
       r.addEventListener('input', () => { show(); onInput(r); });
-      r.addEventListener('change', () => { onChange ? onChange(r) : pushHistory(); });
+      r.addEventListener('change', () => { onChange ? onChange(r) : pushHistory();
+        if (r.dataset.wandGeaendert) { delete r.dataset.wandGeaendert; wandVariantenBald(); } });
     });
     if (typeof updateRangeFills === 'function') updateRangeFills();
   }
@@ -41895,8 +41936,8 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
         const wandBlock = `<div class="mp-sec">Wandhöhe an der Grundgrenze</div>
           <div class="s5-seg"><button type="button" data-wm="geschosse" class="${modus === 'geschosse' ? 'on' : ''}">Geschoße</button><button type="button" data-wm="hoehe" class="${modus === 'hoehe' ? 'on' : ''}">Wandhöhe</button></div>
           ${modus === 'geschosse' ? regler('s5-wand-g', 'Geschoße an der Grundgrenze', g, 1, 10, 1, '', 0) : regler('s5-wand-h', 'Wandhöhe', +w.hoehe || 7, 3, 35, 0.1, 'm', 2)}
-          <div class="s5-wand-erg">${modus === 'geschosse' ? `EG ${fmtNum(S5.hEG, 2)}${g > 1 ? ' + ' + (g - 1) + ' × OG ' + fmtNum(S5.hOG, 2) : ''} + Attika ${fmtNum(wg - roh, 2)} = ` : ''}<b>${fmtNum(wg, 2)} m Wandhöhe</b><br>Abstand je Kante = max(Mindestabstand; Faktor × ${fmtNum(wg, 2)} m)${tbo.some(t => t && !t.strasse && t.factor * wg > t.setback) ? ' — z. B. 0,6 × ' + fmtNum(wg, 2) + ' = <b>' + fmtNum(0.6 * wg, 2) + ' m</b>' : ''}</div>
-          <div class="s5-info">Wandhöhe = Geschoße + Attika (Rand des Flachdachs). Je Kante kann unten eine eigene Wandhöhe eingetragen werden.</div>`;
+          <div class="s5-wand-erg">${modus === 'geschosse' ? `EG ${fmtNum(S5.hEG, 2)}${g > 1 ? ' + ' + (g - 1) + ' × OG ' + fmtNum(S5.hOG, 2) : ''} + ${roofOptions().type !== 'flach' ? 'Ansatz' : 'Attika'} ${fmtNum(wg - roh, 2)} = ` : ''}<b>${fmtNum(wg, 2)} m Wandhöhe</b><br>Abstand je Kante = max(Mindestabstand; Faktor × ${fmtNum(wg, 2)} m)${tbo.some(t => t && !t.strasse && t.factor * wg > t.setback) ? ' — z. B. 0,6 × ' + fmtNum(wg, 2) + ' = <b>' + fmtNum(0.6 * wg, 2) + ' m</b>' : ''}</div>
+          <div class="s5-info">Wandhöhe = Geschoße + ${roofOptions().type !== 'flach' ? 'Ansatz des Dachs (Kniestock)' : 'Attika (Rand des Flachdachs)'}. Sie bestimmt den Abstand und wie viele Geschoße die Varianten an der Grenze haben dürfen — nach dem Loslassen werden die Varianten neu berechnet. Je Kante kann unten eine eigene Wandhöhe eingetragen werden.</div>`;
         return wandBlock + `<div class="mp-sec">Abstände nach Tiroler Bauordnung</div>
           <div class="s5-info">Eigene Widmung: <b>${esc(S5_KLASSE_NAME[eigen.eigen] || '–')}</b>. Je Kante nach § 6 Abs. 1 TBO 2022 (Faktor × Höhe über dem Urgelände darunter, mindestens 3 bzw. 4 m) — zur Straße nach § 5 TBO ohne Höhenfaktor.</div>
           <div class="s5-tbo">${zeilen}</div>
@@ -41920,13 +41961,20 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
     host.querySelector('.s5-kanten').addEventListener('click', () => { const b = $('edge-editor-open'); if (b) b.click(); });
     bindRegler(host, r => {
       if (r.id === 's5-strasse') { S5.strassenAbstand = +r.value; neuZeichnenBald(); }
+      if (r.id === 's5-wand-g' || r.id === 's5-wand-h') r.dataset.wandGeaendert = '1';
       if (r.id === 's5-wand-g') { S5.wand = Object.assign({}, S5.wand, { modus: 'geschosse', geschosse: +r.value }); neuZeichnenBald(); }
       if (r.id === 's5-wand-h') { S5.wand = Object.assign({}, S5.wand, { modus: 'hoehe', hoehe: +r.value }); neuZeichnenBald(); }
     });
-    host.querySelectorAll('[data-wm]').forEach(b => b.addEventListener('click', () => {
-      const alt = s5WandGlobal(); S5.wand = Object.assign({}, S5.wand, { modus: b.dataset.wm });
-      if (b.dataset.wm === 'hoehe' && !(+S5.wand.hoehe)) S5.wand.hoehe = Math.round(alt * 100) / 100;
+    host.querySelectorAll('[data-wm]').forEach(b => b.addEventListener('click', ev => {
+      ev.preventDefault();
+      const w0 = S5.wand || {}, jetzt = w0.modus === 'hoehe' ? 'hoehe' : 'geschosse', ziel = b.dataset.wm === 'hoehe' ? 'hoehe' : 'geschosse';
+      if (ziel === jetzt) return;   // schon aktiv — nichts ändern
+      if (ziel === 'hoehe') S5.wand = Object.assign({}, w0, { modus: 'hoehe', hoehe: Math.round(s5WandGlobal() * 100) / 100 });
+      else S5.wand = Object.assign({}, w0, { modus: 'geschosse', geschosse: s5WandGeschosse() });
+      const vorher = s5WandGlobal();
       neu();
+      // nur wenn sich die Wandhöhe dabei wirklich ändert (Meter → ganze Geschoße), neu rechnen
+      if (Math.abs(vorher - s5WandGlobal()) > 1e-6 || ziel === 'geschosse') wandVariantenBald();
     }));
     host.querySelectorAll('.s5-wh input').forEach(inp => inp.addEventListener('change', () => {
       const i = +inp.dataset.i, v = parseFloat(String(inp.value).replace(',', '.'));
@@ -42929,7 +42977,9 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
       if (!vb) einpassen();
       svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const k1 = 1 / pxProM();                          // 1 Bildpunkt in Metern
-      const T = (x, y, txt, cls, gr) => `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" class="${cls}" style="font-size:${((gr || 12) * k1).toFixed(3)}px">${esc(txt)}</text>`;
+      // Schrift in Bildschirmgröße setzen und dann in Meter skalieren — winzige Schriftgrößen
+      // (z. B. 0,1) setzt der Browser beim starken Zoomen mit falschen Abständen (Buchstabensalat)
+      const T = (x, y, txt, cls, gr) => `<text transform="translate(${x.toFixed(3)} ${y.toFixed(3)}) scale(${k1.toPrecision(5)})" class="${cls}" style="font-size:${(gr || 12)}px;stroke-width:${cls === 'cad-live' ? 3.5 : 3}px">${esc(txt)}</text>`;
       let s = '';
       // Raster (an der Achse ausgerichtet)
       { const ppm = pxProM(); let g = ppm > 18 ? 1 : ppm > 6 ? 5 : 10; const w = achsW() * 180 / Math.PI;
@@ -42965,7 +43015,7 @@ body.s5-band-an .tb-m-l { max-width: none !important; }
           const nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l, sg = signedArea(k.ring) >= 0 ? -1 : 1, off = 12 * k1;
           let ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
           const tx = m[0] + nx * off * sg, tz = m[1] + nz * off * sg;
-          s += `<text x="${tx.toFixed(2)}" y="${tz.toFixed(2)}" class="cad-mass" style="font-size:${(11 * k1).toFixed(3)}px" transform="rotate(${ang.toFixed(2)} ${tx.toFixed(2)} ${tz.toFixed(2)})">${f2(l)}</text>`;
+          s += `<text class="cad-mass" style="font-size:11px;stroke-width:3px" transform="translate(${tx.toFixed(3)} ${tz.toFixed(3)}) rotate(${ang.toFixed(2)}) scale(${k1.toPrecision(5)})">${f2(l)}</text>`;
           if (sel.size === 1) s += `<circle cx="${m[0]}" cy="${m[1]}" r="${(4.5 * k1).toFixed(3)}" class="cad-kante" data-k="${k.id}" data-e="${i}"/>`;
         });
         if (sel.size === 1) k.ring.forEach((p, i) => { const r = 5 * k1; s += `<rect x="${p[0] - r}" y="${p[1] - r}" width="${2 * r}" height="${2 * r}" class="cad-pt" data-k="${k.id}" data-i="${i}"/>`; });
