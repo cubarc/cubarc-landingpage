@@ -4336,6 +4336,11 @@ window.KUBATUR_ABO_SERVER = 'probe';
         <label>Dachneigung (Wunsch) <span class="val" id="v-roof-pitch">25°</span></label>
         <input type="range" id="roof-pitch" min="5" max="45" step="1" value="25">
       </div>
+      <div class="group">
+        <label>Ansatz über oberster Decke <span class="val" id="v-roof-ansatz">1,00 m</span></label>
+        <input type="range" id="roof-ansatz" min="0" max="3" step="0.05" value="1">
+        <div class="note" style="margin-top:4px">Die Außenwände laufen so weit über die oberste Rohdecke weiter (Kniestock), erst dann beginnt die Dachschräge.</div>
+      </div>
       <input type="hidden" id="roof-overhang" value="0"><span id="v-roof-overhang" style="display:none;"></span>
       <div class="group" id="roof-ridge-row">
         <label>Firstrichtung</label>
@@ -18104,6 +18109,162 @@ function buildGiebeldach(fp, firstY, opts, maxAbfall, color, showViz) {
   if (wandMesh) group.add(wandMesh);
   return { group, info };
 }
+// Dach v6: die Dachflächen sind Ebenen (Satteldach zwei, Walmdach vier, Pultdach eine).
+// Der Grundriss wird an den Schnittlinien der Ebenen in Dachflächen zerlegt — First und
+// Grate liegen damit genau, nicht nur ungefähr im Dreiecksnetz. Die Außenwände laufen von
+// der obersten Rohdecke (fussY) bis unter die Dachhaut; die Traufe liegt um den Ansatz
+// höher. Die Neigung wird nur so weit zurückgenommen, bis jeder Punkt der Dachhaut im
+// zulässigen Suchraum liegt (§ 6 TBO) und unter der Höchsthöhe bleibt.
+function dachEbenen(A, type) {
+  const qg = [-A.uz, A.ux], lg = [A.ux, A.uz];
+  const cq = A.quer([0, 0]), cl = A.laengs([0, 0]);
+  const lin = (g, c) => ({ g, c, f: p => g[0] * p[0] + g[1] * p[1] + c });
+  if (type === 'pult') return [lin(qg, cq + A.halbQ)];
+  if (type === 'walm') { const w = Math.max(0, A.halbL - A.halbQ);
+    return [lin(qg, cq), lin([-qg[0], -qg[1]], -cq), lin(lg, cl - w), lin([-lg[0], -lg[1]], -cl - w)]; }
+  return [lin(qg, cq), lin([-qg[0], -qg[1]], -cq)];
+}
+function dachHalbebene(h, bb) {
+  // Polygon für { p : h(p) ≥ 0 }, groß genug für den ganzen Grundriss
+  const a = h.g, n2 = a[0] * a[0] + a[1] * a[1]; if (n2 < 1e-12) return null;
+  const nl = Math.sqrt(n2), n = [a[0] / nl, a[1] / nl], t = [-n[1], n[0]];
+  const cx = (bb[0] + bb[2]) / 2, cz = (bb[1] + bb[3]) / 2, B = 4 * Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) + 50;
+  // Fußpunkt auf der Linie, nahe der Grundrissmitte
+  const hc = h.f([cx, cz]), p0 = [cx - n[0] * hc / nl, cz - n[1] * hc / nl];
+  return [[p0[0] + t[0] * B, p0[1] + t[1] * B], [p0[0] - t[0] * B, p0[1] - t[1] * B],
+          [p0[0] - t[0] * B + n[0] * B, p0[1] - t[1] * B + n[1] * B], [p0[0] + t[0] * B + n[0] * B, p0[1] + t[1] * B + n[1] * B]];
+}
+function dachRegionen(fp, E) {
+  const bb = [Infinity, Infinity, -Infinity, -Infinity];
+  fp.forEach(p => { bb[0] = Math.min(bb[0], p[0]); bb[1] = Math.min(bb[1], p[1]); bb[2] = Math.max(bb[2], p[0]); bb[3] = Math.max(bb[3], p[1]); });
+  const out = [];
+  E.forEach((ei, i) => {
+    let teile = [fp];
+    E.forEach((ej, j) => {
+      if (i === j || !teile.length) return;
+      const h = { g: [ei.g[0] - ej.g[0], ei.g[1] - ej.g[1]], c: ei.c - ej.c };
+      h.f = p => h.g[0] * p[0] + h.g[1] * p[1] + h.c;
+      const hp = dachHalbebene(h, bb);
+      if (!hp) { if (h.c < 0) teile = []; return; }
+      try {
+        teile = cpBool(ClipperLib.ClipType.ctIntersection, teile.map(t => cpPoly(t)), [cpPoly(hp)])
+          .map(pp => legalFromPath(pp)).filter(r => r.length >= 3 && Math.abs(signedArea(r)) > 0.01);
+      } catch (e) { teile = teile.map(t => clipHalfPlane(t, h.f, true)).filter(r => r.length >= 3); }
+    });
+    teile.forEach(r => { const gl = Math.hypot(ei.g[0], ei.g[1]) || 1;
+      out.push({ ring: signedArea(r) >= 0 ? r : r.slice().reverse(), g: [ei.g[0] / gl, ei.g[1] / gl], ebene: i }); });
+  });
+  return out;
+}
+function buildDachV6(fp, lage, opts, color, showViz) {
+  // lage: { fussY, ansatz, maxY, legal(p, z) }
+  const group = new THREE.Group();
+  const info = { type: opts.type, pitch: 0, wanted: opts.pitch, volume: 0, fussY: lage.fussY,
+                 ansatz: lage.ansatz, ansatzWunsch: lage.ansatz, ridgeY: lage.fussY, traufY: lage.fussY,
+                 drop: 0, trimmed: false, H: null, regionen: [], linien: [], knicke: null };
+  if (opts.type === 'flach' || !fp || fp.length < 3) return { group, info };
+  const A = dachAchse(fp, opts.ridge === 'quer');
+  if (!A) return { group, info };
+  const E = dachEbenen(A, opts.type);
+  const maxF = p => { let m = -Infinity; E.forEach(e => { m = Math.max(m, e.f(p)); }); return m; };
+  let M0 = 0; fp.forEach(p => { M0 = Math.max(M0, maxF(p)); });
+  if (M0 < 0.2) return { group, info };
+  const legal = lage.legal || (() => true);
+  // Prüfpunkte: Umriss dicht, Raster innen, dazu die Ecken der Dachflächen (First, Grate)
+  const regionen = dachRegionen(fp, E);
+  const pruef = [];
+  dgmDensify(fp, true, 1.0).forEach(p => pruef.push(p));
+  { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    fp.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+    const st = Math.max(1, Math.sqrt((x1 - x0) * (z1 - z0)) / 14);
+    for (let x = x0 + st / 2; x < x1; x += st) for (let z = z0 + st / 2; z < z1; z += st) if (pointInPolygon([x, z], fp)) pruef.push([x, z]); }
+  regionen.forEach(rg => rg.ring.forEach(p => pruef.push(p)));
+  // Traufe: zuerst muss der Umriss in Höhe des Ansatzes zulässig sein
+  const umriss = dgmDensify(fp, true, 1.0);
+  let ansatz = Math.max(0, lage.ansatz || 0);
+  while (ansatz > 0.001 && (lage.fussY + ansatz > lage.maxY + 1e-6 || umriss.some(p => !legal(p, lage.fussY + ansatz)))) ansatz = Math.max(0, ansatz - 0.1);
+  info.ansatz = ansatz;
+  const traufY = lage.fussY + ansatz;
+  info.traufY = traufY;
+  const st0 = Math.tan(Math.max(5, Math.min(60, opts.pitch || 25)) * Math.PI / 180);
+  let st = Math.min(st0, Math.max(0, (lage.maxY - traufY) / M0));
+  const Hmit = s => p => traufY + s * (M0 - maxF(p));
+  const zulaessig = s => { const H = Hmit(s); return pruef.every(p => { const z = H(p); return z <= lage.maxY + 1e-3 && legal(p, z); }); };
+  let n = 0;
+  while (st * M0 >= 0.08 && !zulaessig(st) && n++ < 60) st = Math.max(0, st - Math.max(0.05 / M0, st * 0.06));
+  if (st * M0 < 0.08) { info.traufY = traufY; info.ansatz = ansatz; return { group, info }; }
+  info.trimmed = st < st0 - 1e-6;
+  const firstY = traufY + st * M0;
+  const H = Hmit(st);
+  info.pitch = Math.atan(st) * 180 / Math.PI;
+  info.drop = st * M0; info.ridgeY = firstY; info.H = H; info.regionen = regionen;
+  // Knickpunkte einer Strecke a→b: wo sie von einer Dachfläche in die nächste wechselt
+  info.knicke = (a, b) => {
+    const ts = [];
+    for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
+      const fa = E[i].f(a) - E[j].f(a), fb = E[i].f(b) - E[j].f(b);
+      if ((fa > 0) === (fb > 0) || Math.abs(fa - fb) < 1e-9) continue;
+      const t = fa / (fa - fb);
+      if (t > 1e-4 && t < 1 - 1e-4) {
+        const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        if (Math.abs(maxF(p) - E[i].f(p)) < 1e-6) ts.push(t);   // nur echte Grate/Firste
+      }
+    }
+    return ts.sort((x, y) => x - y);
+  };
+  const profil = (a, b) => { const pts = [a]; info.knicke(a, b).forEach(t => pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])); pts.push(b); return pts; };
+  info.profil = profil;
+  // Volumen vom Rohdeckenniveau bis zur Dachhaut (Kniestock eingeschlossen)
+  { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    fp.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); });
+    const s = Math.max(0.3, Math.sqrt(((x1 - x0) * (z1 - z0)) / 6000)); let v = 0;
+    for (let x = x0 + s / 2; x < x1; x += s) for (let z = z0 + s / 2; z < z1; z += s)
+      if (pointInPolygon([x, z], fp)) v += Math.max(0, H([x, z]) - lage.fussY) * s * s;
+    info.volume = v; }
+  // Dachhaut: jede Dachfläche für sich trianguliert — eben, mit scharfem First
+  const haut = [], linien = [];
+  regionen.forEach(rg => {
+    try {
+      const geo = new THREE.ShapeGeometry(new THREE.Shape(rg.ring.map(q => new THREE.Vector2(q[0], q[1]))));
+      const pz = geo.attributes.position, idx = geo.index;
+      const addV = i => { const x = pz.getX(i), z = pz.getY(i); haut.push(x, H([x, z]) + ROOF_LIFT, z); };
+      if (idx) for (let i = 0; i < idx.count; i++) addV(idx.getX(i)); else for (let i = 0; i < pz.count; i++) addV(i);
+      geo.dispose();
+    } catch (e) { /* ohne diese Fläche weiter */ }
+    rg.ring.forEach((p, i) => { const q = rg.ring[(i + 1) % rg.ring.length];
+      linien.push(p[0], H(p) + ROOF_LIFT, p[1], q[0], H(q) + ROOF_LIFT, q[1]); });
+  });
+  // Außenwände über der obersten Decke: vom Rohdeckenniveau bis unter die Dachhaut
+  const wand = [];
+  fp.forEach((a, i) => {
+    const b = fp[(i + 1) % fp.length], pts = profil(a, b);
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const p = pts[k], q = pts[k + 1], hp = H(p), hq = H(q);
+      wand.push(p[0], lage.fussY, p[1], q[0], lage.fussY, q[1], q[0], hq, q[1],
+                p[0], lage.fussY, p[1], q[0], hq, q[1], p[0], hp, p[1]);
+    }
+    linien.push(a[0], lage.fussY, a[1], a[0], H(a), a[1]);   // Gebäudeecke
+    linien.push(a[0], lage.fussY, a[1], b[0], lage.fussY, b[1]);
+  });
+  info.linien = linien; info.hautPos = haut; info.wandPos = wand;
+  const mk = (arr, rough) => { if (!arr.length) return null;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: showViz ? 0 : 0.05, side: THREE.DoubleSide, flatShading: true }));
+    m.castShadow = true; m.receiveShadow = true; return m; };
+  const dachMesh = mk(haut, showViz ? 0.92 : 0.85), wandMesh = mk(wand, showViz ? 0.92 : 0.85);
+  if (dachMesh) { dachMesh.receiveShadow = false; dachMesh.material.flatShading = false;
+    dachMesh.material.polygonOffset = true; dachMesh.material.polygonOffsetFactor = -2; dachMesh.material.polygonOffsetUnits = -2;
+    dachMesh.userData.dachHaut = true; group.add(dachMesh); }
+  if (wandMesh) { wandMesh.receiveShadow = false; wandMesh.userData.dachWand = true; group.add(wandMesh); }
+  // feine Kanten: First, Grate, Traufe und Ecken — wie bei einem Modell aus Karton
+  if (!showViz) {
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(linien, 3));
+    const li = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x8b8a86, transparent: true, opacity: 0.55 }));
+    li.raycast = () => {}; group.add(li);
+  }
+  group.userData.s5modell = true;   // auch im Weißmodell sichtbar
+  return { group, info };
+}
 function buildRoof(footprint, baseY, type, pitchDeg, color) {
   if (type === 'flach' || footprint.length < 3) return null;
   const pitch = Math.tan(pitchDeg * Math.PI / 180);
@@ -22403,7 +22564,9 @@ function s5WandGlobal() {
   return roh + s5Attika();
 }
 function s5WandKante(i) { const k = S5 && S5.wandKante; const v = k && k[i]; return v != null && isFinite(+v) && +v > 0 ? +v : s5WandGlobal(); }
-function s5Attika() { const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.5 : Math.max(0, +a); }   // Rohdecke → Oberkante Attika: Dachaufbau + Aufkantung
+function s5Attika() {
+  try { const ro = roofOptions(); if (ro && ro.type !== 'flach' && !(courtyardOptions && courtyardOptions().on)) return ro.ansatz; } catch (e) {}
+  const a = S5 && S5.attika; return a == null || !isFinite(+a) ? 0.5 : Math.max(0, +a); }   // Rohdecke → Oberkante Attika: Dachaufbau + Aufkantung
 function s5Oben() { return s5Attika(); }
 var s5Live = null;          // letzte Auswertung: Fläche, Suchraum, Varianten-Ergebnisse
 var s5Aenderung = null;     // Rückruf der Oberfläche nach jedem Neuaufbau
@@ -24180,22 +24343,21 @@ function rebuild() {
         const dachFarbe = showViz ? (vizWhite() ? 0xf4f4f2 : VIZ_WHITE)
           : (viewMode() === 'widmung' ? WID_RED[(floors - 1) % 2] : ((floors - 1) % 2 === 0 ? 0xf7f7f5 : 0xeeeeec));
         const deckeY = ebeneY(floors);
-        // So viel Luft, wie die Höhenregel über der obersten Decke noch zulässt — der First
-        // steigt nur so weit, wie er darf, und ist an seiner Stelle auch nach der
-        // Abstandsregel geprüft.
-        const zMaxD = Math.min(baseLevel + maxH - Math.max(0, pieceOffset), topAbsY != null ? topAbsY : Infinity);
-        let kopf = Math.max(0, zMaxD - deckeY);
-        try { const mitte = polygonCentroid(tFp);
-          while (kopf > 0.05 && !roofLegalAt(mitte, deckeY + kopf)) kopf -= 0.25;
-          kopf = Math.max(0, kopf); } catch (e) { kopf = Math.max(0, kopf); }
-        // Was der gewünschte Winkel darüber hinaus braucht, holt sich das Dach aus dem
-        // obersten Geschoß — aber höchstens so viel, dass ein Kniestock von 1,25 m bleibt.
-        const achse = dachAchse(tFp, roofOpts.ridge === 'quer');
-        const wunsch = achse ? Math.tan(Math.max(5, Math.min(60, roofOpts.pitch || 25)) * Math.PI / 180) * achse.halbQ : 0;
-        const hoch = Math.min(wunsch, kopf);
-        const maxAbfall = hoch + Math.max(0.4, floorH - 1.25);
-        dachBau = buildGiebeldach(tFp, deckeY + hoch, roofOpts, maxAbfall, dachFarbe, showViz);
-        dachAbsenkung = Math.max(0, deckeY - dachBau.info.traufY);
+        // Wie bei den Nachbargebäuden: die Außenwände laufen um den Ansatz über die oberste
+        // Decke weiter, darauf sitzt das Dach. Jeder Punkt der Dachhaut muss im Suchraum
+        // seiner Höhe liegen (§ 6 TBO) und unter der Höchsthöhe bleiben — sonst wird die
+        // Neigung zurückgenommen, notfalls auch der Ansatz. (Vorgabe Ozan, 16.10.2026)
+        const zMaxD = Math.min(s5e ? s5e.bezugY + maxH : baseLevel + maxH - Math.max(0, pieceOffset), topAbsY != null ? topAbsY : Infinity);
+        const dachCache = new Map();
+        const dachLegal = (p, z) => {
+          const zq = Math.ceil(z * 10 - 1e-6) / 10;
+          let regs = dachCache.get(zq);
+          if (!regs) { try { regs = K5.huelleBei(zq); } catch (e) { regs = null; } dachCache.set(zq, regs || []); regs = regs || []; }
+          if (!regs.length) return false;
+          return regs.some(r => (pointInPolygon(p, r.o) && !(r.h || []).some(h => pointInPolygon(p, h))) || distPointToPolygon(p, r.o) < 0.12);
+        };
+        dachBau = buildDachV6(tFp, { fussY: deckeY, ansatz: roofOpts.ansatz, maxY: zMaxD, legal: dachLegal }, roofOpts, dachFarbe, showViz);
+        dachAbsenkung = 0;
       }
     }
     const geschossOben = f => ebeneY(f + 1) - (f === floors - 1 ? dachAbsenkung : 0);
@@ -24361,7 +24523,7 @@ function rebuild() {
     // Dach auf dem obersten Geschoss: schon oben gebaut, hier nur eingehängt und gerechnet
     vizOpts.pitchedRoof = false;
     if (dachBau && dachBau.info.pitch > 0 && dachBau.info.H) {
-      const topFp = floorFootprints[floors - 1], eaveY = dachBau.info.traufY;
+      const topFp = floorFootprints[floors - 1], eaveY = dachBau.info.fussY;
       const r = dachBau;
       vizOpts.pitchedRoof = true;
       buildingGroup.add(r.group);
@@ -24404,10 +24566,10 @@ function rebuild() {
       totals.volumeBelow += r.info.volume * bfD;
       roofInfos.push(r.info);
       if (r.info.volume > 0.5) window.kubaturNachweisRows.push({
-        piece: pieceIdx, floor: floors, label: 'Dach', yBottom: eaveY, yTop: eaveY, floorH: 0, area: fpArea(topFp),
+        piece: pieceIdx, floor: floors, label: 'Dach', yBottom: eaveY, yTop: r.info.ridgeY, floorH: r.info.ridgeY - eaveY, area: fpArea(topFp),
         volume: r.info.volume, belowFrac: bfD, volBelow: r.info.volume * bfD, volAbove: r.info.volume * (1 - bfD), staffelung: false, roof: true,
       });
-      if (r.info.volume > 0.5 && r.info.H) window.kubaturSolids.push({ piece: pieceIdx, fp: topFp, holes: null, y0: eaveY, top: r.info.H, roof: true });
+      if (r.info.volume > 0.5 && r.info.H) window.kubaturSolids.push({ piece: pieceIdx, fp: topFp, holes: null, y0: eaveY, top: r.info.H, roof: true, dach: r.info });
     }
     for (let lvl = 0; lvl < ugCount; lvl++) {
       const yU0 = baseLevel - (lvl + 1) * ugHeight, yU1 = baseLevel - lvl * ugHeight;
@@ -25354,17 +25516,22 @@ function rebuild() {
     const rr = document.getElementById('roof-ridge-row'); if (rr) rr.style.display = roofOpts.type === 'walm' ? 'none' : '';
     { const vp = document.getElementById('v-roof-pitch'), vo = document.getElementById('v-roof-overhang');
       if (vp) vp.textContent = roofOpts.pitch.toFixed(0) + '°';
+      { const va = document.getElementById('v-roof-ansatz'); if (va) va.textContent = roofOpts.ansatz.toFixed(2).replace('.', ',') + ' m'; }
       if (vo) vo.textContent = roofOpts.overhang.toFixed(1).replace('.', ',') + ' m'; }
     if (ri) {
       window.__dachInfos = roofInfos;   // für Prüfungen und die Ansichten
-      if (roofOpts.type === 'flach' || !roofInfos.length) ri.textContent = '';
+      if (roofOpts.type !== 'flach' && !roofInfos.length && (window.kubaturSolids || []).length) ri.innerHTML = '⚠ Über der obersten Decke ist kein Platz mehr für ein geneigtes Dach (Höhe bzw. Abstände) — Flachdach, geringerer Ansatz oder ein Geschoß weniger.';
+      else if (roofOpts.type === 'flach' || !roofInfos.length) ri.textContent = '';
       else {
         const minP = Math.min(...roofInfos.map(r => r.pitch)), vol = roofInfos.reduce((s2, r) => s2 + r.volume, 0);
         const trimmed = roofInfos.some(r => r.trimmed);
-        ri.innerHTML = minP <= 0 ? '⚠ Das Dach passt nicht mehr in die zulässige Höhe bzw. die Abstände — Flachdach oder ein Geschoss weniger.'
+        void trimmed;
+        const minA = Math.min(...roofInfos.map(r => r.ansatz == null ? roofOpts.ansatz : r.ansatz));
+        const fA = v => v.toFixed(2).replace('.', ',');
+        ri.innerHTML = minP <= 0 ? '⚠ Über der obersten Decke ist kein Platz mehr für ein geneigtes Dach (Höhe bzw. Abstände) — Flachdach, geringerer Ansatz oder ein Geschoß weniger.'
           : (minP < roofOpts.pitch - 0.5 ? `⚠ Neigung auf <b>${minP.toFixed(0)}°</b> reduziert, damit Abstände und maximale Höhe eingehalten werden.` : `Neigung ${roofOpts.pitch.toFixed(0)}° — Abstände und maximale Höhe eingehalten.`)
-            + (trimmed ? ' Wo der Giebel bzw. die hohe Pultwand den Lichtabstand überschreiten würde, ist das Dach automatisch abgeschrägt (Schopfwalm).' : '')
-            + ` Dachvolumen ${vol.toFixed(0)} m³ (in der Kubatur enthalten).`;
+            + (minA < roofOpts.ansatz - 0.01 ? ` Ansatz auf <b>${fA(minA)} m</b> verringert.` : ` Ansatz ${fA(roofOpts.ansatz)} m über der obersten Rohdecke.`)
+            + ` Dachvolumen ${vol.toFixed(0)} m³ inkl. Kniestock (in der Kubatur enthalten).`;
       }
     }
   }
@@ -25699,7 +25866,7 @@ const ALL_INPUT_IDS = ['bundesland', 'hang-mode', 'haus-typ', 'toggle-boeschung'
   'toggle-earthwork', 'toggle-contours', 'toggle-contours-site', 'toggle-neighbours', 'toggle-nb-volumes', 'toggle-trees', 'tree-density', 'tree-seed', 'tree-style', 'toggle-ortho', 'ortho-opacity', 'nb-default-floors', 'site-preset', 'toggle-parking', 'toggle-floor-colors', 'toggle-apartments', 'toggle-zoning', 'toggle-roomhints', 'toggle-viz', 'toggle-dimensions', 'toggle-theme',
   'expose-title', 'expose-subtitle', 'expose-description',
   'proj-nr', 'proj-status', 'proj-kg', 'proj-gst', 'proj-widmung', 'proj-bautraeger', 'proj-planer', 'proj-kontakt', 'proj-tel', 'proj-mail', 'proj-notes',
-  'bmd', 'nfd', 'bd', 'bauweise', 'top-abs', 'toggle-eigen', 'toggle-courtyard', 'courtyard-depth', 'roof-type', 'roof-pitch', 'roof-overhang', 'roof-ridge', 'tirol-sp-kat', 'tirol-sp-lage', 'viz-windows', 'viz-balconies', 'viz-loggia-depth', 'viz-slab', 'viz-seed', 'viz-irregular', 'viz-terrassen', 'toggle-gelaendeanschluss',
+  'bmd', 'nfd', 'bd', 'bauweise', 'top-abs', 'toggle-eigen', 'toggle-courtyard', 'courtyard-depth', 'roof-type', 'roof-pitch', 'roof-overhang', 'roof-ridge', 'roof-ansatz', 'tirol-sp-kat', 'tirol-sp-lage', 'viz-windows', 'viz-balconies', 'viz-loggia-depth', 'viz-slab', 'viz-seed', 'viz-irregular', 'viz-terrassen', 'toggle-gelaendeanschluss',
   'econ-category', 'econ-land', 'econ-cost-above', 'econ-cost-ug', 'econ-soft', 'econ-price', 'econ-nfl-ratio', 'econ-parking', 'econ-target',
   'econ-land-nk', 'econ-plan-months', 'econ-build-months', 'econ-sales-start', 'econ-sales-months', 'econ-curve', 'econ-equity', 'econ-rate-mode', 'econ-spread', 'econ-rate-fix', 'econ-discount', 'econ-ratenplan'];
 
@@ -26682,7 +26849,7 @@ document.getElementById('viz-slab').addEventListener('change', () => pushHistory
       : 'Automatische Kubatur wieder an.');
   }); }
 ['toggle-courtyard', 'courtyard-depth'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
-['roof-pitch', 'roof-overhang'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
+['roof-pitch', 'roof-overhang', 'roof-ansatz'].forEach(id => { document.getElementById(id).addEventListener('input', () => rebuild()); document.getElementById(id).addEventListener('change', () => pushHistory()); });
 document.getElementById('viz-loggia-depth').addEventListener('change', () => pushHistory());
 document.getElementById('viz-irregular').addEventListener('change', () => pushHistory());
 function syncVizControls() {
@@ -30915,11 +31082,22 @@ function vecElevationData(bearingDeg, acc) {
       if (L < 0.2) return;
       const n = [(q[1] - p[1]) / L * sg, -(q[0] - p[0]) / L * sg], nd = n[0] * dx + n[1] * dz;
       if (nd <= 0.02) return;
-      let hA = k.y0, hB = k.y0;
-      try { hA = Math.max(k.y0, k.top(p)); hB = Math.max(k.y0, k.top(q)); } catch (e) { return; }
-      if (hA - k.y0 < 0.05 && hB - k.y0 < 0.05) return;
-      faces.push({ s1: S(p), s2: S(q), y0: k.y0, y1: Math.max(hA, hB),
-        dachA: hA, dachB: hB, t: (T(p) + T(q)) / 2 + 0.02, nd, holes: [], dach: true });
+      let pts = [p, q];
+      try { if (k.dach && k.dach.profil) pts = k.dach.profil(p, q); } catch (e) { pts = [p, q]; }
+      let hs; try { hs = pts.map(w => Math.max(k.y0, k.top(w))); } catch (e) { return; }
+      if (Math.max(...hs) - k.y0 < 0.05) return;
+      const poly = [[S(p), k.y0], [S(q), k.y0]];
+      for (let j = pts.length - 1; j >= 0; j--) poly.push([S(pts[j]), hs[j]]);
+      faces.push({ s1: S(p), s2: S(q), y0: k.y0, y1: Math.max(...hs), poly, t: (T(p) + T(q)) / 2 + 0.02, nd, holes: [], dach: true });
+    });
+    // die zum Betrachter geneigten Dachflächen
+    if (k.dach && k.dach.regionen && k.dach.H) k.dach.regionen.forEach(rg => {
+      const nd = rg.g[0] * dx + rg.g[1] * dz;
+      if (nd <= 0.02) return;
+      const poly = rg.ring.map(w => [S(w), k.dach.H(w)]);
+      const tm = rg.ring.reduce((s0, w) => s0 + T(w), 0) / rg.ring.length;
+      faces.push({ s1: Math.min(...poly.map(v => v[0])), s2: Math.max(...poly.map(v => v[0])), y0: k.y0, y1: Math.max(...poly.map(v => v[1])),
+        poly, t: tm + 0.03, nd: 0.55 + 0.45 * nd, holes: [], dach: true, dachFlaeche: true });
     });
   });
   (acc.balconies || []).forEach(b => {
@@ -31264,6 +31442,18 @@ function drawElevationVector(ctx, E, M) {
       const pm = M.toPx([0, yF]); ctx.beginPath(); ctx.moveTo(p0[0], pm[1]); ctx.lineTo(p1[0], pm[1]); ctx.stroke();
       return;
     }
+    if (f.dach && f.poly) {
+      const P = f.poly.map(M.toPx);
+      const xs = P.map(v => v[0]); if (Math.max(...xs) - Math.min(...xs) < 0.3) return;
+      const tfD = tiefeVon(f);
+      const gD = Math.round(VP.face - (1 - f.nd) * VP.faceStep - (f.dachFlaeche ? VP.faceStep * 0.6 : 0));
+      ctx.save(); ctx.globalAlpha = 1 - tfD * 0.55;
+      ctx.beginPath(); P.forEach((v, i) => i ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1])); ctx.closePath();
+      ctx.fillStyle = `rgb(${gD},${gD},${Math.min(255, gD + 1)})`; ctx.fill();
+      ctx.strokeStyle = VP.ink; ctx.lineWidth = 0.8 * (1 - tfD * 0.25); ctx.stroke();
+      ctx.restore();
+      return;
+    }
     if (f.dach) {
       // Dachfläche als Trapez: Unterkante waagrecht an der Traufe, Oberkante der Dachhaut
       const pa = M.toPx([f.s1, f.y0]), pb = M.toPx([f.s2, f.y0]);
@@ -31394,7 +31584,8 @@ function vecSectionData(L) {
       items.push({ kind: 'poche', s0, s1: s0 + 0.36, y0: yF, y1: yC }, { kind: 'poche', s0: s1 - 0.36, s1, y0: yF, y1: yC });
       if (a.top) {
         items.push({ kind: 'poche', s0, s1, y0: yC - 0.3, y1: yC });
-        items.push({ kind: 'poche', s0, s1: s0 + 0.2, y0: yC, y1: yC + 0.35 }, { kind: 'poche', s0: s1 - 0.2, s1, y0: yC, y1: yC + 0.35 });
+        if (!(window.kubaturSolids || []).some(k => k && k.roof && k.dach && k.piece === a.pieceIdx))
+          items.push({ kind: 'poche', s0, s1: s0 + 0.2, y0: yC, y1: yC + 0.35 }, { kind: 'poche', s0: s1 - 0.2, s1, y0: yC, y1: yC + 0.35 });
         yTop = Math.max(yTop, yC + 0.35);
       } else if (a.upperFp) {
         // Terrasse: Decke über dem Geschoss dort, wo oben nichts steht
@@ -31430,6 +31621,17 @@ function vecSectionData(L) {
       yBot = Math.min(yBot, yF - 0.6);
     }
   }));
+  const dachSchnitte = [];
+  (window.kubaturSolids || []).filter(k => k && k.roof && k.dach && k.dach.H && k.fp).forEach(k => {
+    const d = k.dach, W = s => [L.c[0] + L.a[0] * s, L.c[1] + L.a[1] * s];
+    vecLineIntervals(k.fp, L.c, L.a).forEach(([s0, s1]) => {
+      const ss = [s0]; (d.knicke ? d.knicke(W(s0), W(s1)) : []).forEach(t => ss.push(s0 + (s1 - s0) * t)); ss.push(s1);
+      const pts = ss.map(s => [s, d.H(W(s))]);
+      dachSchnitte.push({ s0, s1, y0: k.y0, pts });
+      pts.forEach(p => { yTop = Math.max(yTop, p[1] + 0.3); });
+      sLo = Math.min(sLo, s0); sHi = Math.max(sHi, s1);
+    });
+  });
   if (!isFinite(sLo)) return null;
   // ganzes Grundstück entlang der Schnittlinie und dahinter (Blickrichtung) als Profile
   const ext = vecParcelExtent(L.c, L.a, L.view);
@@ -31442,7 +31644,8 @@ function vecSectionData(L) {
   depth.forEach(pr => pr.pts.forEach(g => { yTop = Math.max(yTop, g[1] + 0.3); }));
   const inside = []; items.forEach(it => { if (it.kind === 'room') inside.push([it.s0, it.s1, it.y0, it.y1]); });
   groundUr.forEach(g => { yBot = Math.min(yBot, g[1] - 1.2); });
-  return { items, ground, groundUr, sLo: gLo, sHi: gHi, bLo: sLo - 8, bHi: sHi + 8, yTop, yBot, L, inside, depth };
+  dachSchnitte.forEach(d => inside.push([d.s0, d.s1, d.y0, Math.max(...d.pts.map(p => p[1]))]));
+  return { items, ground, groundUr, sLo: gLo, sHi: gHi, bLo: sLo - 8, bHi: sHi + 8, yTop, yBot, L, inside, depth, dach: dachSchnitte };
 }
 function drawSectionVector(ctx, D, M) {
   const k = M.k;
@@ -31474,6 +31677,21 @@ function drawSectionVector(ctx, D, M) {
   Object.values(slabsBy).forEach(list => { list.sort((a, b) => a.y0 - b.y0); for (let i = 0; i + 1 < list.length; i++) { const a = list[i], b = list[i + 1]; const q = r({ s0: a.s0, s1: a.s1, y0: a.y1, y1: b.y0 }); ctx.fillStyle = VP.paper; ctx.fillRect(q[0], q[1], q[2], q[3]); } });
   D.items.filter(it => it.kind === 'room').forEach(it => { const q = r(it); ctx.fillStyle = VP.paper; ctx.fillRect(q[0], q[1], q[2], q[3]); });
   D.items.filter(it => it.kind !== 'room').forEach(it => { const q = r(it); ctx.fillStyle = it.kind === 'poche' ? VP.poche : VP.thin; ctx.fillRect(q[0], q[1], Math.max(0.8, q[2]), Math.max(0.8, q[3])); });
+  // Geneigtes Dach: Dachraum hell, Dachhaut (Sparren + Deckung, 30 cm) und die über die
+  // oberste Decke weiterlaufenden Außenwände als Poché
+  (D.dach || []).forEach(d => {
+    const P = d.pts.map(M.toPx), yF = M.toPx([0, d.y0])[1];
+    ctx.beginPath(); ctx.moveTo(P[0][0], yF); P.forEach(p => ctx.lineTo(p[0], p[1])); ctx.lineTo(P[P.length - 1][0], yF); ctx.closePath();
+    ctx.fillStyle = VP.paper; ctx.fill();
+    const innen = d.pts.map(([s, y]) => M.toPx([s, Math.max(d.y0, y - 0.3)]));
+    ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    innen.slice().reverse().forEach(p => ctx.lineTo(p[0], p[1])); ctx.closePath();
+    ctx.fillStyle = VP.poche; ctx.fill();
+    const wandH = (s, w) => { const a = M.toPx([s, d.y0]), b = M.toPx([s + w, d.pts.reduce((m, p) => Math.abs(p[0] - s) < Math.abs(m[0] - s) ? p : m, d.pts[0])[1]]);
+      ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); };
+    wandH(d.s0, 0.36); wandH(d.s1 - 0.36, 0.36);
+    ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.1; ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+  });
   // Geländelinie — im Gebäude unterbrochen
   const inB = g => (D.inside || []).some(([a, b, y0, y1]) => g[0] > a + 0.05 && g[0] < b - 0.05 && g[1] > y0 - 0.4 && g[1] < y1 + 0.4);
   ctx.strokeStyle = VP.ink; ctx.lineWidth = 1.6; ctx.beginPath();
@@ -33361,6 +33579,14 @@ function drawTopVector(ctx, M, dark) {
       ctx.fillStyle = fill; ctx.fill('evenodd'); ctx.strokeStyle = ink; ctx.lineWidth = f === nF - 1 ? 1.4 : 0.8; ctx.stroke();
     });
   }
+  (window.kubaturSolids || []).filter(k => k && k.roof && k.dach && k.dach.regionen).forEach(k => {
+    k.dach.regionen.forEach(rg => {
+      const licht = 0.5 + 0.5 * (-rg.g[0] * 0.6 - rg.g[1] * 0.8);   // Licht von links oben
+      path(rg.ring);
+      ctx.fillStyle = dark ? `rgba(255,255,255,${(0.02 + 0.07 * licht).toFixed(3)})` : `rgba(0,0,0,${(0.02 + 0.08 * (1 - licht)).toFixed(3)})`;
+      ctx.fill(); ctx.strokeStyle = ink; ctx.lineWidth = 0.9; ctx.stroke();
+    });
+  });
   // Bemaßung zuletzt, damit sie über den Flächen liegt
   if (M.pxPerM > 1.2) {
     try { planGrundstuecksmasse(ctx, M, { ink: soft, akzent: dark ? '#e0a458' : '#b9531f', abstaende: true }); } catch (e) {}
@@ -35724,7 +35950,8 @@ function aushubAnimTick(now) {
 function roofOptions() {
   const g = id => document.getElementById(id);
   return { type: (g('roof-type') && g('roof-type').value) || 'flach', pitch: parseFloat(g('roof-pitch') && g('roof-pitch').value) || 25,
-    overhang: 0, ridge: (g('roof-ridge') && g('roof-ridge').value) || 'laengs' };
+    overhang: 0, ridge: (g('roof-ridge') && g('roof-ridge').value) || 'laengs',
+    ansatz: Math.max(0, Math.min(3, (() => { const v = parseFloat(g('roof-ansatz') && g('roof-ansatz').value); return isFinite(v) ? v : 1; })())) };
 }
 // Dachflächen (planare Polygone) für Grundriss fp, Traufhöhe eaveY, Neigung t = tan(α)
 function roofFaces(fp, eaveY, t, opts) {
@@ -36119,6 +36346,19 @@ function buildV2Group(heightFn, opt) {
     } catch (e) { /* nur Darstellung */ }
     g.add(geschoss);
   });
+  (window.kubaturSolids || []).filter(k => k && k.roof && k.dach && k.dach.linien && k.dach.linien.length).forEach(k => {
+    const d = k.dach, gr = new THREE.Group();
+    gr.userData.v2Stufe = (args.filter(a => a.pieceIdx === k.piece && a.top).map(a => a.f)[0]);
+    const ton = tonAt(d.ridgeY).getHex();
+    gr.add(v2Kante(d.linien, ton, 0.95, false));
+    gr.add(v2Kante(d.linien, ton, 0.26, false, true));
+    const flaeche = () => new THREE.MeshBasicMaterial({ color: 0x251d19, transparent: true, opacity: 0.46,
+      side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+    [[d.hautPos, 2], [d.wandPos, 1]].forEach(([arr, ro]) => { if (!arr || !arr.length) return;
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+      const m = new THREE.Mesh(geo, flaeche()); m.raycast = () => {}; m.renderOrder = ro; gr.add(m); });
+    g.add(gr);
+  });
   return g;
 }
 function v2Aufraeumen() {
@@ -36138,6 +36378,16 @@ var kubaturGroup = null;
 // die strichlierten Hilfslinien sind aus. (Vorgabe Ozan, 13.10.2026)
 function einheitenSetup() {
   if (viewMode() !== 'einheiten') return;
+  try { if (apartmentGroup) (window.kubaturSolids || []).filter(k => k && k.roof && k.dach && k.dach.linien).forEach(k => {
+    const d = k.dach, gr = new THREE.Group();
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(d.linien, 3));
+    const li = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xd9d6cf, transparent: true, opacity: 0.6, depthWrite: false }));
+    li.raycast = () => {}; gr.add(li);
+    if (d.hautPos && d.hautPos.length) { const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.Float32BufferAttribute(d.hautPos, 3));
+      const hm = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }));
+      hm.raycast = () => {}; gr.add(hm); }
+    apartmentGroup.add(gr);
+  }); } catch (e) { /* nur Darstellung */ }
   [floorLineGroup, lightLineGroup, setbackLine, minSetbackLine, dimensionGroup, markerGroup,
    parkingGroup, earthworkGroup, customVolumeGroup, vizGroup].forEach(x => { if (x) x.visible = false; });
   if (parcelLine) parcelLine.visible = false;
@@ -36962,22 +37212,31 @@ function dachPopoverOeffnen(clientX, clientY) {
   const vp = document.querySelector('.viewport').getBoundingClientRect();
   const rt = document.getElementById('roof-type'), rp = document.getElementById('roof-pitch'), rr = document.getElementById('roof-ridge');
   if (!pop || !rt) return;
-  const form = rt.value === 'flach' ? 'flach' : 'sattel';
+  const form = rt.value || 'flach';
   const nei = Math.round(parseFloat(rp && rp.value) || 25);
+  const ra = document.getElementById('roof-ansatz');
+  const ans = Math.max(0, Math.min(3, parseFloat(ra && ra.value) || 0));
   const first = (rr && rr.value) === 'quer' ? 'quer' : 'laengs';
   pop.innerHTML = `<div class="nbp-title">Eigener Baukörper<span>Dachform</span></div>`
     + `<div class="nbp-dach">`
     + `<button type="button" data-pdach="flach" class="${form === 'flach' ? 'on' : ''}">`
     + `<svg viewBox="0 0 28 18" aria-hidden="true"><path d="M3 14h22M3 14V8h22v6"/></svg>Flachdach</button>`
     + `<button type="button" data-pdach="sattel" class="${form === 'sattel' ? 'on' : ''}">`
-    + `<svg viewBox="0 0 28 18" aria-hidden="true"><path d="M3 14h22M3 14v-3l11-7 11 7v3"/></svg>Satteldach</button></div>`
-    + (form === 'sattel'
+    + `<svg viewBox="0 0 28 18" aria-hidden="true"><path d="M3 14h22M3 14v-3l11-7 11 7v3"/></svg>Satteldach</button>`
+    + `<button type="button" data-pdach="walm" class="${form === 'walm' ? 'on' : ''}">`
+    + `<svg viewBox="0 0 28 18" aria-hidden="true"><path d="M3 14h22M3 14v-3l6-6h10l6 6v3"/></svg>Walmdach</button>`
+    + `<button type="button" data-pdach="pult" class="${form === 'pult' ? 'on' : ''}">`
+    + `<svg viewBox="0 0 28 18" aria-hidden="true"><path d="M3 14h22M3 14V9l22-5v10"/></svg>Pultdach</button></div>`
+    + (form !== 'flach'
       ? `<label class="nbp-feld nbp-nei"><span>Neigung</span><input type="range" id="pdach-nei" min="5" max="45" step="1" value="${nei}"><input type="text" inputmode="numeric" id="pdach-nei-z" value="${nei}"><span class="nbp-eh">°</span></label>`
-        + `<div class="nbp-feld"><span>First</span><div class="nbp-first">`
+        + `<label class="nbp-feld nbp-nei" title="Die Außenwände laufen so weit über die oberste Rohdecke weiter, dann beginnt die Dachschräge"><span>Ansatz</span><input type="range" id="pdach-ans" min="0" max="3" step="0.05" value="${ans}"><input type="text" inputmode="decimal" id="pdach-ans-z" value="${ans.toFixed(2).replace('.', ',')}"><span class="nbp-eh">m</span></label>`
+        + (form === 'walm' ? '' : `<div class="nbp-feld"><span>First</span><div class="nbp-first">`
         + `<button type="button" data-pfirst="laengs" class="${first === 'laengs' ? 'on' : ''}" title="First entlang der längeren Seite">`
         + `<svg viewBox="0 0 30 18" aria-hidden="true"><rect x="4" y="5" width="22" height="8" rx="1"/><path d="M4 9h22"/></svg>längs</button>`
         + `<button type="button" data-pfirst="quer" class="${first === 'quer' ? 'on' : ''}" title="First quer dazu">`
-        + `<svg viewBox="0 0 30 18" aria-hidden="true"><rect x="4" y="5" width="22" height="8" rx="1"/><path d="M15 5v8"/></svg>quer</button></div></div>`
+        + `<svg viewBox="0 0 30 18" aria-hidden="true"><rect x="4" y="5" width="22" height="8" rx="1"/><path d="M15 5v8"/></svg>quer</button></div></div>`)
+        + (() => { const di = (window.__dachInfos || [])[0]; if (!di || !(di.pitch > 0)) return '';
+            return `<div class="nbp-hint">Neigung ${di.pitch.toFixed(0)}° · Traufe +${(di.traufY - di.fussY).toFixed(2).replace('.', ',')} m · First +${(di.ridgeY - di.fussY).toFixed(2).replace('.', ',')} m über der obersten Decke</div>`; })()
       : '')
     + `<div class="nbp-hint">Die Dachform gilt für alle Baukörper des Projekts.</div>`;
   pop.classList.add('open');
@@ -36993,6 +37252,16 @@ function dachPopoverOeffnen(clientX, clientY) {
     const setz = v => { const g = Math.max(5, Math.min(45, Math.round(v))); if (!isFinite(g) || !rp) return;
       rp.value = g; rp.dispatchEvent(new Event('input', { bubbles: true }));
       if (reg) reg.value = g; if (z) z.value = g; rebuild(); };
+    if (reg) { reg.addEventListener('click', ev => ev.stopPropagation());
+      reg.addEventListener('input', () => setz(parseFloat(reg.value)));
+      reg.addEventListener('change', () => { if (typeof pushHistory === 'function') pushHistory(); }); }
+    if (z) { z.addEventListener('click', ev => ev.stopPropagation());
+      z.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); z.blur(); } });
+      z.addEventListener('change', () => { setz(parseFloat(String(z.value).replace(',', '.'))); if (typeof pushHistory === 'function') pushHistory(); }); } }
+  { const reg = pop.querySelector('#pdach-ans'), z = pop.querySelector('#pdach-ans-z');
+    const setz = v => { if (!isFinite(v) || !ra) return; const g = Math.max(0, Math.min(3, Math.round(v * 20) / 20));
+      ra.value = g; ra.dispatchEvent(new Event('input', { bubbles: true }));
+      if (reg) reg.value = g; if (z) z.value = g.toFixed(2).replace('.', ','); };
     if (reg) { reg.addEventListener('click', ev => ev.stopPropagation());
       reg.addEventListener('input', () => setz(parseFloat(reg.value)));
       reg.addEventListener('change', () => { if (typeof pushHistory === 'function') pushHistory(); }); }
@@ -41001,7 +41270,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v6.03';
+  const VERSION = 'v6.04';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
