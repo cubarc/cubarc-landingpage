@@ -32160,6 +32160,19 @@ function baukoerperBearbeitbar() {
   const m = typeof viewMode === 'function' ? viewMode() : '';
   return m === 'massenmodell' || m === 'massenmodell2' || m === 'geschosse';
 }
+function eigenerBaukoerperGetroffen(e) {
+  try {
+    updatePieceMouseNDC(e);
+    pieceRaycaster.setFromCamera(pieceMouseNDC, camera);
+    const sichtbar = o => { for (let p = o; p; p = p.parent) if (p.visible === false) return false; return true; };
+    const eigen = [buildingGroup, vizGroup, typeof s6Gruppe !== 'undefined' ? s6Gruppe : null].filter(Boolean);
+    const ziele = eigen.concat(neighbourLayerGroup && nbVisible() ? [neighbourLayerGroup] : []);
+    const hits = pieceRaycaster.intersectObjects(ziele, true).filter(h => h.object.isMesh && sichtbar(h.object));
+    if (!hits.length) return false;
+    for (let p = hits[0].object; p; p = p.parent) if (eigen.includes(p)) return true;
+    return false;
+  } catch (err) { return false; }
+}
 function findClickedPieceIdx(e) {
   if (!baukoerperBearbeitbar()) return null;
   updatePieceMouseNDC(e);
@@ -32652,6 +32665,7 @@ renderer.domElement.addEventListener('touchend', () => { touchMode = null; });
     if (!t0 || e.changedTouches.length !== 1) return;
     const c = e.changedTouches[0];
     if (Math.hypot(c.clientX - t0.x, c.clientY - t0.y) < 10 && Date.now() - t0.t < 400) {
+      if (eigenerBaukoerperGetroffen({ clientX: c.clientX, clientY: c.clientY })) { nbClosePopover(); dachPopoverOeffnen(c.clientX, c.clientY); t0 = null; return; }
       const hit = findClickedNeighbour({ clientX: c.clientX, clientY: c.clientY });
       if (hit) nbOpenPopover(hit, c.clientX, c.clientY);
     }
@@ -36993,7 +37007,7 @@ document.addEventListener('pointerup', e => {
   if (Math.hypot(e.clientX - st.x, e.clientY - st.y) > 6) return;   // geschwenkt → kein Fenster
   if (performance.now() - st.t > 900) return;                       // lange gehalten → kein Fenster
   // zuerst der eigene Baukörper, dann die Nachbarn
-  if (typeof findClickedPieceIdx === 'function' && findClickedPieceIdx(e) !== null) { dachPopoverOeffnen(e.clientX, e.clientY); return; }
+  if (eigenerBaukoerperGetroffen(e)) { dachPopoverOeffnen(e.clientX, e.clientY); return; }
   const hit = findClickedNeighbour(e);
   if (!hit || hit.type !== 'bld') { nbClosePopover(); return; }
   nbOpenPopover(hit, e.clientX, e.clientY);
@@ -40987,7 +41001,7 @@ function sprSetzen(code, still) {
 // Nutzungsbedingungen — alles gehört an den Fuß der Seite, auf jedem Gerät.
 (() => {
   'use strict';
-  const VERSION = 'v6.02';
+  const VERSION = 'v6.03';
   const heute = () => new Date().toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const RECHT = [
